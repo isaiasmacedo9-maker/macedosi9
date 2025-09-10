@@ -511,7 +511,7 @@ async def relatorio_recebimentos(
     
     # Build query
     query = {
-        "situacao": SituacaoTitulo.PAGO,
+        "situacao": SituacaoTitulo.PAGO.value,
         "data_recebimento": {
             "$gte": data_inicio,
             "$lte": data_fim
