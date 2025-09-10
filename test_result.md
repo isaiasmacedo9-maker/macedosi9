@@ -111,11 +111,14 @@ backend:
     file: "models/financial.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: "Implementados todos os modelos para Contas a Receber incluindo enums, histórico de alterações, anexos, contatos de cobrança, propostas de renegociação, filtros avançados, relatórios e importação de extratos"
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Modelos funcionando corretamente. CRUD de contas a receber operacional, criação e busca de registros funcionando. Enums e validações implementados adequadamente."
 
   - task: "Modelos expandidos Client - Cadastro de Empresas"
     implemented: true
