@@ -131,15 +131,18 @@ backend:
 
   - task: "Rotas Financial - APIs completas Contas a Receber"
     implemented: true
-    working: true
+    working: false
     file: "routes/financial.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: "Implementadas rotas completas para: CRUD de contas a receber, duplicação de títulos, gestão de cobrança, contatos, propostas de renegociação, relatórios, importação e processamento de extratos PDF/CSV com OCR, conciliação automática, classificação manual, dashboard com estatísticas avançadas"
+      - working: false
+        agent: "testing"
+        comment: "PARCIALMENTE FUNCIONANDO - Testado com sucesso: autenticação (100%), CRUD básico de contas a receber, busca avançada, geração de lembretes WhatsApp/email, exportação JSON/CSV, relatório de inadimplência. FALHAS CRÍTICAS: endpoint /financial/clients retorna 404 (não implementado), erros 500 em operações de contato/cobrança, duplicação de contas, relatório de recebimentos, dashboard stats. Erros 422 em parâmetros de renegociação e baixa de títulos (parâmetros incorretos - usando query em vez de body)."
 
   - task: "Sistema de Importação de Extratos com OCR"
     implemented: true
