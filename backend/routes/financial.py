@@ -509,12 +509,12 @@ async def relatorio_recebimentos(
     check_financial_access(current_user)
     contas_collection = await get_contas_receber_collection()
     
-    # Build query
+    # Build query - convert dates to datetime for MongoDB
     query = {
         "situacao": SituacaoTitulo.PAGO.value,
         "data_recebimento": {
-            "$gte": data_inicio,
-            "$lte": data_fim
+            "$gte": datetime.combine(data_inicio, datetime.min.time()),
+            "$lte": datetime.combine(data_fim, datetime.max.time())
         }
     }
     
