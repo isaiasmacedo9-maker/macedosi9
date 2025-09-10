@@ -893,7 +893,7 @@ async def realizar_baixa_automatica(titulo_data: Dict, movimento: MovimentoExtra
     )
     
     update_data = {
-        "situacao": SituacaoTitulo.PAGO,
+        "situacao": SituacaoTitulo.PAGO.value,
         "data_recebimento": movimento.data_movimento,
         "valor_quitado": movimento.valor,
         "updated_at": datetime.utcnow(),
