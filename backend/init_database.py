@@ -1531,7 +1531,7 @@ async def init_tasks_data():
     ]
     
     for task in tasks:
-        await tasks_collection.insert_one(task.model_dump())
+        await tasks_collection.insert_one(task.model_dump(mode='json'))
     
     print(f"Initialized {len(tasks)} tasks")
 
