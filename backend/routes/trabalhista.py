@@ -230,10 +230,20 @@ async def create_funcionario(
         "updated_at": datetime.utcnow()
     }
     
-    # Convert dates to datetime
+    # Convert dates to datetime for MongoDB compatibility
+    if funcionario_dict["dados_pessoais"].get("data_nascimento"):
+        funcionario_dict["dados_pessoais"]["data_nascimento"] = datetime.combine(
+            funcionario_data.dados_pessoais.data_nascimento, datetime.min.time()
+        )
+    
     if funcionario_dict["dados_contratuais"].get("data_admissao"):
         funcionario_dict["dados_contratuais"]["data_admissao"] = datetime.combine(
             funcionario_data.dados_contratuais.data_admissao, datetime.min.time()
+        )
+    
+    if funcionario_dict["dados_contratuais"].get("data_demissao"):
+        funcionario_dict["dados_contratuais"]["data_demissao"] = datetime.combine(
+            funcionario_data.dados_contratuais.data_demissao, datetime.min.time()
         )
     
     await funcionarios_collection.insert_one(funcionario_dict)
