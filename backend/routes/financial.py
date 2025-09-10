@@ -896,11 +896,16 @@ async def realizar_baixa_automatica(titulo_data: Dict, movimento: MovimentoExtra
         "situacao": SituacaoTitulo.PAGO.value,
         "data_recebimento": movimento.data_movimento,
         "valor_quitado": movimento.valor,
-        "updated_at": datetime.utcnow(),
-        "$push": {"historico_alteracoes": historico_action.model_dump()}
+        "updated_at": datetime.utcnow()
     }
     
-    await contas_collection.update_one({"id": titulo.id}, {"$set": update_data})
+    await contas_collection.update_one(
+        {"id": titulo.id}, 
+        {
+            "$set": update_data,
+            "$push": {"historico_alteracoes": historico_action.model_dump()}
+        }
+    )
 
 @router.get("/extrato/importacoes", response_model=List[ImportacaoExtrato])
 async def listar_importacoes(
