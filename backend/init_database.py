@@ -1214,6 +1214,18 @@ async def init_chat_data():
                     usuario_nome="João Silva",
                     mensagem="Obrigado! Sistema está funcionando perfeitamente.",
                     timestamp=datetime(2025, 1, 10, 9, 30, 0)
+                ),
+                Message(
+                    usuario_id="fiscal-id",
+                    usuario_nome="Maria Santos",
+                    mensagem="Pessoal, lembrem de atualizar os dados das obrigações fiscais",
+                    timestamp=datetime(2025, 1, 22, 14, 15, 0)
+                ),
+                Message(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    mensagem="Relatório mensal será enviado amanhã para todos os clientes",
+                    timestamp=datetime(2025, 1, 28, 16, 45, 0)
                 )
             ]
         ),
@@ -1229,6 +1241,75 @@ async def init_chat_data():
                     usuario_nome="Administrador",
                     mensagem="Canal de suporte técnico ativo",
                     timestamp=datetime(2025, 1, 10, 8, 0, 0)
+                )
+            ]
+        ),
+        Chat(
+            nome="Financeiro",
+            descricao="Discussões sobre questões financeiras",
+            tipo="grupo",
+            participantes=["admin-id", "colab-id"],
+            admin_id="admin-id",
+            mensagens=[
+                Message(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    mensagem="Vamos revisar as contas em atraso esta semana",
+                    timestamp=datetime(2025, 1, 20, 10, 0, 0)
+                ),
+                Message(
+                    usuario_id="colab-id",
+                    usuario_nome="João Silva",
+                    mensagem="Já identifiquei 3 clientes com pagamentos atrasados. Vou entrar em contato.",
+                    timestamp=datetime(2025, 1, 20, 10, 30, 0)
+                ),
+                Message(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    mensagem="Perfeito! O Restaurante Sabor Caseiro precisa de atenção especial.",
+                    timestamp=datetime(2025, 1, 20, 11, 0, 0)
+                )
+            ]
+        ),
+        Chat(
+            nome="Fiscal & Trabalhista",
+            descricao="Coordenação entre setores fiscal e trabalhista",
+            tipo="grupo",
+            participantes=["admin-id", "fiscal-id"],
+            admin_id="admin-id",
+            mensagens=[
+                Message(
+                    usuario_id="fiscal-id",
+                    usuario_nome="Maria Santos",
+                    mensagem="Temos várias obrigações vencendo na próxima semana",
+                    timestamp=datetime(2025, 1, 25, 9, 0, 0)
+                ),
+                Message(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    mensagem="Priorize as empresas com regime de Lucro Real primeiro",
+                    timestamp=datetime(2025, 1, 25, 9, 15, 0)
+                )
+            ]
+        ),
+        Chat(
+            nome="Plantão de Dúvidas",
+            descricao="Canal para dúvidas rápidas dos clientes",
+            tipo="suporte",
+            participantes=["admin-id", "colab-id", "fiscal-id"],
+            admin_id="admin-id",
+            mensagens=[
+                Message(
+                    usuario_id="colab-id",
+                    usuario_nome="João Silva",
+                    mensagem="Cliente da Padaria São João perguntou sobre prazo do PGDAS",
+                    timestamp=datetime(2025, 1, 29, 14, 0, 0)
+                ),
+                Message(
+                    usuario_id="fiscal-id",
+                    usuario_nome="Maria Santos",
+                    mensagem="Prazo é até dia 20 do mês seguinte. Já orientei o cliente.",
+                    timestamp=datetime(2025, 1, 29, 14, 30, 0)
                 )
             ]
         )
