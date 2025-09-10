@@ -1361,6 +1361,180 @@ async def init_configuracoes_data():
     
     print(f"Initialized {len(configs)} configurations")
 
+async def init_tasks_data():
+    """Initialize tasks data"""
+    from models.task import Task, TaskComment
+    tasks_collection = await get_tasks_collection()
+    
+    # Check if tasks data already exists
+    count = await tasks_collection.count_documents({})
+    if count > 0:
+        print("Tasks data already exists, skipping initialization")
+        return
+    
+    tasks = [
+        Task(
+            titulo="Implementar relatórios automáticos",
+            descricao="Desenvolver sistema de geração automática de relatórios mensais para clientes",
+            status="em_andamento",
+            prioridade="alta",
+            categoria="comercial",
+            responsavel_id="admin-id",
+            responsavel_nome="Administrador",
+            criador_id="admin-id",
+            criador_nome="Admin",
+            data_prazo=date(2025, 2, 15),
+            progresso=60,
+            comentarios=[
+                TaskComment(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    comentario="Já definimos o layout dos relatórios, agora falta implementar a automação"
+                )
+            ],
+            tags=["desenvolvimento", "automacao", "relatorios"]
+        ),
+        Task(
+            titulo="Atualizar dados da Transportadora Rápida",
+            descricao="Revisar e atualizar todas as informações cadastrais da empresa",
+            status="pendente",
+            prioridade="media",
+            categoria="comercial",
+            responsavel_id="colab-id",
+            responsavel_nome="João Silva",
+            criador_id="admin-id",
+            criador_nome="Admin",
+            data_prazo=date(2025, 2, 5),
+            progresso=0,
+            tags=["cadastro", "atualizacao"]
+        ),
+        Task(
+            titulo="Regularizar obrigações em atraso",
+            descricao="Contactar clientes com obrigações fiscais em atraso e providenciar regularização",
+            status="em_andamento",
+            prioridade="urgente",
+            categoria="fiscal",
+            responsavel_id="fiscal-id",
+            responsavel_nome="Maria Santos",
+            criador_id="fiscal-id",
+            criador_nome="Maria Santos",
+            data_prazo=date(2025, 2, 1),
+            progresso=40,
+            comentarios=[
+                TaskComment(
+                    usuario_id="fiscal-id",
+                    usuario_nome="Maria Santos",
+                    comentario="Já contatei 5 dos 8 clientes. Aguardando retorno de documentos."
+                )
+            ],
+            tags=["fiscal", "atraso", "regularizacao"]
+        ),
+        Task(
+            titulo="Treinamento sobre nova legislação",
+            descricao="Estudar e implementar mudanças na legislação fiscal 2025",
+            status="concluida",
+            prioridade="alta",
+            categoria="fiscal",
+            responsavel_id="fiscal-id",
+            responsavel_nome="Maria Santos",
+            criador_id="admin-id",
+            criador_nome="Admin",
+            data_prazo=date(2025, 1, 31),
+            data_conclusao=datetime(2025, 1, 28, 16, 30, 0),
+            progresso=100,
+            comentarios=[
+                TaskComment(
+                    usuario_id="fiscal-id",
+                    usuario_nome="Maria Santos",
+                    comentario="Treinamento concluído. Já atualizei os procedimentos internos."
+                )
+            ],
+            tags=["treinamento", "legislacao", "atualizacao"]
+        ),
+        Task(
+            titulo="Melhorar atendimento ao cliente",
+            descricao="Implementar sistema de follow-up para tickets de atendimento",
+            status="pendente",
+            prioridade="media",
+            categoria="atendimento",
+            responsavel_id="colab-id",
+            responsavel_nome="João Silva",
+            criador_id="admin-id",
+            criador_nome="Admin",
+            data_prazo=date(2025, 2, 20),
+            progresso=15,
+            tags=["atendimento", "melhoria", "followup"]
+        ),
+        Task(
+            titulo="Revisar folhas de pagamento",
+            descricao="Auditar e revisar todas as folhas de pagamento processadas em janeiro",
+            status="em_andamento",
+            prioridade="alta",
+            categoria="trabalhista",
+            responsavel_id="fiscal-id",
+            responsavel_nome="Maria Santos",
+            criador_id="admin-id",  
+            criador_nome="Admin",
+            data_prazo=date(2025, 2, 10),
+            progresso=75,
+            comentarios=[
+                TaskComment(
+                    usuario_id="fiscal-id",
+                    usuario_nome="Maria Santos",
+                    comentario="Já revisei 8 das 10 folhas. Encontrei discrepâncias em 2 empresas."
+                )
+            ],
+            tags=["trabalhista", "folha", "auditoria"]
+        ),
+        Task(
+            titulo="Backup do sistema",
+            descricao="Implementar rotina automática de backup dos dados do sistema",
+            status="cancelada",
+            prioridade="baixa",
+            categoria="comercial",
+            responsavel_id="admin-id",
+            responsavel_nome="Administrador",
+            criador_id="admin-id",
+            criador_nome="Admin",
+            data_prazo=date(2025, 3, 1),
+            progresso=0,
+            comentarios=[
+                TaskComment(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    comentario="Cancelada pois já existe sistema de backup automático na infraestrutura"
+                )
+            ],
+            tags=["backup", "sistema", "infraestrutura"]
+        ),
+        Task(
+            titulo="Contatar clientes inadimplentes",
+            descricao="Fazer contato com clientes que possuem contas em atraso",
+            status="em_andamento",
+            prioridade="alta",
+            categoria="financeiro",
+            responsavel_id="colab-id",
+            responsavel_nome="João Silva",
+            criador_id="colab-id",
+            criador_nome="João Silva",
+            data_prazo=date(2025, 2, 3),
+            progresso=50,
+            comentarios=[
+                TaskComment(
+                    usuario_id="colab-id",
+                    usuario_nome="João Silva",
+                    comentario="Contatei o Restaurante Sabor Caseiro. Solicitaram renegociação."
+                )
+            ],
+            tags=["financeiro", "cobranca", "inadimplencia"]
+        )
+    ]
+    
+    for task in tasks:
+        await tasks_collection.insert_one(task.model_dump())
+    
+    print(f"Initialized {len(tasks)} tasks")
+
 async def main():
     """Initialize all database collections"""
     print("🚀 Starting database initialization...")
@@ -1376,6 +1550,7 @@ async def main():
         await init_atendimento_data()
         await init_chat_data()
         await init_configuracoes_data()
+        await init_tasks_data()
         print("✅ Database initialization completed successfully!")
     except Exception as e:
         print(f"❌ Error during initialization: {e}")
