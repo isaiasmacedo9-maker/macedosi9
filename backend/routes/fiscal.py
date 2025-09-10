@@ -78,10 +78,22 @@ async def create_obrigacao(
             ano = hoje.year + 1
         else:
             ano = hoje.year
-        proximo_vencimento = date(ano, mes_proximo_trimestre, dia_vencimento)
+        
+        # Handle months with fewer days than the due day
+        try:
+            proximo_vencimento = date(ano, mes_proximo_trimestre, dia_vencimento)
+        except ValueError:
+            import calendar
+            last_day = calendar.monthrange(ano, mes_proximo_trimestre)[1]
+            proximo_vencimento = date(ano, mes_proximo_trimestre, min(dia_vencimento, last_day))
     else:
-        # Simplified for other periodicities
-        proximo_vencimento = hoje.replace(day=dia_vencimento)
+        # Simplified for other periodicities (annual, etc.)
+        try:
+            proximo_vencimento = hoje.replace(day=dia_vencimento)
+        except ValueError:
+            import calendar
+            last_day = calendar.monthrange(hoje.year, hoje.month)[1]
+            proximo_vencimento = hoje.replace(day=min(dia_vencimento, last_day))
     
     obrigacao_dict = {
         "id": str(uuid.uuid4()),
