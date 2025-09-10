@@ -378,11 +378,14 @@ class MacedoSIAPITester:
         # Test payment processing (baixa)
         if hasattr(self, 'test_conta_id') and self.test_conta_id:
             baixa_data = {
-                "valor_recebido": 1500.00,
                 "data_recebimento": "2025-01-20",
-                "desconto": 0.0,
-                "acrescimo": 0.0,
-                "observacao": "Pagamento realizado via PIX"
+                "valor_recebido": 1500.00,
+                "forma_pagamento": "pix",
+                "desconto_aplicado": 0.0,
+                "acrescimo_aplicado": 0.0,
+                "troco": 0.0,
+                "observacao": "Pagamento realizado via PIX",
+                "usuario_responsavel": "Admin Teste"
             }
             
             success, response = self.make_request("PUT", f"/financial/contas-receber/{self.test_conta_id}/baixa", 
