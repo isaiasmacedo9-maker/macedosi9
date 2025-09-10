@@ -44,12 +44,31 @@ async def create_obrigacao(
     dia_vencimento = obrigacao_data.dia_vencimento
     
     if obrigacao_data.periodicidade == PeriodicidadeObrigacao.MENSAL:
-        proximo_vencimento = hoje.replace(day=dia_vencimento)
+        # Handle months with fewer days than the due day
+        try:
+            proximo_vencimento = hoje.replace(day=dia_vencimento)
+        except ValueError:
+            # If day doesn't exist in current month, use last day of month
+            import calendar
+            last_day = calendar.monthrange(hoje.year, hoje.month)[1]
+            proximo_vencimento = hoje.replace(day=min(dia_vencimento, last_day))
+        
         if proximo_vencimento <= hoje:
+            # Move to next month
             if hoje.month == 12:
-                proximo_vencimento = proximo_vencimento.replace(year=hoje.year + 1, month=1)
+                next_year = hoje.year + 1
+                next_month = 1
             else:
-                proximo_vencimento = proximo_vencimento.replace(month=hoje.month + 1)
+                next_year = hoje.year
+                next_month = hoje.month + 1
+            
+            try:
+                proximo_vencimento = proximo_vencimento.replace(year=next_year, month=next_month, day=dia_vencimento)
+            except ValueError:
+                # Handle case where next month doesn't have the due day
+                import calendar
+                last_day = calendar.monthrange(next_year, next_month)[1]
+                proximo_vencimento = proximo_vencimento.replace(year=next_year, month=next_month, day=min(dia_vencimento, last_day))
     elif obrigacao_data.periodicidade == PeriodicidadeObrigacao.TRIMESTRAL:
         # Calculate next quarter
         trimestre_atual = (hoje.month - 1) // 3 + 1
