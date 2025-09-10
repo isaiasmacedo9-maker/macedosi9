@@ -125,11 +125,7 @@ async def get_conta_receber(
 @router.put("/contas-receber/{conta_id}/baixa")
 async def baixar_conta_receber(
     conta_id: str,
-    valor_recebido: float,
-    data_recebimento: date,
-    desconto: float = 0.0,
-    acrescimo: float = 0.0,
-    observacao: str = "",
+    pagamento_data: PagamentoTitulo,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Dar baixa em conta a receber"""
@@ -147,20 +143,20 @@ async def baixar_conta_receber(
     
     # Update conta
     historico_action = HistoricoAlteracao(
-        data=datetime.utcnow(),
         acao="Baixa realizada",
         usuario=current_user.name,
-        observacao=observacao,
-        valor_novo=str(valor_recebido)
+        observacao=pagamento_data.observacao or "Pagamento recebido",
+        valor_novo=str(pagamento_data.valor_recebido)
     )
     
     update_data = {
-        "situacao": SituacaoTitulo.PAGO,
-        "data_recebimento": data_recebimento,
-        "desconto_aplicado": desconto,
-        "acrescimo_aplicado": acrescimo,
-        "valor_quitado": valor_recebido,
-        "total_liquido": conta.valor_original - desconto + acrescimo,
+        "situacao": SituacaoTitulo.PAGO.value,
+        "data_recebimento": datetime.combine(pagamento_data.data_recebimento, datetime.min.time()),
+        "desconto_aplicado": pagamento_data.desconto_aplicado,
+        "acrescimo_aplicado": pagamento_data.acrescimo_aplicado,
+        "valor_quitado": pagamento_data.valor_recebido,
+        "troco": pagamento_data.troco,
+        "total_liquido": conta.valor_original - pagamento_data.desconto_aplicado + pagamento_data.acrescimo_aplicado,
         "updated_at": datetime.utcnow(),
         "$push": {"historico_alteracoes": historico_action.model_dump()}
     }
