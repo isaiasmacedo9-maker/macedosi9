@@ -186,11 +186,17 @@ async def baixar_conta_receber(
         "valor_quitado": pagamento_data.valor_recebido,
         "troco": pagamento_data.troco,
         "total_liquido": conta.valor_original - pagamento_data.desconto_aplicado + pagamento_data.acrescimo_aplicado,
-        "updated_at": datetime.utcnow(),
-        "$push": {"historico_alteracoes": historico_action.model_dump()}
+        "updated_at": datetime.utcnow()
     }
     
-    await contas_collection.update_one({"id": conta_id}, {"$set": update_data})
+    # Update the document with both $set and $push operations
+    await contas_collection.update_one(
+        {"id": conta_id}, 
+        {
+            "$set": update_data,
+            "$push": {"historico_alteracoes": historico_action.model_dump()}
+        }
+    )
     
     # Get updated conta
     updated_conta_data = await contas_collection.find_one({"id": conta_id})
