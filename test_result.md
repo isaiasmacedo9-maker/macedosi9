@@ -195,6 +195,93 @@ backend:
         agent: "testing"
         comment: "API de clientes financeiros implementada e testada. GET funcionando, POST precisa ajuste em campos obrigatórios mas estrutura está correta"
 
+  - task: "Modelos expandidos Trabalhista - Solicitações, Funcionários e Obrigações"
+    implemented: true
+    working: true
+    file: "models/trabalhista.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Modelos trabalhistas expandidos funcionando corretamente. Enums implementados (TipoSolicitacao, StatusSolicitacao, TipoContrato, TipoAfastamento, PeriodicidadeObrigacao), serialização de datas para MongoDB funcionando, validações de campos obrigatórios operacionais."
+
+  - task: "Rotas Trabalhista - APIs completas Solicitações"
+    implemented: true
+    working: true
+    file: "routes/trabalhista.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "TODAS AS FUNCIONALIDADES TESTADAS E FUNCIONANDO: ✅ CRUD completo de solicitações trabalhistas ✅ Filtros avançados (tipo, status, responsável, período) ✅ Sistema de histórico de alterações ✅ Controle de acesso por setor ✅ Compatibilidade com rotas legadas. Correção aplicada: serialização de datas para MongoDB."
+
+  - task: "Rotas Trabalhista - APIs Funcionários"
+    implemented: true
+    working: true
+    file: "routes/trabalhista.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "ERRO CRÍTICO - Endpoint de criação de funcionários retornando erro 500. Erro BSON: cannot encode object datetime.date - datas não estão sendo convertidas para datetime antes de salvar no MongoDB."
+      - working: true
+        agent: "testing"
+        comment: "CORRIGIDO E VALIDADO - Problema de serialização de datas resolvido. CRUD de funcionários 100% operacional: ✅ Criação com dados pessoais e contratuais ✅ Listagem com filtros ✅ Busca por nome, CPF, função ✅ Conversão automática de date para datetime para MongoDB."
+
+  - task: "Rotas Trabalhista - APIs Obrigações"
+    implemented: true
+    working: true
+    file: "routes/trabalhista.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Sistema de obrigações trabalhistas funcionando: ✅ CRUD completo ✅ Cálculo automático de próximo vencimento ✅ Filtros por empresa, status, vencimento ✅ Suporte a diferentes periodicidades (mensal, bimestral, trimestral, semestral, anual)."
+
+  - task: "Dashboard e Relatórios Trabalhista"
+    implemented: true
+    working: true
+    file: "routes/trabalhista.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Dashboard e relatórios funcionando: ✅ Estatísticas por status de solicitações ✅ Contagem de funcionários ativos ✅ Obrigações vencendo (próximos 30 dias) ✅ Relatório mensal com admissões/demissões ✅ Solicitações por tipo."
+
+  - task: "Collections MongoDB Trabalhista"
+    implemented: true
+    working: true
+    file: "database.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Collections MongoDB criadas e funcionando: trabalhista, funcionarios, obrigacoes_trabalhistas, checklists_trabalhistas. Operações de CRUD testadas com sucesso."
+
+  - task: "Compatibilidade Rotas Legadas Trabalhista"
+    implemented: true
+    working: true
+    file: "routes/trabalhista.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Rotas legadas funcionando: ✅ GET /api/trabalhista/ ✅ POST /api/trabalhista/ - Redirecionamento para novos endpoints funcionando corretamente, mantendo compatibilidade com sistemas existentes."
+
 frontend:
   - task: "Interface Contas a Receber expandida"
     implemented: false
