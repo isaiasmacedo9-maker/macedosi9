@@ -683,19 +683,225 @@ class MacedoSIAPITester:
             self.log_test("Legacy POST trabalhista", False, response.get("error", ""))
 
     def test_fiscal_endpoints(self):
-        """Test fiscal endpoints"""
+        """Test comprehensive fiscal endpoints"""
         print("\n🔍 Testing Fiscal Endpoints...")
         
-        for user_type, token in self.tokens.items():
-            success, response = self.make_request("GET", "/fiscal/obrigacoes", token=token)
+        # Only test with admin token for comprehensive testing
+        if "admin" not in self.tokens:
+            print("❌ No admin token available for fiscal testing")
+            return
+            
+        admin_token = self.tokens["admin"]
+        
+        # Test obrigações fiscais CRUD
+        self.test_obrigacoes_fiscais_crud(admin_token)
+        
+        # Test notas fiscais CRUD
+        self.test_notas_fiscais_crud(admin_token)
+        
+        # Test dashboard stats
+        self.test_fiscal_dashboard_stats(admin_token)
+        
+        # Test relatórios
+        self.test_fiscal_relatorios(admin_token)
+        
+        # Test legacy endpoints
+        self.test_fiscal_legacy_endpoints(admin_token)
+
+    def test_obrigacoes_fiscais_crud(self, token):
+        """Test obrigações fiscais CRUD operations"""
+        print("\n📋 Testing Obrigações Fiscais CRUD...")
+        
+        # Test GET obrigações
+        success, response = self.make_request("GET", "/fiscal/obrigacoes", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get obrigações fiscais", True, f"Found {count} obrigações")
+        else:
+            self.log_test("Get obrigações fiscais", False, response.get("error", ""))
+        
+        # Test POST - Create new obrigação
+        test_obrigacao_data = {
+            "empresa_id": "emp-001",
+            "empresa": "Empresa Teste LTDA",
+            "tipo": "pgdas",
+            "nome": "PGDAS Janeiro 2025",
+            "descricao": "Programa Gerador do DAS - Simples Nacional",
+            "periodicidade": "mensal",
+            "dia_vencimento": 20,
+            "responsavel": "João Silva",
+            "regime_tributario": "simples_nacional",
+            "observacoes": "Entrega até o dia 20 de cada mês",
+            "valor": 1500.00
+        }
+        
+        success, response = self.make_request("POST", "/fiscal/obrigacoes", token=token, data=test_obrigacao_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create obrigação fiscal", True, f"Created obrigação with ID: {created_id}")
+            self.test_obrigacao_id = created_id
+        else:
+            self.log_test("Create obrigação fiscal", False, response.get("error", ""))
+        
+        # Test GET specific obrigação by ID
+        if hasattr(self, 'test_obrigacao_id') and self.test_obrigacao_id:
+            success, response = self.make_request("GET", f"/fiscal/obrigacoes/{self.test_obrigacao_id}", token=token)
             if success:
-                count = len(response) if isinstance(response, list) else 0
-                self.log_test(f"Get fiscal obligations - {user_type}", True, f"Found {count} obligations")
+                self.log_test("Get obrigação by ID", True, f"Retrieved obrigação: {response.get('nome', 'Unknown')}")
             else:
-                if "403" in str(response.get("error", "")):
-                    self.log_test(f"Get fiscal obligations - {user_type}", True, "Access restricted (expected for non-fiscal users)")
-                else:
-                    self.log_test(f"Get fiscal obligations - {user_type}", False, response.get("error", ""))
+                self.log_test("Get obrigação by ID", False, response.get("error", ""))
+            
+            # Test PUT - Update obrigação
+            update_data = {
+                "status": "em_andamento",
+                "observacoes": "Documentos em preparação"
+            }
+            
+            success, response = self.make_request("PUT", f"/fiscal/obrigacoes/{self.test_obrigacao_id}", token=token, data=update_data)
+            if success:
+                self.log_test("Update obrigação fiscal", True, f"Updated status to: {response.get('status', 'unknown')}")
+            else:
+                self.log_test("Update obrigação fiscal", False, response.get("error", ""))
+        
+        # Test advanced search with filters
+        search_params = {
+            "tipo": "pgdas",
+            "status": "em_andamento",
+            "responsavel": "João",
+            "search": "PGDAS"
+        }
+        
+        success, response = self.make_request("GET", "/fiscal/obrigacoes", token=token, data=search_params)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search obrigações with filters", True, f"Found {count} matching obrigações")
+        else:
+            self.log_test("Search obrigações with filters", False, response.get("error", ""))
+
+    def test_notas_fiscais_crud(self, token):
+        """Test notas fiscais CRUD operations"""
+        print("\n📄 Testing Notas Fiscais CRUD...")
+        
+        # Test GET notas fiscais
+        success, response = self.make_request("GET", "/fiscal/notas-fiscais", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get notas fiscais", True, f"Found {count} notas fiscais")
+        else:
+            self.log_test("Get notas fiscais", False, response.get("error", ""))
+        
+        # Test POST - Create new nota fiscal
+        test_nota_data = {
+            "empresa_id": "emp-001",
+            "empresa": "Empresa Teste LTDA",
+            "tipo": "saida",
+            "numero": 1001,
+            "serie": "1",
+            "chave_nfe": "35250112345678000190550010000010011234567890",
+            "data_emissao": "2025-01-15",
+            "emitente_cnpj": "12.345.678/0001-90",
+            "emitente_razao_social": "Empresa Teste LTDA",
+            "destinatario_cnpj": "98.765.432/0001-10",
+            "destinatario_razao_social": "Cliente Teste LTDA",
+            "valor_total": 2500.00,
+            "valor_produtos": 2500.00,
+            "valor_servicos": 0.0,
+            "cfop": "5102",
+            "natureza_operacao": "Venda de mercadoria"
+        }
+        
+        success, response = self.make_request("POST", "/fiscal/notas-fiscais", token=token, data=test_nota_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create nota fiscal", True, f"Created nota fiscal with ID: {created_id}")
+            self.test_nota_id = created_id
+        else:
+            self.log_test("Create nota fiscal", False, response.get("error", ""))
+        
+        # Test search notas fiscais with filters
+        search_params = {
+            "tipo": "saida",
+            "emitente_cnpj": "12.345.678",
+            "valor_minimo": 2000.0,
+            "valor_maximo": 3000.0
+        }
+        
+        success, response = self.make_request("GET", "/fiscal/notas-fiscais", token=token, data=search_params)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search notas fiscais with filters", True, f"Found {count} matching notas")
+        else:
+            self.log_test("Search notas fiscais with filters", False, response.get("error", ""))
+        
+        # Test XML upload endpoint (without actual file)
+        success, response = self.make_request("POST", "/fiscal/notas-fiscais/upload-xml?empresa_id=emp-001", 
+                                            token=token, expected_status=422)  # Expect validation error without file
+        if success or "422" in str(response.get("error", "")):
+            self.log_test("XML upload endpoint availability", True, "Endpoint accepts requests (validation error expected without file)")
+        else:
+            self.log_test("XML upload endpoint availability", False, response.get("error", ""))
+
+    def test_fiscal_dashboard_stats(self, token):
+        """Test fiscal dashboard statistics"""
+        print("\n📊 Testing Fiscal Dashboard Statistics...")
+        
+        success, response = self.make_request("GET", "/fiscal/dashboard-stats", token=token)
+        if success:
+            stats = response
+            obrigacoes_stats = stats.get("obrigacoes_por_status", {})
+            obrigacoes_vencendo = stats.get("obrigacoes_vencendo", 0)
+            notas_mes = stats.get("notas_fiscais_mes", 0)
+            
+            self.log_test("Fiscal dashboard stats", True, 
+                         f"Obrigações vencendo: {obrigacoes_vencendo}, Notas mês: {notas_mes}, Status groups: {len(obrigacoes_stats)}")
+        else:
+            self.log_test("Fiscal dashboard stats", False, response.get("error", ""))
+
+    def test_fiscal_relatorios(self, token):
+        """Test fiscal reports"""
+        print("\n📈 Testing Fiscal Reports...")
+        
+        # Test impostos report
+        success, response = self.make_request("GET", "/fiscal/relatorios/impostos?periodo=2025-01", token=token)
+        if success:
+            detalhes = response.get("detalhes_por_tipo", [])
+            resumo = response.get("resumo_geral", {})
+            self.log_test("Impostos report", True, 
+                         f"Generated report with {len(detalhes)} type details, total impostos: R${resumo.get('total_impostos', 0)}")
+        else:
+            self.log_test("Impostos report", False, response.get("error", ""))
+
+    def test_fiscal_legacy_endpoints(self, token):
+        """Test legacy fiscal endpoints for backward compatibility"""
+        print("\n🔄 Testing Legacy Fiscal Endpoints...")
+        
+        # Test legacy GET endpoint
+        success, response = self.make_request("GET", "/fiscal/", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Legacy GET fiscal", True, f"Found {count} obrigações via legacy endpoint")
+        else:
+            self.log_test("Legacy GET fiscal", False, response.get("error", ""))
+        
+        # Test legacy POST endpoint
+        test_legacy_data = {
+            "empresa_id": "emp-002",
+            "empresa": "Empresa Legacy LTDA",
+            "tipo": "defis",
+            "nome": "DEFIS 2024",
+            "descricao": "Declaração de Informações Socioeconômicas e Fiscais",
+            "periodicidade": "anual",
+            "dia_vencimento": 31,
+            "responsavel": "Admin Teste",
+            "regime_tributario": "simples_nacional"
+        }
+        
+        success, response = self.make_request("POST", "/fiscal/", token=token, data=test_legacy_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Legacy POST fiscal", True, f"Created via legacy endpoint with ID: {created_id}")
+        else:
+            self.log_test("Legacy POST fiscal", False, response.get("error", ""))
 
     def test_atendimento_endpoints(self):
         """Test atendimento endpoints"""
