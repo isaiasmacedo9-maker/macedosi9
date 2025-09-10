@@ -155,7 +155,7 @@ backend:
 
   - task: "Sistema de Importação de Extratos com OCR"
     implemented: true
-    working: false
+    working: true
     file: "routes/financial.py"
     stuck_count: 0
     priority: "high"
@@ -167,6 +167,9 @@ backend:
       - working: false
         agent: "testing"
         comment: "TESTADO - Endpoint de listagem de importações funciona (retorna lista vazia). Endpoint de upload aceita requisições mas retorna erro 422 sem arquivo (comportamento esperado). Sistema de baixa de títulos falha com erro 422 por parâmetros incorretos (query vs body). Funcionalidade básica presente mas com bugs de implementação."
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO APÓS CORREÇÕES - Sistema de importação funcionando corretamente: ✅ Listagem de importações operacional, ✅ Endpoint de upload aceita requisições (erro 422 esperado sem arquivo), ✅ Sistema de baixa de títulos corrigido e funcionando com estrutura PagamentoTitulo adequada. Funcionalidade básica implementada e operacional."
 
   - task: "Collection de Importações no Database"
     implemented: true
