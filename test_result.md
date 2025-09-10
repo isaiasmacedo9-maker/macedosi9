@@ -126,11 +126,14 @@ backend:
     file: "models/client.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: "Modelos de cliente expandidos com enums, validações de CNPJ e email, filtros e todos os campos especificados"
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO - Endpoints de clientes funcionando corretamente. Retorna lista vazia (sem dados) mas estrutura operacional. Controle de acesso por setor funcionando adequadamente."
 
   - task: "Rotas Financial - APIs completas Contas a Receber"
     implemented: true
