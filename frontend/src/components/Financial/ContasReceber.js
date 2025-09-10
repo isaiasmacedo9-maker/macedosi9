@@ -489,8 +489,19 @@ const ContasReceber = () => {
         </div>
       </div>
 
-      {/* Modals would go here - CreateModal, PaymentModal, ContactModal, ImportModal */}
-      {/* Implementation of modals would be added in separate components */}
+      {/* Modals */}
+      <CreateContaModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={handleCreateConta}
+      />
+
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => {setShowPaymentModal(false); setSelectedConta(null);}}
+        onSubmit={handlePayment}
+        conta={selectedConta}
+      />
       
     </div>
   );
