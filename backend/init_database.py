@@ -1010,6 +1010,172 @@ async def init_atendimento_data():
             data_abertura=date(2025, 1, 22),
             sla=datetime(2025, 1, 23, 18, 0, 0),
             observacoes="Aguardando retorno da Receita Federal"
+        ),
+        Ticket(
+            empresa_id="4",
+            empresa="Supermercado Bom Preço Ltda",
+            titulo="Problema no Sistema Fiscal",
+            descricao="Sistema não está emitindo NFCe corretamente",
+            prioridade="urgente",
+            status="em_andamento",
+            responsavel="Carlos Oliveira",
+            canal="telefone",
+            data_abertura=date(2025, 1, 25),
+            sla=datetime(2025, 1, 25, 20, 0, 0),
+            conversas=[
+                Conversa(
+                    data=datetime(2025, 1, 25, 9, 0, 0),
+                    usuario="Ana Costa",
+                    mensagem="Sistema travando ao emitir NFCe desde ontem"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 25, 9, 30, 0),
+                    usuario="Carlos Oliveira",
+                    mensagem="Vou verificar a configuração do sistema fiscal"
+                )
+            ],
+            observacoes="Cliente com alta demanda de vendas, prioridade máxima"
+        ),
+        Ticket(
+            empresa_id="7",
+            empresa="Restaurante Sabor Caseiro Ltda",
+            titulo="Treinamento sobre Nota Fiscal",
+            descricao="Funcionários precisam de treinamento para emissão de NF",
+            prioridade="baixa",
+            status="aberto",
+            responsavel="Isabella Santos",
+            canal="presencial",
+            data_abertura=date(2025, 1, 28),
+            sla=datetime(2025, 1, 30, 17, 0, 0),
+            observacoes="Agendar visita para treinamento da equipe"
+        ),
+        Ticket(
+            empresa_id="8",
+            empresa="Loja de Roupas Fashion Store Ltda",
+            titulo="Consultoria sobre Regime Tributário",
+            descricao="Análise para possível mudança de regime tributário",
+            prioridade="media",
+            status="aguardando_cliente",
+            responsavel="Maria Santos",
+            canal="email",
+            data_abertura=date(2025, 1, 20),
+            sla=datetime(2025, 1, 22, 18, 0, 0),
+            conversas=[
+                Conversa(
+                    data=datetime(2025, 1, 20, 10, 0, 0),
+                    usuario="Isabella Santos",
+                    mensagem="Gostaria de avaliar se vale a pena mudar para Lucro Real"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 20, 14, 0, 0),
+                    usuario="Maria Santos",
+                    mensagem="Preciso dos dados de faturamento dos últimos 12 meses"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 21, 16, 0, 0),
+                    usuario="Maria Santos",
+                    mensagem="Aguardando envio da documentação solicitada"
+                )
+            ]
+        ),
+        Ticket(
+            empresa_id="11",
+            empresa="Transportadora Rápida Ltda",
+            titulo="Regularização Fiscal Urgente",
+            descricao="Empresa com pendências na Receita Federal",
+            prioridade="urgente",
+            status="em_andamento",
+            responsavel="Carlos Oliveira",
+            canal="telefone",
+            data_abertura=date(2025, 1, 15),
+            sla=datetime(2025, 1, 16, 12, 0, 0),
+            observacoes="Pendências podem impactar operação da empresa",
+            conversas=[
+                Conversa(
+                    data=datetime(2025, 1, 15, 8, 0, 0),
+                    usuario="Sr. Antonio Carlos",
+                    mensagem="Recebi notificação da Receita sobre irregularidades"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 15, 10, 0, 0),
+                    usuario="Carlos Oliveira",
+                    mensagem="Já estou providenciando a regularização. Enviei a documentação."
+                )
+            ]
+        ),
+        Ticket(
+            empresa_id="6",
+            empresa="Farmácia Vida & Saúde Ltda",
+            titulo="Dúvida sobre Medicamentos Controlados",
+            descricao="Esclarecimentos sobre escrituração de medicamentos controlados",
+            prioridade="media",
+            status="resolvido",
+            responsavel="Dra. Paula Lima",
+            canal="whatsapp",
+            data_abertura=date(2025, 1, 18),
+            sla=datetime(2025, 1, 19, 18, 0, 0),
+            conversas=[
+                Conversa(
+                    data=datetime(2025, 1, 18, 14, 0, 0),
+                    usuario="Dra. Paula Lima",
+                    mensagem="Como devo escriturar a venda de medicamentos controlados?"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 18, 15, 30, 0),
+                    usuario="Maria Santos",
+                    mensagem="Enviei por email o manual completo de escrituração"
+                )
+            ]
+        ),
+        Ticket(
+            empresa_id="9",
+            empresa="Escola Técnica Futuro Ltda",
+            titulo="Orientação sobre INSS Educação",
+            descricao="Dúvidas sobre recolhimento de INSS para instituição de ensino",
+            prioridade="alta",
+            status="fechado",
+            responsavel="Prof. Marcus Vinícius",
+            canal="email",
+            data_abertura=date(2025, 1, 12),
+            sla=datetime(2025, 1, 14, 18, 0, 0),
+            observacoes="Caso resolvido com sucesso, orientações implementadas"
+        ),
+        Ticket(
+            empresa_id="5",
+            empresa="Oficina Mecânica do Zé Ltda",
+            titulo="Problema com Alvará de Funcionamento",
+            descricao="Alvará vencido, precisa de renovação urgente",
+            prioridade="alta",
+            status="aberto",
+            responsavel="José Ferreira",
+            canal="presencial",
+            data_abertura=date(2025, 1, 29),
+            sla=datetime(2025, 1, 31, 17, 0, 0),
+            observacoes="Cliente veio pessoalmente solicitar urgência na renovação"
+        ),
+        Ticket(
+            empresa_id="10",
+            empresa="Petshop Amigo Fiel ME",
+            titulo="Orientação MEI",
+            descricao="Esclarecimentos sobre limites e obrigações do MEI",
+            prioridade="baixa",
+            status="resolvido",
+            responsavel="Dra. Carla",
+            canal="whatsapp",
+            data_abertura=date(2025, 1, 16),
+            sla=datetime(2025, 1, 18, 18, 0, 0),
+            conversas=[
+                Conversa(
+                    data=datetime(2025, 1, 16, 11, 0, 0),
+                    usuario="Dra. Carla",
+                    mensagem="Posso prestar serviços veterinários sendo MEI?"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 16, 14, 0, 0),
+                    usuario="João Silva",
+                    mensagem="Sim, desde que não ultrapasse o limite de faturamento anual"
+                )
+            ]
         )
     ]
     
