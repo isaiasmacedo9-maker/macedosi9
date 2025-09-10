@@ -18,7 +18,7 @@ from database import (
     connect_to_mongo, close_mongo_connection,
     get_users_collection, get_clients_collection, get_financial_clients_collection,
     get_contas_receber_collection, get_trabalhista_collection, get_fiscal_collection,
-    get_atendimento_collection, get_configuracoes_collection
+    get_atendimento_collection, get_configuracoes_collection, get_chats_collection
 )
 
 async def init_users():
