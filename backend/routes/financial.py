@@ -507,6 +507,451 @@ async def relatorio_recebimentos(
         "data_geracao": datetime.utcnow()
     }
 
+# Importação de Extratos
+@router.post("/extrato/importar", response_model=ImportacaoExtrato)
+async def importar_extrato(
+    arquivo: UploadFile = File(...),
+    conta_bancaria: str = Query(...),
+    cidade: str = Query(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Import bank statement (PDF/CSV)"""
+    check_financial_access(current_user)
+    
+    # Validate file type
+    if not arquivo.filename.lower().endswith(('.pdf', '.csv')):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF and CSV files are supported"
+        )
+    
+    # Create import record
+    importacao = ImportacaoExtrato(
+        nome_arquivo=arquivo.filename,
+        tipo_arquivo=arquivo.filename.split('.')[-1].upper(),
+        conta_bancaria=conta_bancaria,
+        cidade=cidade,
+        usuario_responsavel=current_user.name,
+        total_movimentos=0,
+        status="processando"
+    )
+    
+    # Save import record
+    importacoes_collection = await get_importacoes_extrato_collection()
+    await importacoes_collection.insert_one(importacao.model_dump())
+    
+    try:
+        # Read file content
+        conteudo = await arquivo.read()
+        
+        # Process file based on type
+        if arquivo.filename.lower().endswith('.pdf'):
+            movimentos = await processar_pdf_extrato(conteudo, importacao.id)
+        else:  # CSV
+            movimentos = await processar_csv_extrato(conteudo, importacao.id)
+        
+        # Update import record
+        importacao.movimentos = movimentos
+        importacao.total_movimentos = len(movimentos)
+        importacao.status = "processando_matches"
+        importacao.log_processamento.append(f"Arquivo processado: {len(movimentos)} movimentos encontrados")
+        
+        await importacoes_collection.update_one(
+            {"id": importacao.id},
+            {"$set": importacao.model_dump()}
+        )
+        
+        # Try automatic matching
+        baixas_automaticas = await processar_conciliacao_automatica(importacao.id, current_user.name)
+        
+        # Final update
+        importacao.baixas_automaticas = baixas_automaticas
+        importacao.pendentes_classificacao = len([m for m in movimentos if m.status_classificacao == "pendente"])
+        importacao.status = "concluido"
+        importacao.log_processamento.append(f"Conciliação automática: {baixas_automaticas} títulos baixados")
+        
+        await importacoes_collection.update_one(
+            {"id": importacao.id},
+            {"$set": importacao.model_dump()}
+        )
+        
+        return importacao
+        
+    except Exception as e:
+        # Update import with error
+        importacao.status = "erro"
+        importacao.log_processamento.append(f"Erro no processamento: {str(e)}")
+        
+        await importacoes_collection.update_one(
+            {"id": importacao.id},
+            {"$set": importacao.model_dump()}
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing file: {str(e)}"
+        )
+
+async def processar_pdf_extrato(conteudo: bytes, importacao_id: str) -> List[MovimentoExtrato]:
+    """Process PDF bank statement using basic text extraction"""
+    try:
+        # Simple PDF text extraction (would need PyPDF2 or similar for production)
+        # For now, we'll create a mock implementation
+        text_content = conteudo.decode('utf-8', errors='ignore')
+        
+        movimentos = []
+        lines = text_content.split('\n')
+        
+        for line in lines:
+            # Try to find patterns that look like bank movements
+            # This is a simplified version - real implementation would be more robust
+            if re.search(r'\d{2}/\d{2}/\d{4}.*\d+[,\.]\d{2}', line):
+                movimento = extrair_movimento_da_linha(line)
+                if movimento:
+                    movimentos.append(movimento)
+        
+        return movimentos
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error processing PDF: {str(e)}"
+        )
+
+async def processar_csv_extrato(conteudo: bytes, importacao_id: str) -> List[MovimentoExtrato]:
+    """Process CSV bank statement"""
+    try:
+        text_content = conteudo.decode('utf-8')
+        lines = text_content.strip().split('\n')
+        
+        # Skip header if present
+        if lines and ('data' in lines[0].lower() or 'date' in lines[0].lower()):
+            lines = lines[1:]
+        
+        movimentos = []
+        for line in lines:
+            if line.strip():
+                campos = line.split(';')  # Try semicolon first
+                if len(campos) < 3:
+                    campos = line.split(',')  # Fallback to comma
+                
+                if len(campos) >= 3:
+                    movimento = criar_movimento_from_csv(campos)
+                    if movimento:
+                        movimentos.append(movimento)
+        
+        return movimentos
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error processing CSV: {str(e)}"
+        )
+
+def extrair_movimento_da_linha(linha: str) -> Optional[MovimentoExtrato]:
+    """Extract movement data from a text line"""
+    try:
+        # Pattern to extract date, description and value
+        date_pattern = r'(\d{2}/\d{2}/\d{4})'
+        value_pattern = r'([\d,\.]+)'
+        
+        date_match = re.search(date_pattern, linha)
+        if not date_match:
+            return None
+        
+        # Extract date
+        data_str = date_match.group(1)
+        data_movimento = datetime.strptime(data_str, '%d/%m/%Y').date()
+        
+        # Extract description (text between date and value)
+        descricao_match = re.search(f'{date_pattern}\\s*(.+?)\\s*{value_pattern}', linha)
+        descricao = descricao_match.group(2).strip() if descricao_match else linha.strip()
+        
+        # Extract value (last occurrence)
+        valores = re.findall(r'[\d,\.]+', linha)
+        if not valores:
+            return None
+        
+        valor_str = valores[-1].replace(',', '.')
+        valor = float(valor_str)
+        
+        # Determine if credit or debit (simple heuristic)
+        tipo_movimento = "credito" if "CREDITO" in linha.upper() or valor > 0 else "debito"
+        
+        # Try to extract CNPJ
+        cnpj_pattern = r'(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})'
+        cnpj_match = re.search(cnpj_pattern, descricao)
+        cnpj_detectado = cnpj_match.group(1) if cnpj_match else None
+        
+        return MovimentoExtrato(
+            data_movimento=data_movimento,
+            descricao_original=linha.strip(),
+            descricao_processada=descricao,
+            valor=abs(valor),
+            tipo_movimento=tipo_movimento,
+            cnpj_detectado=cnpj_detectado
+        )
+        
+    except Exception:
+        return None
+
+def criar_movimento_from_csv(campos: List[str]) -> Optional[MovimentoExtrato]:
+    """Create movement from CSV fields"""
+    try:
+        if len(campos) < 3:
+            return None
+        
+        # Assume: Date, Description, Value, [Balance]
+        data_str = campos[0].strip()
+        descricao = campos[1].strip()
+        valor_str = campos[2].strip().replace(',', '.')
+        saldo_str = campos[3].strip().replace(',', '.') if len(campos) > 3 else None
+        
+        # Parse date (try multiple formats)
+        data_movimento = None
+        for fmt in ['%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y']:
+            try:
+                data_movimento = datetime.strptime(data_str, fmt).date()
+                break
+            except ValueError:
+                continue
+        
+        if not data_movimento:
+            return None
+        
+        valor = float(valor_str)
+        saldo = float(saldo_str) if saldo_str else None
+        
+        # Determine movement type
+        tipo_movimento = "credito" if valor > 0 else "debito"
+        
+        # Try to extract CNPJ
+        cnpj_pattern = r'(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})'
+        cnpj_match = re.search(cnpj_pattern, descricao)
+        cnpj_detectado = cnpj_match.group(1) if cnpj_match else None
+        
+        return MovimentoExtrato(
+            data_movimento=data_movimento,
+            descricao_original=f"{data_str};{descricao};{valor_str}",
+            descricao_processada=descricao,
+            valor=abs(valor),
+            tipo_movimento=tipo_movimento,
+            saldo=saldo,
+            cnpj_detectado=cnpj_detectado
+        )
+        
+    except Exception:
+        return None
+
+async def processar_conciliacao_automatica(importacao_id: str, usuario: str) -> int:
+    """Process automatic reconciliation"""
+    importacoes_collection = await get_importacoes_extrato_collection()
+    contas_collection = await get_contas_receber_collection()
+    
+    importacao_data = await importacoes_collection.find_one({"id": importacao_id})
+    if not importacao_data:
+        return 0
+    
+    importacao = ImportacaoExtrato(**importacao_data)
+    baixas_realizadas = 0
+    
+    for movimento in importacao.movimentos:
+        if movimento.tipo_movimento != "credito":
+            continue  # Only process credit movements
+        
+        # Find matching títulos
+        candidatos = await encontrar_candidatos_conciliacao(movimento, contas_collection)
+        
+        # If single high-confidence match, process automatically
+        if len(candidatos) == 1 and candidatos[0]["score"] >= 80:
+            await realizar_baixa_automatica(candidatos[0]["titulo"], movimento, usuario, contas_collection)
+            movimento.status_classificacao = "classificado"
+            movimento.classificado_por = "sistema"
+            movimento.data_classificacao = datetime.utcnow()
+            baixas_realizadas += 1
+        elif candidatos:
+            # Set best candidate as suggestion
+            melhor_candidato = max(candidatos, key=lambda x: x["score"])
+            movimento.titulo_sugerido = melhor_candidato["titulo"]["id"]
+            movimento.score_match = melhor_candidato["score"]
+    
+    # Update import with processed movements
+    await importacoes_collection.update_one(
+        {"id": importacao_id},
+        {"$set": {"movimentos": [m.model_dump() for m in importacao.movimentos]}}
+    )
+    
+    return baixas_realizadas
+
+async def encontrar_candidatos_conciliacao(movimento: MovimentoExtrato, contas_collection) -> List[Dict]:
+    """Find matching candidates for reconciliation"""
+    candidatos = []
+    
+    # Query for open titles
+    query = {
+        "situacao": {"$in": [SituacaoTitulo.EM_ABERTO, SituacaoTitulo.ATRASADO]},
+        "total_liquido": {"$gte": movimento.valor - 0.50, "$lte": movimento.valor + 0.50}  # Value tolerance
+    }
+    
+    async for conta_data in contas_collection.find(query):
+        conta = ContaReceber(**conta_data)
+        score = calcular_score_match(movimento, conta)
+        
+        if score > 30:  # Minimum threshold
+            candidatos.append({
+                "titulo": conta_data,
+                "score": score
+            })
+    
+    return candidatos
+
+def calcular_score_match(movimento: MovimentoExtrato, conta: ContaReceber) -> float:
+    """Calculate matching score between movement and título"""
+    score = 0
+    
+    # Exact value match
+    if abs(movimento.valor - conta.total_liquido) < 0.01:
+        score += 40
+    elif abs(movimento.valor - conta.total_liquido) <= 0.50:
+        score += 20
+    
+    # CNPJ match
+    if movimento.cnpj_detectado and movimento.cnpj_detectado in conta.empresa:
+        score += 50
+    
+    # Date proximity (within 30 days of due date)
+    days_diff = abs((movimento.data_movimento - conta.data_vencimento).days)
+    if days_diff <= 7:
+        score += 15
+    elif days_diff <= 30:
+        score += 5
+    
+    # Text similarity (basic)
+    if any(word.lower() in movimento.descricao_processada.lower() 
+           for word in conta.empresa.split() if len(word) > 3):
+        score += 15
+    
+    return score
+
+async def realizar_baixa_automatica(titulo_data: Dict, movimento: MovimentoExtrato, usuario: str, contas_collection):
+    """Perform automatic payment"""
+    titulo = ContaReceber(**titulo_data)
+    
+    historico_action = HistoricoAlteracao(
+        acao="Baixa automática por importação",
+        usuario=usuario,
+        observacao=f"Conciliado automaticamente com movimento: {movimento.descricao_processada}"
+    )
+    
+    update_data = {
+        "situacao": SituacaoTitulo.PAGO,
+        "data_recebimento": movimento.data_movimento,
+        "valor_quitado": movimento.valor,
+        "updated_at": datetime.utcnow(),
+        "$push": {"historico_alteracoes": historico_action.model_dump()}
+    }
+    
+    await contas_collection.update_one({"id": titulo.id}, {"$set": update_data})
+
+@router.get("/extrato/importacoes", response_model=List[ImportacaoExtrato])
+async def listar_importacoes(
+    current_user: UserResponse = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100)
+):
+    """List import history"""
+    check_financial_access(current_user)
+    importacoes_collection = await get_importacoes_extrato_collection()
+    
+    query = {}
+    if current_user.role != "admin":
+        query["cidade"] = {"$in": current_user.allowed_cities}
+    
+    importacoes = []
+    async for importacao_data in importacoes_collection.find(query).skip(skip).limit(limit).sort("data_importacao", -1):
+        importacoes.append(ImportacaoExtrato(**importacao_data))
+    
+    return importacoes
+
+@router.get("/extrato/classificacao/{importacao_id}")
+async def obter_fila_classificacao(
+    importacao_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Get classification queue for manual processing"""
+    check_financial_access(current_user)
+    importacoes_collection = await get_importacoes_extrato_collection()
+    
+    importacao_data = await importacoes_collection.find_one({"id": importacao_id})
+    if not importacao_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Importação not found"
+        )
+    
+    importacao = ImportacaoExtrato(**importacao_data)
+    
+    # Get only unclassified movements
+    movimentos_pendentes = [m for m in importacao.movimentos if m.status_classificacao == "pendente"]
+    
+    return {
+        "importacao_id": importacao_id,
+        "total_pendentes": len(movimentos_pendentes),
+        "movimentos": movimentos_pendentes
+    }
+
+@router.post("/extrato/classificar-movimento")
+async def classificar_movimento(
+    classificacao: ClassificacaoMovimento,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Manually classify movement"""
+    check_financial_access(current_user)
+    importacoes_collection = await get_importacoes_extrato_collection()
+    contas_collection = await get_contas_receber_collection()
+    
+    importacao_data = await importacoes_collection.find_one({"id": classificacao.movimento_id.split('_')[0]})
+    if not importacao_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Importação not found"
+        )
+    
+    importacao = ImportacaoExtrato(**importacao_data)
+    
+    # Find and update movement
+    movimento_encontrado = None
+    for movimento in importacao.movimentos:
+        if movimento.id == classificacao.movimento_id:
+            movimento_encontrado = movimento
+            break
+    
+    if not movimento_encontrado:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Movimento not found"
+        )
+    
+    # Process classification
+    if classificacao.acao == "associar_titulo" and classificacao.titulo_id:
+        # Associate with existing título
+        titulo_data = await contas_collection.find_one({"id": classificacao.titulo_id})
+        if titulo_data:
+            await realizar_baixa_automatica(titulo_data, movimento_encontrado, current_user.name, contas_collection)
+    
+    # Update movement status
+    movimento_encontrado.status_classificacao = "classificado"
+    movimento_encontrado.classificado_por = current_user.name
+    movimento_encontrado.data_classificacao = datetime.utcnow()
+    
+    # Update import
+    await importacoes_collection.update_one(
+        {"id": importacao.id},
+        {"$set": {"movimentos": [m.model_dump() for m in importacao.movimentos]}}
+    )
+    
+    return {"message": "Movimento classificado com sucesso"}
+
 # Financial Clients
 @router.post("/clients", response_model=FinancialClient)
 async def create_financial_client(
