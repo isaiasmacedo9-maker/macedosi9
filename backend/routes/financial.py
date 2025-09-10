@@ -244,32 +244,54 @@ async def duplicate_conta_receber(
     
     # Create new conta based on original
     conta_original = ContaReceber(**conta_data)
-    nova_conta = ContaReceber(
-        empresa_id=conta_original.empresa_id,
-        empresa=conta_original.empresa,
-        descricao=conta_original.descricao,
-        documento=f"{conta_original.documento}-DUP",
-        tipo_documento=conta_original.tipo_documento,
-        forma_pagamento=conta_original.forma_pagamento,
-        conta=conta_original.conta,
-        centro_custo=conta_original.centro_custo,
-        plano_custo=conta_original.plano_custo,
-        data_emissao=date.today(),
-        data_vencimento=nova_data_vencimento,
-        valor_original=conta_original.valor_original,
-        cidade_atendimento=conta_original.cidade_atendimento,
-        usuario_responsavel=current_user.name,
-        historico_alteracoes=[
-            HistoricoAlteracao(
-                acao="Criado por duplicação",
-                usuario=current_user.name,
-                observacao=f"Duplicado do título {conta_id}"
-            )
-        ]
-    )
     
-    await contas_collection.insert_one(nova_conta.model_dump())
-    return nova_conta
+    # Create new conta dict manually to ensure proper serialization
+    nova_conta_dict = {
+        "id": str(uuid.uuid4()),
+        "empresa_id": conta_original.empresa_id,
+        "empresa": conta_original.empresa,
+        "situacao": SituacaoTitulo.EM_ABERTO.value,
+        "descricao": conta_original.descricao,
+        "documento": f"{conta_original.documento}-DUP",
+        "tipo_documento": conta_original.tipo_documento.value if hasattr(conta_original.tipo_documento, 'value') else conta_original.tipo_documento,
+        "forma_pagamento": conta_original.forma_pagamento.value if hasattr(conta_original.forma_pagamento, 'value') else conta_original.forma_pagamento,
+        "conta": conta_original.conta,
+        "centro_custo": conta_original.centro_custo,
+        "plano_custo": conta_original.plano_custo,
+        "data_emissao": datetime.combine(date.today(), datetime.min.time()),
+        "data_vencimento": datetime.combine(nova_data_vencimento, datetime.min.time()),
+        "valor_original": conta_original.valor_original,
+        "desconto_aplicado": 0.0,
+        "acrescimo_aplicado": 0.0,
+        "valor_quitado": 0.0,
+        "troco": 0.0,
+        "total_bruto": conta_original.valor_original,
+        "total_liquido": conta_original.valor_original,
+        "cidade_atendimento": conta_original.cidade_atendimento,
+        "usuario_responsavel": current_user.name,
+        "observacao": conta_original.observacao,
+        "data_recebimento": None,
+        "historico_alteracoes": [
+            {
+                "data": datetime.utcnow(),
+                "acao": "Criado por duplicação",
+                "usuario": current_user.name,
+                "observacao": f"Duplicado do título {conta_id}",
+                "campo_alterado": None,
+                "valor_anterior": None,
+                "valor_novo": None
+            }
+        ],
+        "contatos_cobranca": [],
+        "anexos": [],
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await contas_collection.insert_one(nova_conta_dict)
+    
+    # Convert back to model for response
+    return ContaReceber(**nova_conta_dict)
 
 # Cobrança e Contatos
 @router.post("/contas-receber/{conta_id}/contatos", response_model=ContatoCobranca)
