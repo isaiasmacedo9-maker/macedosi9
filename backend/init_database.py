@@ -394,6 +394,62 @@ async def init_financial_data():
                 tipo_empresa="lucro_presumido",
                 ultimo_pagamento=date(2025, 1, 10),
                 status_pagamento="em_dia"
+            ),
+            FinancialClient(
+                empresa_id="4",
+                empresa="Supermercado Bom Preço Ltda",
+                valor_com_desconto=1800.00,
+                valor_boleto=2000.00,
+                dia_vencimento=5,
+                tipo_honorario="mensal",
+                empresa_individual_grupo="individual",
+                contas_pagamento=["conta_corrente", "pix", "cartao"],
+                tipo_pagamento="recorrente",
+                tipo_empresa="lucro_presumido",
+                ultimo_pagamento=date(2025, 1, 5),
+                status_pagamento="em_dia"
+            ),
+            FinancialClient(
+                empresa_id="7",
+                empresa="Restaurante Sabor Caseiro Ltda",
+                valor_com_desconto=650.00,
+                valor_boleto=750.00,
+                dia_vencimento=20,
+                tipo_honorario="mensal",
+                empresa_individual_grupo="individual",
+                contas_pagamento=["conta_corrente"],
+                tipo_pagamento="recorrente",
+                tipo_empresa="simples",
+                ultimo_pagamento=date(2024, 12, 20),
+                status_pagamento="atrasado"
+            ),
+            FinancialClient(
+                empresa_id="8",
+                empresa="Loja de Roupas Fashion Store Ltda",
+                valor_com_desconto=1100.00,
+                valor_boleto=1250.00,
+                dia_vencimento=25,
+                tipo_honorario="mensal",
+                empresa_individual_grupo="grupo",
+                contas_pagamento=["pix"],
+                tipo_pagamento="recorrente",
+                tipo_empresa="lucro_presumido",
+                ultimo_pagamento=date(2025, 1, 25),
+                status_pagamento="em_dia"
+            ),
+            FinancialClient(
+                empresa_id="11",
+                empresa="Transportadora Rápida Ltda",
+                valor_com_desconto=2500.00,
+                valor_boleto=2800.00,
+                dia_vencimento=30,
+                tipo_honorario="mensal",
+                empresa_individual_grupo="individual",
+                contas_pagamento=["conta_corrente", "ted"],
+                tipo_pagamento="recorrente",
+                tipo_empresa="lucro_real",
+                ultimo_pagamento=date(2024, 12, 30),
+                status_pagamento="renegociado"
             )
         ]
         
