@@ -283,11 +283,13 @@ class MacedoSIAPITester:
         
         # Test renegotiation proposal
         proposal_data = {
+            "titulo_id": self.test_conta_id,
             "nova_data_vencimento": "2025-03-15",
             "novo_valor": 1350.00,
             "desconto_proposto": 150.00,
             "condicoes": "Pagamento à vista com desconto de 10%",
-            "observacao": "Cliente solicitou desconto para pagamento imediato"
+            "observacao": "Cliente solicitou desconto para pagamento imediato",
+            "usuario_responsavel": "Admin Teste"
         }
         
         success, response = self.make_request("POST", f"/financial/contas-receber/{self.test_conta_id}/proposta-renegociacao", token=token, data=proposal_data)
