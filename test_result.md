@@ -216,8 +216,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Rotas Financial - APIs completas Contas a Receber"
-    - "Sistema de Importação de Extratos com OCR"
+    - "Interface Contas a Receber expandida"
+    - "Interface Cadastro de Empresas expandida"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
