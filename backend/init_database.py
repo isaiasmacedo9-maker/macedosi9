@@ -254,6 +254,251 @@ async def init_financial_data():
         
         print(f"Initialized {len(contas)} contas a receber")
 
+async def init_trabalhista_data():
+    """Initialize trabalhista data"""
+    trabalhista_collection = await get_trabalhista_collection()
+    
+    # Check if trabalhista data already exists
+    count = await trabalhista_collection.count_documents({})
+    if count > 0:
+        print("Trabalhista data already exists, skipping initialization")
+        return
+    
+    solicitacoes = [
+        SolicitacaoTrabalhista(
+            empresa_id="1",
+            empresa="Padaria São João Ltda",
+            tipo="admissao",
+            descricao="Admissão de novo funcionário - Auxiliar de Padaria",
+            data_solicitacao=date(2025, 1, 15),
+            prazo=date(2025, 1, 20),
+            responsavel="João Silva",
+            status="em_andamento",
+            observacoes="Documentos recebidos, aguardando processamento",
+            funcionario=FuncionarioData(
+                nome="Maria da Silva",
+                cpf="123.456.789-00",
+                funcao="Auxiliar de Padaria",
+                salario=1500.00,
+                data_admissao=date(2025, 1, 18)
+            )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="2",
+            empresa="Auto Peças Norte Ltda", 
+            tipo="folha",
+            descricao="Processamento da folha de pagamento - Janeiro/2025",
+            data_solicitacao=date(2025, 1, 20),
+            prazo=date(2025, 1, 25),
+            responsavel="Maria Santos",
+            status="concluido",
+            observacoes="Folha processada e enviada",
+            detalhes=DetalheFolha(
+                total_funcionarios=8,
+                total_proventos=24000.00,
+                total_descontos=4800.00,
+                total_liquido=19200.00
+            )
+        )
+    ]
+    
+    for solicitacao in solicitacoes:
+        await trabalhista_collection.insert_one(solicitacao.model_dump(mode='json'))
+    
+    print(f"Initialized {len(solicitacoes)} trabalhista requests")
+
+async def init_fiscal_data():
+    """Initialize fiscal data"""
+    fiscal_collection = await get_fiscal_collection()
+    
+    # Check if fiscal data already exists
+    count = await fiscal_collection.count_documents({})
+    if count > 0:
+        print("Fiscal data already exists, skipping initialization")
+        return
+    
+    obrigacoes = [
+        ObrigacaoFiscal(
+            empresa_id="1",
+            empresa="Padaria São João Ltda",
+            tipo="pgdas",
+            nome="PGDAS - Simples Nacional Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 20),
+            responsavel="Maria Santos",
+            status="entregue",
+            valor=450.00,
+            data_entrega=date(2025, 2, 18),
+            observacoes="Entregue dentro do prazo"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="2",
+            empresa="Auto Peças Norte Ltda",
+            tipo="sped",
+            nome="SPED Fiscal Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 15),
+            responsavel="Carlos Oliveira",
+            status="em_andamento",
+            observacoes="Em processo de validação"
+        )
+    ]
+    
+    for obrigacao in obrigacoes:
+        await fiscal_collection.insert_one(obrigacao.model_dump(mode='json'))
+    
+    print(f"Initialized {len(obrigacoes)} fiscal obligations")
+
+async def init_atendimento_data():
+    """Initialize atendimento data"""
+    atendimento_collection = await get_atendimento_collection()
+    
+    # Check if atendimento data already exists
+    count = await atendimento_collection.count_documents({})
+    if count > 0:
+        print("Atendimento data already exists, skipping initialization")
+        return
+    
+    tickets = [
+        Ticket(
+            empresa_id="1",
+            empresa="Padaria São João Ltda",
+            titulo="Dúvida sobre PGDAS",
+            descricao="Cliente precisa de esclarecimentos sobre o valor do PGDAS",
+            prioridade="media",
+            status="resolvido",
+            responsavel="João Silva",
+            canal="whatsapp",
+            data_abertura=date(2025, 1, 10),
+            sla=datetime(2025, 1, 11, 18, 0, 0),
+            conversas=[
+                Conversa(
+                    data=datetime(2025, 1, 10, 14, 30, 0),
+                    usuario="Cliente",
+                    mensagem="Preciso entender por que o valor do PGDAS aumentou"
+                ),
+                Conversa(
+                    data=datetime(2025, 1, 10, 15, 0, 0),
+                    usuario="João Silva",
+                    mensagem="O aumento foi devido ao faturamento superior ao mês anterior"
+                )
+            ]
+        ),
+        Ticket(
+            empresa_id="2",
+            empresa="Auto Peças Norte Ltda",
+            titulo="Solicitação de Certidões",
+            descricao="Cliente precisa de certidões negativas atualizadas",
+            prioridade="alta",
+            status="em_andamento",
+            responsavel="Maria Santos",
+            canal="email",
+            data_abertura=date(2025, 1, 22),
+            sla=datetime(2025, 1, 23, 18, 0, 0),
+            observacoes="Aguardando retorno da Receita Federal"
+        )
+    ]
+    
+    for ticket in tickets:
+        await atendimento_collection.insert_one(ticket.model_dump(mode='json'))
+    
+    print(f"Initialized {len(tickets)} tickets")
+
+async def init_chat_data():
+    """Initialize chat data"""
+    from models.chat import Chat, Message
+    chats_collection = await get_chats_collection()
+    
+    # Check if chat data already exists
+    count = await chats_collection.count_documents({})
+    if count > 0:
+        print("Chat data already exists, skipping initialization")
+        return
+    
+    chats = [
+        Chat(
+            nome="Equipe Geral",
+            descricao="Chat geral da equipe",
+            tipo="grupo",
+            participantes=["admin-id", "colab-id", "fiscal-id"],
+            admin_id="admin-id",
+            mensagens=[
+                Message(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    mensagem="Bem-vindos ao sistema Macedo SI!",
+                    timestamp=datetime(2025, 1, 10, 9, 0, 0)
+                ),
+                Message(
+                    usuario_id="colab-id",
+                    usuario_nome="João Silva",
+                    mensagem="Obrigado! Sistema está funcionando perfeitamente.",
+                    timestamp=datetime(2025, 1, 10, 9, 30, 0)
+                )
+            ]
+        ),
+        Chat(
+            nome="Suporte Técnico",
+            descricao="Canal para questões técnicas",
+            tipo="suporte",
+            participantes=["admin-id"],
+            admin_id="admin-id",
+            mensagens=[
+                Message(
+                    usuario_id="admin-id",
+                    usuario_nome="Administrador",
+                    mensagem="Canal de suporte técnico ativo",
+                    timestamp=datetime(2025, 1, 10, 8, 0, 0)
+                )
+            ]
+        )
+    ]
+    
+    for chat in chats:
+        await chats_collection.insert_one(chat.model_dump())
+    
+    print(f"Initialized {len(chats)} chats")
+
+async def init_configuracoes_data():
+    """Initialize configuracoes data"""
+    configuracoes_collection = await get_configuracoes_collection()
+    
+    # Check if configuracoes data already exists
+    count = await configuracoes_collection.count_documents({})
+    if count > 0:
+        print("Configuracoes data already exists, skipping initialization")
+        return
+    
+    configs = [
+        Configuracoes(
+            setor="financeiro",
+            nome="Configurações Financeiras",
+            configuracoes={
+                "moeda_padrao": "BRL",
+                "taxa_juros": 1.0,
+                "dias_vencimento": 30,
+                "envio_automatico_boletos": True
+            },
+            updated_by="Administrador"
+        ),
+        Configuracoes(
+            setor="fiscal",
+            nome="Configurações Fiscais",
+            configuracoes={
+                "regime_tributario": "simples_nacional",
+                "aliquota_iss": 5.0,
+                "envio_automatico_sped": True,
+                "prazo_entrega": 15
+            },
+            updated_by="Administrador"
+        )
+    ]
+    
+    for config in configs:
+        await configuracoes_collection.insert_one(config.model_dump())
+    
+    print(f"Initialized {len(configs)} configurations")
+
 async def main():
     """Initialize all database collections"""
     print("🚀 Starting database initialization...")
@@ -264,6 +509,11 @@ async def main():
         await init_users()
         await init_clients()
         await init_financial_data()
+        await init_trabalhista_data()
+        await init_fiscal_data()
+        await init_atendimento_data()
+        await init_chat_data()
+        await init_configuracoes_data()
         print("✅ Database initialization completed successfully!")
     except Exception as e:
         print(f"❌ Error during initialization: {e}")
