@@ -317,6 +317,7 @@ test_plan:
   current_focus:
     - "Interface Contas a Receber expandida"
     - "Interface Cadastro de Empresas expandida"
+    - "Interface Trabalhista expandida"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
