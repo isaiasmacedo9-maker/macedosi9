@@ -153,12 +153,14 @@ class ContaReceber(BaseModel):
             return values['total_bruto'] - values['desconto_aplicado']
         return v
 
+# Modelos para criação e atualização
 class ContaReceberCreate(BaseModel):
     empresa_id: str
     empresa: str
     descricao: str
     documento: str
-    forma_pagamento: str
+    tipo_documento: TipoDocumento = TipoDocumento.BOLETO
+    forma_pagamento: FormaPagamento
     conta: str
     centro_custo: str
     plano_custo: str
@@ -169,6 +171,40 @@ class ContaReceberCreate(BaseModel):
     cidade_atendimento: str
     usuario_responsavel: str
 
+class ContaReceberUpdate(BaseModel):
+    empresa_id: Optional[str] = None
+    empresa: Optional[str] = None
+    situacao: Optional[SituacaoTitulo] = None
+    descricao: Optional[str] = None
+    documento: Optional[str] = None
+    tipo_documento: Optional[TipoDocumento] = None
+    forma_pagamento: Optional[FormaPagamento] = None
+    conta: Optional[str] = None
+    centro_custo: Optional[str] = None
+    plano_custo: Optional[str] = None
+    data_emissao: Optional[date] = None
+    data_vencimento: Optional[date] = None
+    valor_original: Optional[float] = None
+    desconto_aplicado: Optional[float] = None
+    acrescimo_aplicado: Optional[float] = None
+    valor_quitado: Optional[float] = None
+    troco: Optional[float] = None
+    cidade_atendimento: Optional[str] = None
+    data_recebimento: Optional[date] = None
+    observacao: Optional[str] = None
+    usuario_responsavel: Optional[str] = None
+
+class PagamentoTitulo(BaseModel):
+    data_recebimento: date
+    valor_recebido: float
+    forma_pagamento: FormaPagamento
+    desconto_aplicado: float = 0.0
+    acrescimo_aplicado: float = 0.0
+    troco: float = 0.0
+    observacao: Optional[str] = None
+    usuario_responsavel: str
+
+# Modelo para Cliente Financeiro
 class FinancialClient(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     empresa_id: str
@@ -176,14 +212,15 @@ class FinancialClient(BaseModel):
     valor_com_desconto: float
     valor_boleto: float
     dia_vencimento: int = Field(..., ge=1, le=31)
-    tipo_honorario: str = Field(..., pattern="^(mensal|avulso|anual)$")
-    empresa_individual_grupo: str = Field(..., pattern="^(individual|grupo)$")
+    tipo_honorario: TipoHonorario
+    empresa_individual_grupo: EmpresaTipo
     contas_pagamento: List[str]
-    tipo_pagamento: str = Field(..., pattern="^(recorrente|unico)$")
+    tipo_pagamento: TipoPagamento
     forma_pagamento_especial: Optional[str] = None
-    tipo_empresa: str
+    tipo_empresa: TipoEmpresa
     ultimo_pagamento: Optional[date] = None
-    status_pagamento: str = Field(..., pattern="^(em_dia|atrasado|renegociado)$")
+    status_pagamento: StatusPagamento = StatusPagamento.EM_DIA
+    observacoes: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -193,10 +230,109 @@ class FinancialClientCreate(BaseModel):
     valor_com_desconto: float
     valor_boleto: float
     dia_vencimento: int = Field(..., ge=1, le=31)
-    tipo_honorario: str = Field(..., pattern="^(mensal|avulso|anual)$")
-    empresa_individual_grupo: str = Field(..., pattern="^(individual|grupo)$")
+    tipo_honorario: TipoHonorario
+    empresa_individual_grupo: EmpresaTipo
     contas_pagamento: List[str]
-    tipo_pagamento: str = Field(..., pattern="^(recorrente|unico)$")
+    tipo_pagamento: TipoPagamento
     forma_pagamento_especial: Optional[str] = None
-    tipo_empresa: str
-    status_pagamento: str = Field(default="em_dia", pattern="^(em_dia|atrasado|renegociado)$")
+    tipo_empresa: TipoEmpresa
+    observacoes: Optional[str] = None
+
+class FinancialClientUpdate(BaseModel):
+    valor_com_desconto: Optional[float] = None
+    valor_boleto: Optional[float] = None
+    dia_vencimento: Optional[int] = Field(None, ge=1, le=31)
+    tipo_honorario: Optional[TipoHonorario] = None
+    empresa_individual_grupo: Optional[EmpresaTipo] = None
+    contas_pagamento: Optional[List[str]] = None
+    tipo_pagamento: Optional[TipoPagamento] = None
+    forma_pagamento_especial: Optional[str] = None
+    tipo_empresa: Optional[TipoEmpresa] = None
+    status_pagamento: Optional[StatusPagamento] = None
+    observacoes: Optional[str] = None
+
+# Modelos para filtros e busca
+class ContaReceberFilters(BaseModel):
+    empresa: Optional[str] = None
+    cnpj: Optional[str] = None
+    cidade: Optional[str] = None
+    situacao: Optional[List[SituacaoTitulo]] = None
+    data_vencimento_inicio: Optional[date] = None
+    data_vencimento_fim: Optional[date] = None
+    valor_minimo: Optional[float] = None
+    valor_maximo: Optional[float] = None
+    usuario_responsavel: Optional[str] = None
+    forma_pagamento: Optional[List[FormaPagamento]] = None
+
+# Modelos para relatórios
+class RelatorioFinanceiro(BaseModel):
+    periodo_inicio: date
+    periodo_fim: date
+    total_titulos: int
+    valor_total_original: float
+    valor_total_recebido: float
+    valor_total_em_aberto: float
+    valor_total_atrasado: float
+    taxa_inadimplencia: float
+    total_por_situacao: Dict[str, Dict[str, Any]]  # situacao -> {count, valor}
+    total_por_cidade: Dict[str, Dict[str, Any]]
+    total_por_forma_pagamento: Dict[str, Dict[str, Any]]
+
+# Modelos para Cobrança
+class ContatoCobrancaCreate(BaseModel):
+    titulo_id: str
+    tipo_contato: str
+    observacao: str
+    resultado: Optional[str] = None
+    usuario_responsavel: str
+
+class PropostaRenegociacao(BaseModel):
+    titulo_id: str
+    nova_data_vencimento: date
+    novo_valor: float
+    desconto_proposto: float = 0.0
+    condicoes: str
+    observacao: Optional[str] = None
+    usuario_responsavel: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# Modelos para Importação de Extrato
+class MovimentoExtrato(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    data_movimento: date
+    descricao_original: str
+    descricao_processada: str
+    valor: float
+    tipo_movimento: str  # credito, debito
+    saldo: Optional[float] = None
+    cnpj_detectado: Optional[str] = None
+    empresa_sugerida: Optional[str] = None
+    titulo_sugerido: Optional[str] = None
+    score_match: Optional[float] = None
+    status_classificacao: str = "pendente"  # pendente, classificado, ignorado
+    classificado_por: Optional[str] = None
+    data_classificacao: Optional[datetime] = None
+
+class ImportacaoExtrato(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    nome_arquivo: str
+    tipo_arquivo: str  # PDF, CSV
+    conta_bancaria: str
+    cidade: str
+    usuario_responsavel: str
+    data_importacao: datetime = Field(default_factory=datetime.utcnow)
+    total_movimentos: int
+    movimentos_processados: int = 0
+    baixas_automaticas: int = 0
+    pendentes_classificacao: int = 0
+    status: str = "processando"  # processando, concluido, erro
+    movimentos: List[MovimentoExtrato] = []
+    log_processamento: List[str] = []
+
+class ClassificacaoMovimento(BaseModel):
+    movimento_id: str
+    acao: str  # associar_titulo, nova_empresa, ignorar, transferencia_interna
+    titulo_id: Optional[str] = None
+    empresa_id: Optional[str] = None
+    observacao: Optional[str] = None
+    usuario_responsavel: str
