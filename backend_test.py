@@ -904,19 +904,255 @@ class MacedoSIAPITester:
             self.log_test("Legacy POST fiscal", False, response.get("error", ""))
 
     def test_atendimento_endpoints(self):
-        """Test atendimento endpoints"""
+        """Test comprehensive atendimento endpoints"""
         print("\n🔍 Testing Atendimento Endpoints...")
         
-        for user_type, token in self.tokens.items():
-            success, response = self.make_request("GET", "/atendimento/tickets", token=token)
+        # Only test with admin token for comprehensive testing
+        if "admin" not in self.tokens:
+            print("❌ No admin token available for atendimento testing")
+            return
+            
+        admin_token = self.tokens["admin"]
+        
+        # Test tickets CRUD
+        self.test_tickets_crud(admin_token)
+        
+        # Test conversas/mensagens
+        self.test_conversas_system(admin_token)
+        
+        # Test base de conhecimento
+        self.test_base_conhecimento_crud(admin_token)
+        
+        # Test dashboard stats
+        self.test_atendimento_dashboard_stats(admin_token)
+        
+        # Test relatórios
+        self.test_atendimento_relatorios(admin_token)
+        
+        # Test legacy endpoints
+        self.test_atendimento_legacy_endpoints(admin_token)
+
+    def test_tickets_crud(self, token):
+        """Test tickets CRUD operations"""
+        print("\n🎫 Testing Tickets CRUD...")
+        
+        # Test GET tickets
+        success, response = self.make_request("GET", "/atendimento/tickets", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get tickets", True, f"Found {count} tickets")
+        else:
+            self.log_test("Get tickets", False, response.get("error", ""))
+        
+        # Test POST - Create new ticket
+        test_ticket_data = {
+            "empresa_id": "emp-001",
+            "empresa": "Empresa Teste LTDA",
+            "solicitante_nome": "Maria Silva",
+            "solicitante_email": "maria.silva@empresa.com.br",
+            "solicitante_telefone": "(11) 99999-8888",
+            "titulo": "Dúvida sobre declaração mensal",
+            "descricao": "Preciso de ajuda para entender como preencher a declaração mensal do Simples Nacional",
+            "tipo": "duvida",
+            "categoria": "Fiscal",
+            "prioridade": "media",
+            "responsavel": "João Santos",
+            "equipe": "Fiscal",
+            "canal": "email",
+            "data_abertura": "2025-01-15",
+            "tags": ["simples_nacional", "declaracao", "duvida"]
+        }
+        
+        success, response = self.make_request("POST", "/atendimento/tickets", token=token, data=test_ticket_data)
+        if success:
+            created_id = response.get("id")
+            numero = response.get("numero")
+            self.log_test("Create ticket", True, f"Created ticket {numero} with ID: {created_id}")
+            self.test_ticket_id = created_id
+        else:
+            self.log_test("Create ticket", False, response.get("error", ""))
+        
+        # Test GET specific ticket by ID
+        if hasattr(self, 'test_ticket_id') and self.test_ticket_id:
+            success, response = self.make_request("GET", f"/atendimento/tickets/{self.test_ticket_id}", token=token)
             if success:
-                count = len(response) if isinstance(response, list) else 0
-                self.log_test(f"Get tickets - {user_type}", True, f"Found {count} tickets")
+                self.log_test("Get ticket by ID", True, f"Retrieved ticket: {response.get('titulo', 'Unknown')}")
             else:
-                if "403" in str(response.get("error", "")):
-                    self.log_test(f"Get tickets - {user_type}", True, "Access restricted (expected for non-atendimento users)")
-                else:
-                    self.log_test(f"Get tickets - {user_type}", False, response.get("error", ""))
+                self.log_test("Get ticket by ID", False, response.get("error", ""))
+            
+            # Test PUT - Update ticket
+            update_data = {
+                "status": "em_andamento",
+                "solucao": "Orientações sobre preenchimento da declaração fornecidas"
+            }
+            
+            success, response = self.make_request("PUT", f"/atendimento/tickets/{self.test_ticket_id}", token=token, data=update_data)
+            if success:
+                self.log_test("Update ticket", True, f"Updated status to: {response.get('status', 'unknown')}")
+            else:
+                self.log_test("Update ticket", False, response.get("error", ""))
+        
+        # Test advanced search with filters
+        search_params = {
+            "status": "em_andamento",
+            "prioridade": "media",
+            "equipe": "Fiscal",
+            "search": "declaração"
+        }
+        
+        success, response = self.make_request("GET", "/atendimento/tickets", token=token, data=search_params)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search tickets with filters", True, f"Found {count} matching tickets")
+        else:
+            self.log_test("Search tickets with filters", False, response.get("error", ""))
+
+    def test_conversas_system(self, token):
+        """Test conversations/messages system"""
+        print("\n💬 Testing Conversas System...")
+        
+        if not hasattr(self, 'test_ticket_id') or not self.test_ticket_id:
+            self.log_test("Conversas system", False, "No test ticket ID available")
+            return
+        
+        # Test add conversation to ticket
+        conversa_data = {
+            "mensagem": "Olá! Para preencher a declaração do Simples Nacional, você deve acessar o portal do Simples Nacional e seguir os seguintes passos...",
+            "tipo": "resposta",
+            "eh_publico": True,
+            "anexos": []
+        }
+        
+        success, response = self.make_request("POST", f"/atendimento/tickets/{self.test_ticket_id}/conversas", token=token, data=conversa_data)
+        if success:
+            self.log_test("Add conversation to ticket", True, f"Added conversation by: {response.get('usuario', 'unknown')}")
+        else:
+            self.log_test("Add conversation to ticket", False, response.get("error", ""))
+        
+        # Test add internal note
+        nota_interna_data = {
+            "mensagem": "Cliente já foi orientado sobre este assunto anteriormente. Verificar histórico.",
+            "tipo": "nota_interna",
+            "eh_publico": False,
+            "anexos": []
+        }
+        
+        success, response = self.make_request("POST", f"/atendimento/tickets/{self.test_ticket_id}/conversas", token=token, data=nota_interna_data)
+        if success:
+            self.log_test("Add internal note to ticket", True, f"Added internal note by: {response.get('usuario', 'unknown')}")
+        else:
+            self.log_test("Add internal note to ticket", False, response.get("error", ""))
+
+    def test_base_conhecimento_crud(self, token):
+        """Test base de conhecimento CRUD operations"""
+        print("\n📚 Testing Base de Conhecimento CRUD...")
+        
+        # Test GET artigos
+        success, response = self.make_request("GET", "/atendimento/base-conhecimento", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get artigos base conhecimento", True, f"Found {count} artigos")
+        else:
+            self.log_test("Get artigos base conhecimento", False, response.get("error", ""))
+        
+        # Test POST - Create new artigo
+        test_artigo_data = {
+            "titulo": "Como preencher a declaração do Simples Nacional",
+            "conteudo": "Este artigo explica passo a passo como preencher corretamente a declaração mensal do Simples Nacional...",
+            "resumo": "Guia completo para preenchimento da declaração do Simples Nacional",
+            "categoria": "Fiscal",
+            "tags": ["simples_nacional", "declaracao", "tutorial"],
+            "publicado": True,
+            "visivel_cliente": True
+        }
+        
+        success, response = self.make_request("POST", "/atendimento/base-conhecimento", token=token, data=test_artigo_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create artigo base conhecimento", True, f"Created artigo with ID: {created_id}")
+            self.test_artigo_id = created_id
+        else:
+            self.log_test("Create artigo base conhecimento", False, response.get("error", ""))
+        
+        # Test search artigos with filters
+        search_params = {
+            "categoria": "Fiscal",
+            "publicado": True,
+            "search": "Simples Nacional"
+        }
+        
+        success, response = self.make_request("GET", "/atendimento/base-conhecimento", token=token, data=search_params)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search artigos with filters", True, f"Found {count} matching artigos")
+        else:
+            self.log_test("Search artigos with filters", False, response.get("error", ""))
+
+    def test_atendimento_dashboard_stats(self, token):
+        """Test atendimento dashboard statistics"""
+        print("\n📊 Testing Atendimento Dashboard Statistics...")
+        
+        success, response = self.make_request("GET", "/atendimento/dashboard-stats", token=token)
+        if success:
+            stats = response
+            tickets_stats = stats.get("tickets_por_status", {})
+            tickets_sla_violado = stats.get("tickets_sla_violado", 0)
+            tempo_medio_resposta = stats.get("tempo_medio_resposta", 0)
+            satisfacao_media = stats.get("satisfacao_media", 0)
+            
+            self.log_test("Atendimento dashboard stats", True, 
+                         f"SLA violado: {tickets_sla_violado}, Tempo médio resposta: {tempo_medio_resposta}min, Satisfação: {satisfacao_media}, Status groups: {len(tickets_stats)}")
+        else:
+            self.log_test("Atendimento dashboard stats", False, response.get("error", ""))
+
+    def test_atendimento_relatorios(self, token):
+        """Test atendimento reports"""
+        print("\n📈 Testing Atendimento Reports...")
+        
+        # Test attendance report
+        success, response = self.make_request("GET", "/atendimento/relatorios/atendimento?data_inicio=2025-01-01&data_fim=2025-01-31", token=token)
+        if success:
+            total_tickets = response.get("total_tickets", 0)
+            tickets_resolvidos = response.get("tickets_resolvidos", 0)
+            taxa_resolucao = response.get("taxa_resolucao", 0)
+            self.log_test("Atendimento report", True, 
+                         f"Total tickets: {total_tickets}, Resolvidos: {tickets_resolvidos}, Taxa resolução: {taxa_resolucao}%")
+        else:
+            self.log_test("Atendimento report", False, response.get("error", ""))
+
+    def test_atendimento_legacy_endpoints(self, token):
+        """Test legacy atendimento endpoints for backward compatibility"""
+        print("\n🔄 Testing Legacy Atendimento Endpoints...")
+        
+        # Test legacy GET endpoint
+        success, response = self.make_request("GET", "/atendimento/", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Legacy GET atendimento", True, f"Found {count} tickets via legacy endpoint")
+        else:
+            self.log_test("Legacy GET atendimento", False, response.get("error", ""))
+        
+        # Test legacy POST endpoint
+        test_legacy_data = {
+            "empresa_id": "emp-002",
+            "empresa": "Empresa Legacy LTDA",
+            "titulo": "Dúvida sobre folha de pagamento",
+            "descricao": "Como calcular os encargos trabalhistas para funcionário CLT?",
+            "tipo": "duvida",
+            "prioridade": "alta",
+            "responsavel": "Admin Teste",
+            "equipe": "Trabalhista",
+            "canal": "telefone",
+            "data_abertura": "2025-01-15"
+        }
+        
+        success, response = self.make_request("POST", "/atendimento/", token=token, data=test_legacy_data)
+        if success:
+            created_id = response.get("id")
+            numero = response.get("numero")
+            self.log_test("Legacy POST atendimento", True, f"Created ticket {numero} via legacy endpoint with ID: {created_id}")
+        else:
+            self.log_test("Legacy POST atendimento", False, response.get("error", ""))
 
     def test_chat_endpoints(self):
         """Test chat endpoints"""
