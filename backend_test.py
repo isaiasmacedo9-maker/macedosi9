@@ -182,6 +182,27 @@ class MacedoSIAPITester:
             self.log_test("Get financial clients", True, f"Found {count} financial clients")
         else:
             self.log_test("Get financial clients", False, response.get("error", ""))
+        
+        # Test POST financial clients - Create new financial client
+        test_client_data = {
+            "nome": "Cliente Financeiro Teste",
+            "email": "cliente.teste@empresa.com.br",
+            "telefone": "(11) 99999-9999",
+            "cnpj": "12.345.678/0001-90",
+            "endereco": "Rua Teste, 123",
+            "cidade": "São Paulo",
+            "estado": "SP",
+            "cep": "01234-567",
+            "setor": "financeiro",
+            "observacoes": "Cliente criado via teste automatizado"
+        }
+        
+        success, response = self.make_request("POST", "/financial/clients", token=token, data=test_client_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create financial client", True, f"Created client with ID: {created_id}")
+        else:
+            self.log_test("Create financial client", False, response.get("error", ""))
 
     def test_contas_receber_crud(self, token):
         """Test contas a receber CRUD operations"""
