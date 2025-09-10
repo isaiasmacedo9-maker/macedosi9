@@ -137,7 +137,7 @@ backend:
 
   - task: "Rotas Financial - APIs completas Contas a Receber"
     implemented: true
-    working: false
+    working: true
     file: "routes/financial.py"
     stuck_count: 0
     priority: "high"
@@ -149,6 +149,9 @@ backend:
       - working: false
         agent: "testing"
         comment: "PARCIALMENTE FUNCIONANDO - Testado com sucesso: autenticação (100%), CRUD básico de contas a receber, busca avançada, geração de lembretes WhatsApp/email, exportação JSON/CSV, relatório de inadimplência. FALHAS CRÍTICAS: endpoint /financial/clients retorna 404 (não implementado), erros 500 em operações de contato/cobrança, duplicação de contas, relatório de recebimentos, dashboard stats. Erros 422 em parâmetros de renegociação e baixa de títulos (parâmetros incorretos - usando query em vez de body)."
+      - working: true
+        agent: "testing"
+        comment: "VALIDADO APÓS CORREÇÕES - Principais funcionalidades corrigidas com sucesso: ✅ Baixa de títulos (PUT com body PagamentoTitulo) funcionando, ✅ Duplicação de contas funcionando, ✅ Dashboard stats funcionando, ✅ Proposta renegociação (POST com body PropostaRenegociacao) funcionando, ✅ Sistema de cobrança/contatos funcionando, ✅ Relatório de recebimentos funcionando, ✅ Criação de contas funcionando. Apenas financial clients POST ainda com erro 422 por campos obrigatórios faltantes no modelo."
 
   - task: "Sistema de Importação de Extratos com OCR"
     implemented: true
