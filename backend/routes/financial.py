@@ -1,10 +1,24 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, File, UploadFile
 from typing import List, Optional
-from models.financial import ContaReceber, ContaReceberCreate, FinancialClient, FinancialClientCreate, HistoricoAction
+from models.financial import (
+    ContaReceber, ContaReceberCreate, ContaReceberUpdate, PagamentoTitulo,
+    FinancialClient, FinancialClientCreate, FinancialClientUpdate,
+    HistoricoAlteracao, ContatoCobranca, ContatoCobrancaCreate,
+    PropostaRenegociacao, ContaReceberFilters, RelatorioFinanceiro,
+    ImportacaoExtrato, MovimentoExtrato, ClassificacaoMovimento,
+    SituacaoTitulo, FormaPagamento
+)
 from models.user import UserResponse
 from auth import get_current_user
-from database import get_contas_receber_collection, get_financial_clients_collection
-from datetime import datetime, date
+from database import (
+    get_contas_receber_collection, get_financial_clients_collection,
+    get_importacoes_extrato_collection
+)
+from datetime import datetime, date, timedelta
+import json
+import uuid
+import re
+from typing import Dict, Any
 
 router = APIRouter(prefix="/financial", tags=["Financial"])
 
@@ -132,7 +146,7 @@ async def baixar_conta_receber(
     conta = ContaReceber(**conta_data)
     
     # Update conta
-    historico_action = HistoricoAction(
+    historico_action = HistoricoAlteracao(
         data=datetime.utcnow(),
         acao="Baixa realizada",
         usuario=current_user.name,
