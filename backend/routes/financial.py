@@ -952,67 +952,182 @@ async def classificar_movimento(
     
     return {"message": "Movimento classificado com sucesso"}
 
-# Financial Clients
-@router.post("/clients", response_model=FinancialClient)
-async def create_financial_client(
-    client_data: FinancialClientCreate,
+# Financial Clients - Updated and expanded
+@router.put("/clients/{client_id}", response_model=FinancialClient) 
+async def update_financial_client(
+    client_id: str,
+    client_update: FinancialClientUpdate,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    """Create new financial client"""
+    """Update financial client"""
     check_financial_access(current_user)
     financial_clients_collection = await get_financial_clients_collection()
     
-    # Check if client already exists
-    existing_client = await financial_clients_collection.find_one({"empresa_id": client_data.empresa_id})
-    if existing_client:
+    client_data = await financial_clients_collection.find_one({"id": client_id})
+    if not client_data:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Financial client already exists"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Financial client not found"
         )
     
-    financial_client = FinancialClient(**client_data.model_dump())
-    await financial_clients_collection.insert_one(financial_client.model_dump())
+    # Build update data
+    update_data = {k: v for k, v in client_update.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.utcnow()
     
-    return financial_client
+    await financial_clients_collection.update_one({"id": client_id}, {"$set": update_data})
+    
+    # Get updated client
+    updated_client_data = await financial_clients_collection.find_one({"id": client_id})
+    return FinancialClient(**updated_client_data)
 
-@router.get("/clients", response_model=List[FinancialClient])
-async def get_financial_clients(
+@router.delete("/clients/{client_id}")
+async def delete_financial_client(
+    client_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Delete financial client"""
+    check_financial_access(current_user)
+    financial_clients_collection = await get_financial_clients_collection()
+    
+    result = await financial_clients_collection.delete_one({"id": client_id})
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Financial client not found"
+        )
+    
+    return {"message": "Financial client deleted successfully"}
+
+@router.get("/clients/{client_id}", response_model=FinancialClient)
+async def get_financial_client(
+    client_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Get financial client by ID"""
+    check_financial_access(current_user)
+    financial_clients_collection = await get_financial_clients_collection()
+    
+    client_data = await financial_clients_collection.find_one({"id": client_id})
+    if not client_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Financial client not found"
+        )
+    
+    return FinancialClient(**client_data)
+
+# Busca avançada com filtros
+@router.post("/contas-receber/search", response_model=List[ContaReceber])
+async def search_contas_receber(
+    filters: ContaReceberFilters,
     current_user: UserResponse = Depends(get_current_user),
-    status_pagamento: Optional[str] = Query(None),
-    tipo_honorario: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500)
 ):
-    """Get financial clients with filters"""
+    """Advanced search for contas a receber"""
     check_financial_access(current_user)
-    financial_clients_collection = await get_financial_clients_collection()
+    contas_collection = await get_contas_receber_collection()
+    
+    # Build query from filters
+    query = {}
+    
+    # City access control
+    if current_user.role != "admin":
+        query["cidade_atendimento"] = {"$in": current_user.allowed_cities}
+    elif filters.cidade:
+        query["cidade_atendimento"] = filters.cidade
+    
+    # Apply filters
+    if filters.empresa:
+        query["empresa"] = {"$regex": filters.empresa, "$options": "i"}
+    
+    if filters.cnpj:
+        query["empresa"] = {"$regex": filters.cnpj.replace(".", "").replace("/", "").replace("-", ""), "$options": "i"}
+    
+    if filters.situacao:
+        query["situacao"] = {"$in": [s.value for s in filters.situacao]}
+    
+    if filters.data_vencimento_inicio and filters.data_vencimento_fim:
+        query["data_vencimento"] = {
+            "$gte": datetime.combine(filters.data_vencimento_inicio, datetime.min.time()),
+            "$lte": datetime.combine(filters.data_vencimento_fim, datetime.max.time())
+        }
+    
+    if filters.valor_minimo is not None or filters.valor_maximo is not None:
+        valor_query = {}
+        if filters.valor_minimo is not None:
+            valor_query["$gte"] = filters.valor_minimo
+        if filters.valor_maximo is not None:
+            valor_query["$lte"] = filters.valor_maximo
+        query["total_liquido"] = valor_query
+    
+    if filters.usuario_responsavel:
+        query["usuario_responsavel"] = {"$regex": filters.usuario_responsavel, "$options": "i"}
+    
+    if filters.forma_pagamento:
+        query["forma_pagamento"] = {"$in": [fp.value for fp in filters.forma_pagamento]}
+    
+    # Execute query
+    contas_cursor = contas_collection.find(query).skip(skip).limit(limit).sort("data_vencimento", -1)
+    contas = []
+    async for conta_data in contas_cursor:
+        contas.append(ContaReceber(**conta_data))
+    
+    return contas
+
+# Export data
+@router.get("/export/contas-receber")
+async def export_contas_receber(
+    formato: str = Query("json", regex="^(json|csv)$"),
+    situacao: Optional[str] = Query(None),
+    data_inicio: Optional[date] = Query(None),
+    data_fim: Optional[date] = Query(None),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Export contas a receber data"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
     
     # Build query
     query = {}
+    if current_user.role != "admin":
+        query["cidade_atendimento"] = {"$in": current_user.allowed_cities}
     
-    # Status filter
-    if status_pagamento:
-        query["status_pagamento"] = status_pagamento
+    if situacao:
+        query["situacao"] = situacao
     
-    # Type filter
-    if tipo_honorario:
-        query["tipo_honorario"] = tipo_honorario
+    if data_inicio and data_fim:
+        query["data_vencimento"] = {
+            "$gte": datetime.combine(data_inicio, datetime.min.time()),
+            "$lte": datetime.combine(data_fim, datetime.max.time())
+        }
     
-    # Search filter
-    if search:
-        query["empresa"] = {"$regex": search, "$options": "i"}
+    # Get data
+    contas = []
+    async for conta_data in contas_collection.find(query):
+        contas.append(ContaReceber(**conta_data))
     
-    clients_cursor = financial_clients_collection.find(query).skip(skip).limit(limit).sort("empresa", 1)
-    clients = []
-    async for client_data in clients_cursor:
-        clients.append(FinancialClient(**client_data))
-    
-    return clients
+    if formato == "json":
+        return {
+            "data": [conta.model_dump() for conta in contas],
+            "total_registros": len(contas),
+            "data_export": datetime.utcnow()
+        }
+    else:  # CSV
+        # Create CSV content
+        csv_content = "ID,Empresa,Situacao,Descricao,Documento,Vencimento,Valor_Original,Total_Liquido,Cidade\n"
+        for conta in contas:
+            csv_content += f"{conta.id},{conta.empresa},{conta.situacao},{conta.descricao},{conta.documento},{conta.data_vencimento},{conta.valor_original},{conta.total_liquido},{conta.cidade_atendimento}\n"
+        
+        return {
+            "content": csv_content,
+            "filename": f"contas_receber_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        }
 
+# Dashboard com estatísticas avançadas - atualizado
 @router.get("/dashboard-stats")
 async def get_dashboard_stats(current_user: UserResponse = Depends(get_current_user)):
-    """Get financial dashboard statistics"""
+    """Get comprehensive financial dashboard statistics"""
     check_financial_access(current_user)
     contas_collection = await get_contas_receber_collection()
     
@@ -1023,36 +1138,84 @@ async def get_dashboard_stats(current_user: UserResponse = Depends(get_current_u
     
     # Total em aberto
     total_aberto_cursor = contas_collection.aggregate([
-        {"$match": {**base_query, "situacao": {"$in": ["em_aberto", "atrasado", "renegociado"]}}},
-        {"$group": {"_id": None, "total": {"$sum": "$total_liquido"}}}
+        {"$match": {**base_query, "situacao": {"$in": [SituacaoTitulo.EM_ABERTO, SituacaoTitulo.ATRASADO, SituacaoTitulo.RENEGOCIADO]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_liquido"}, "count": {"$sum": 1}}}
     ])
     
-    total_aberto = 0
+    total_aberto = {"valor": 0, "count": 0}
     async for result in total_aberto_cursor:
-        total_aberto = result.get("total", 0)
+        total_aberto = {"valor": result.get("total", 0), "count": result.get("count", 0)}
     
-    # Total atrasado
+    # Total atrasado (vencidos)
+    hoje = datetime.now().date()
     total_atrasado_cursor = contas_collection.aggregate([
-        {"$match": {**base_query, "situacao": "atrasado"}},
-        {"$group": {"_id": None, "total": {"$sum": "$total_liquido"}}}
+        {"$match": {**base_query, "situacao": {"$in": [SituacaoTitulo.EM_ABERTO, SituacaoTitulo.ATRASADO]}, "data_vencimento": {"$lt": hoje}}},
+        {"$group": {"_id": None, "total": {"$sum": "$total_liquido"}, "count": {"$sum": 1}}}
     ])
     
-    total_atrasado = 0
+    total_atrasado = {"valor": 0, "count": 0}
     async for result in total_atrasado_cursor:
-        total_atrasado = result.get("total", 0)
+        total_atrasado = {"valor": result.get("total", 0), "count": result.get("count", 0)}
     
-    # Total recebido
+    # Total recebido no mês
+    inicio_mes = hoje.replace(day=1)
     total_recebido_cursor = contas_collection.aggregate([
-        {"$match": {**base_query, "situacao": "pago"}},
-        {"$group": {"_id": None, "total": {"$sum": "$valor_quitado"}}}
+        {"$match": {**base_query, "situacao": SituacaoTitulo.PAGO, "data_recebimento": {"$gte": inicio_mes}}},
+        {"$group": {"_id": None, "total": {"$sum": "$valor_quitado"}, "count": {"$sum": 1}}}
     ])
     
-    total_recebido = 0
+    total_recebido = {"valor": 0, "count": 0}
     async for result in total_recebido_cursor:
-        total_recebido = result.get("total", 0)
+        total_recebido = {"valor": result.get("total", 0), "count": result.get("count", 0)}
+    
+    # Aging (vencimento por faixas)
+    aging_cursor = contas_collection.aggregate([
+        {"$match": {**base_query, "situacao": {"$in": [SituacaoTitulo.EM_ABERTO, SituacaoTitulo.ATRASADO]}}},
+        {"$addFields": {
+            "days_overdue": {
+                "$subtract": [
+                    {"$toDate": datetime.now()},
+                    {"$toDate": "$data_vencimento"}
+                ]
+            }
+        }},
+        {"$addFields": {
+            "aging_group": {
+                "$switch": {
+                    "branches": [
+                        {"case": {"$lt": ["$days_overdue", 0]}, "then": "a_vencer"},
+                        {"case": {"$lte": ["$days_overdue", 30 * 24 * 60 * 60 * 1000]}, "then": "ate_30_dias"},
+                        {"case": {"$lte": ["$days_overdue", 60 * 24 * 60 * 60 * 1000]}, "then": "31_60_dias"},
+                        {"case": {"$lte": ["$days_overdue", 90 * 24 * 60 * 60 * 1000]}, "then": "61_90_dias"}
+                    ],
+                    "default": "acima_90_dias"
+                }
+            }
+        }},
+        {"$group": {
+            "_id": "$aging_group",
+            "total": {"$sum": "$total_liquido"},
+            "count": {"$sum": 1}
+        }}
+    ])
+    
+    aging = {
+        "a_vencer": {"valor": 0, "count": 0},
+        "ate_30_dias": {"valor": 0, "count": 0},
+        "31_60_dias": {"valor": 0, "count": 0},
+        "61_90_dias": {"valor": 0, "count": 0},
+        "acima_90_dias": {"valor": 0, "count": 0}
+    }
+    
+    async for result in aging_cursor:
+        grupo = result["_id"]
+        if grupo in aging:
+            aging[grupo] = {"valor": result["total"], "count": result["count"]}
     
     return {
         "total_aberto": total_aberto,
         "total_atrasado": total_atrasado,
-        "total_recebido": total_recebido
+        "total_recebido_mes": total_recebido,
+        "aging": aging,
+        "data_atualizacao": datetime.utcnow()
     }
