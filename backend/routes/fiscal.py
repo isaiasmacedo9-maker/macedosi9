@@ -281,7 +281,7 @@ async def create_nota_fiscal(
         "serie": nota_data.serie,
         "chave_nfe": nota_data.chave_nfe,
         "data_emissao": datetime.combine(nota_data.data_emissao, datetime.min.time()),
-        "data_vencimento": datetime.combine(nota_data.data_vencimento, datetime.min.time()) if hasattr(nota_data, 'data_vencimento') and nota_data.data_vencimento else None,
+        "data_vencimento": None,  # Not provided in create model
         "emitente_cnpj": nota_data.emitente_cnpj,
         "emitente_razao_social": nota_data.emitente_razao_social,
         "destinatario_cnpj": nota_data.destinatario_cnpj,
