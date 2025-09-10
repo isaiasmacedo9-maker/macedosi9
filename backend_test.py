@@ -40,10 +40,11 @@ class MacedoSIAPITester:
 
     def make_request(self, method: str, endpoint: str, token: str = None, data: Dict = None, expected_status: int = 200) -> tuple[bool, Dict]:
         """Make HTTP request with proper headers"""
-        # Ensure endpoint ends with / to avoid redirects that strip auth headers
+        # Handle trailing slash for specific endpoints that need it
         endpoint = endpoint.lstrip('/')
-        if not endpoint.endswith('/') and '?' not in endpoint:
-            endpoint += '/'
+        if endpoint in ['clients', 'financial/clients', 'financial/contas-receber']:
+            if not endpoint.endswith('/'):
+                endpoint += '/'
         url = f"{self.base_url}/{endpoint}"
         headers = {'Content-Type': 'application/json'}
         
