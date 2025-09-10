@@ -44,24 +44,53 @@ async def create_conta_receber(
     total_bruto = conta_data.valor_original
     total_liquido = total_bruto
     
-    conta = ContaReceber(
-        **conta_data.model_dump(),
-        situacao="em_aberto",
-        total_bruto=total_bruto,
-        total_liquido=total_liquido
-    )
-    
-    # Convert to dict and ensure proper serialization
-    conta_dict = conta.model_dump()
-    
-    # Convert date objects to datetime for MongoDB compatibility
-    if isinstance(conta_dict.get('data_emissao'), date):
-        conta_dict['data_emissao'] = datetime.combine(conta_dict['data_emissao'], datetime.min.time())
-    if isinstance(conta_dict.get('data_vencimento'), date):
-        conta_dict['data_vencimento'] = datetime.combine(conta_dict['data_vencimento'], datetime.min.time())
+    # Create conta dict manually to ensure proper serialization
+    conta_dict = {
+        "id": str(uuid.uuid4()),
+        "empresa_id": conta_data.empresa_id,
+        "empresa": conta_data.empresa,
+        "situacao": SituacaoTitulo.EM_ABERTO.value,
+        "descricao": conta_data.descricao,
+        "documento": conta_data.documento,
+        "tipo_documento": conta_data.tipo_documento.value if hasattr(conta_data.tipo_documento, 'value') else conta_data.tipo_documento,
+        "forma_pagamento": conta_data.forma_pagamento.value if hasattr(conta_data.forma_pagamento, 'value') else conta_data.forma_pagamento,
+        "conta": conta_data.conta,
+        "centro_custo": conta_data.centro_custo,
+        "plano_custo": conta_data.plano_custo,
+        "data_emissao": datetime.combine(conta_data.data_emissao, datetime.min.time()),
+        "data_vencimento": datetime.combine(conta_data.data_vencimento, datetime.min.time()),
+        "valor_original": conta_data.valor_original,
+        "desconto_aplicado": 0.0,
+        "acrescimo_aplicado": 0.0,
+        "valor_quitado": 0.0,
+        "troco": 0.0,
+        "total_bruto": total_bruto,
+        "total_liquido": total_liquido,
+        "cidade_atendimento": conta_data.cidade_atendimento,
+        "usuario_responsavel": conta_data.usuario_responsavel,
+        "observacao": conta_data.observacao,
+        "data_recebimento": None,
+        "historico_alteracoes": [
+            {
+                "data": datetime.utcnow(),
+                "acao": "Título criado",
+                "usuario": current_user.name,
+                "observacao": "Título criado via API",
+                "campo_alterado": None,
+                "valor_anterior": None,
+                "valor_novo": None
+            }
+        ],
+        "contatos_cobranca": [],
+        "anexos": [],
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
     
     await contas_collection.insert_one(conta_dict)
-    return conta
+    
+    # Convert to model for response
+    return ContaReceber(**conta_dict)
 
 @router.get("/contas-receber", response_model=List[ContaReceber])
 async def get_contas_receber(
