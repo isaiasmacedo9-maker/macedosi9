@@ -128,8 +128,16 @@ class MacedoSIAPITester:
             # Test get clients
             success, response = self.make_request("GET", "/clients", token=token)
             if success:
-                client_count = len(response) if isinstance(response, list) else 0
-                self.log_test(f"Get clients - {user_type}", True, f"Found {client_count} clients")
+                # Handle both list and dict responses
+                if isinstance(response, dict) and 'clients' in response:
+                    client_count = len(response['clients'])
+                    total = response.get('total', client_count)
+                    self.log_test(f"Get clients - {user_type}", True, f"Found {client_count} clients (total: {total})")
+                elif isinstance(response, list):
+                    client_count = len(response)
+                    self.log_test(f"Get clients - {user_type}", True, f"Found {client_count} clients")
+                else:
+                    self.log_test(f"Get clients - {user_type}", True, "Clients retrieved")
             else:
                 self.log_test(f"Get clients - {user_type}", False, response.get("error", ""))
 
