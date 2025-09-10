@@ -417,19 +417,267 @@ class MacedoSIAPITester:
                 self.log_test("Process payment (baixa)", False, response.get("error", ""))
 
     def test_trabalhista_endpoints(self):
-        """Test trabalhista endpoints"""
+        """Test comprehensive trabalhista endpoints"""
         print("\n🔍 Testing Trabalhista Endpoints...")
         
-        for user_type, token in self.tokens.items():
-            success, response = self.make_request("GET", "/trabalhista/solicitacoes", token=token)
+        # Only test with admin token for comprehensive testing
+        if "admin" not in self.tokens:
+            print("❌ No admin token available for trabalhista testing")
+            return
+            
+        admin_token = self.tokens["admin"]
+        
+        # Test solicitações trabalhistas CRUD
+        self.test_solicitacoes_trabalhistas_crud(admin_token)
+        
+        # Test funcionários CRUD
+        self.test_funcionarios_crud(admin_token)
+        
+        # Test obrigações trabalhistas CRUD
+        self.test_obrigacoes_trabalhistas_crud(admin_token)
+        
+        # Test dashboard stats
+        self.test_trabalhista_dashboard_stats(admin_token)
+        
+        # Test relatórios
+        self.test_trabalhista_relatorios(admin_token)
+        
+        # Test legacy endpoints
+        self.test_trabalhista_legacy_endpoints(admin_token)
+
+    def test_solicitacoes_trabalhistas_crud(self, token):
+        """Test solicitações trabalhistas CRUD operations"""
+        print("\n📋 Testing Solicitações Trabalhistas CRUD...")
+        
+        # Test GET solicitações
+        success, response = self.make_request("GET", "/trabalhista/solicitacoes", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get solicitações trabalhistas", True, f"Found {count} solicitações")
+        else:
+            self.log_test("Get solicitações trabalhistas", False, response.get("error", ""))
+        
+        # Test POST - Create new solicitação
+        test_solicitacao_data = {
+            "empresa_id": "emp-001",
+            "empresa": "Empresa Teste LTDA",
+            "tipo": "admissao",
+            "titulo": "Admissão de novo funcionário",
+            "descricao": "Processar admissão do funcionário João Silva",
+            "prazo": "2025-02-15",
+            "responsavel": "Maria Santos",
+            "prioridade": "alta",
+            "observacoes": "Funcionário com experiência prévia na área"
+        }
+        
+        success, response = self.make_request("POST", "/trabalhista/solicitacoes", token=token, data=test_solicitacao_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create solicitação trabalhista", True, f"Created solicitação with ID: {created_id}")
+            self.test_solicitacao_id = created_id
+        else:
+            self.log_test("Create solicitação trabalhista", False, response.get("error", ""))
+        
+        # Test GET specific solicitação by ID
+        if hasattr(self, 'test_solicitacao_id') and self.test_solicitacao_id:
+            success, response = self.make_request("GET", f"/trabalhista/solicitacoes/{self.test_solicitacao_id}", token=token)
             if success:
-                count = len(response) if isinstance(response, list) else 0
-                self.log_test(f"Get trabalhista - {user_type}", True, f"Found {count} requests")
+                self.log_test("Get solicitação by ID", True, f"Retrieved solicitação: {response.get('titulo', 'Unknown')}")
             else:
-                if "403" in str(response.get("error", "")):
-                    self.log_test(f"Get trabalhista - {user_type}", True, "Access restricted (expected for non-trabalhista users)")
-                else:
-                    self.log_test(f"Get trabalhista - {user_type}", False, response.get("error", ""))
+                self.log_test("Get solicitação by ID", False, response.get("error", ""))
+            
+            # Test PUT - Update solicitação
+            update_data = {
+                "status": "em_andamento",
+                "observacoes": "Documentos recebidos, iniciando processamento"
+            }
+            
+            success, response = self.make_request("PUT", f"/trabalhista/solicitacoes/{self.test_solicitacao_id}", token=token, data=update_data)
+            if success:
+                self.log_test("Update solicitação trabalhista", True, f"Updated status to: {response.get('status', 'unknown')}")
+            else:
+                self.log_test("Update solicitação trabalhista", False, response.get("error", ""))
+        
+        # Test advanced search with filters
+        search_filters = {
+            "tipo": "admissao",
+            "status": "em_andamento",
+            "responsavel": "Maria",
+            "search": "João"
+        }
+        
+        success, response = self.make_request("GET", "/trabalhista/solicitacoes", token=token, data=search_filters)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search solicitações with filters", True, f"Found {count} matching solicitações")
+        else:
+            self.log_test("Search solicitações with filters", False, response.get("error", ""))
+
+    def test_funcionarios_crud(self, token):
+        """Test funcionários CRUD operations"""
+        print("\n👥 Testing Funcionários CRUD...")
+        
+        # Test GET funcionários
+        success, response = self.make_request("GET", "/trabalhista/funcionarios", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get funcionários", True, f"Found {count} funcionários")
+        else:
+            self.log_test("Get funcionários", False, response.get("error", ""))
+        
+        # Test POST - Create new funcionário
+        test_funcionario_data = {
+            "empresa_id": "emp-001",
+            "dados_pessoais": {
+                "nome_completo": "João Silva Santos",
+                "cpf": "123.456.789-00",
+                "rg": "12.345.678-9",
+                "data_nascimento": "1990-05-15",
+                "estado_civil": "solteiro",
+                "endereco": "Rua das Flores, 123 - Centro",
+                "telefone": "(11) 99999-8888",
+                "email": "joao.silva@email.com",
+                "nome_mae": "Maria Silva Santos"
+            },
+            "dados_contratuais": {
+                "funcao": "Assistente Administrativo",
+                "cargo": "Assistente",
+                "tipo_contrato": "clt",
+                "salario_base": 2500.00,
+                "carga_horaria": 40,
+                "data_admissao": "2025-02-01",
+                "setor": "Administrativo",
+                "centro_custo": "ADM001"
+            },
+            "observacoes": "Funcionário com experiência prévia em escritório contábil"
+        }
+        
+        success, response = self.make_request("POST", "/trabalhista/funcionarios", token=token, data=test_funcionario_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create funcionário", True, f"Created funcionário with ID: {created_id}")
+            self.test_funcionario_id = created_id
+        else:
+            self.log_test("Create funcionário", False, response.get("error", ""))
+        
+        # Test search funcionários
+        search_params = {
+            "search": "João",
+            "status": "ativo"
+        }
+        
+        success, response = self.make_request("GET", "/trabalhista/funcionarios", token=token, data=search_params)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search funcionários", True, f"Found {count} matching funcionários")
+        else:
+            self.log_test("Search funcionários", False, response.get("error", ""))
+
+    def test_obrigacoes_trabalhistas_crud(self, token):
+        """Test obrigações trabalhistas CRUD operations"""
+        print("\n📅 Testing Obrigações Trabalhistas CRUD...")
+        
+        # Test GET obrigações
+        success, response = self.make_request("GET", "/trabalhista/obrigacoes", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Get obrigações trabalhistas", True, f"Found {count} obrigações")
+        else:
+            self.log_test("Get obrigações trabalhistas", False, response.get("error", ""))
+        
+        # Test POST - Create new obrigação
+        test_obrigacao_data = {
+            "empresa_id": "emp-001",
+            "nome": "GFIP - Guia de Recolhimento do FGTS",
+            "descricao": "Entrega mensal da GFIP com informações dos funcionários",
+            "periodicidade": "mensal",
+            "dia_vencimento": 7,
+            "responsavel": "Maria Santos",
+            "observacoes": "Entrega até o dia 7 de cada mês"
+        }
+        
+        success, response = self.make_request("POST", "/trabalhista/obrigacoes", token=token, data=test_obrigacao_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Create obrigação trabalhista", True, f"Created obrigação with ID: {created_id}")
+            self.test_obrigacao_id = created_id
+        else:
+            self.log_test("Create obrigação trabalhista", False, response.get("error", ""))
+        
+        # Test search obrigações with filters
+        search_params = {
+            "status": "pendente",
+            "vencimento_ate": "2025-03-31"
+        }
+        
+        success, response = self.make_request("GET", "/trabalhista/obrigacoes", token=token, data=search_params)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Search obrigações with filters", True, f"Found {count} matching obrigações")
+        else:
+            self.log_test("Search obrigações with filters", False, response.get("error", ""))
+
+    def test_trabalhista_dashboard_stats(self, token):
+        """Test trabalhista dashboard statistics"""
+        print("\n📊 Testing Trabalhista Dashboard Statistics...")
+        
+        success, response = self.make_request("GET", "/trabalhista/dashboard-stats", token=token)
+        if success:
+            stats = response
+            solicitacoes_stats = stats.get("solicitacoes_por_status", {})
+            funcionarios_ativos = stats.get("funcionarios_ativos", 0)
+            obrigacoes_vencendo = stats.get("obrigacoes_vencendo", 0)
+            
+            self.log_test("Trabalhista dashboard stats", True, 
+                         f"Funcionários ativos: {funcionarios_ativos}, Obrigações vencendo: {obrigacoes_vencendo}, Status groups: {len(solicitacoes_stats)}")
+        else:
+            self.log_test("Trabalhista dashboard stats", False, response.get("error", ""))
+
+    def test_trabalhista_relatorios(self, token):
+        """Test trabalhista reports"""
+        print("\n📈 Testing Trabalhista Reports...")
+        
+        # Test monthly report
+        success, response = self.make_request("GET", "/trabalhista/relatorios/mensal?mes=1&ano=2025", token=token)
+        if success:
+            total_solicitacoes = response.get("total_solicitacoes", 0)
+            admissoes = response.get("admissoes", 0)
+            demissoes = response.get("demissoes", 0)
+            self.log_test("Monthly trabalhista report", True, 
+                         f"Solicitações: {total_solicitacoes}, Admissões: {admissoes}, Demissões: {demissoes}")
+        else:
+            self.log_test("Monthly trabalhista report", False, response.get("error", ""))
+
+    def test_trabalhista_legacy_endpoints(self, token):
+        """Test legacy trabalhista endpoints for backward compatibility"""
+        print("\n🔄 Testing Legacy Trabalhista Endpoints...")
+        
+        # Test legacy GET endpoint
+        success, response = self.make_request("GET", "/trabalhista/", token=token)
+        if success:
+            count = len(response) if isinstance(response, list) else 0
+            self.log_test("Legacy GET trabalhista", True, f"Found {count} solicitações via legacy endpoint")
+        else:
+            self.log_test("Legacy GET trabalhista", False, response.get("error", ""))
+        
+        # Test legacy POST endpoint
+        test_legacy_data = {
+            "empresa_id": "emp-002",
+            "empresa": "Empresa Legacy LTDA",
+            "tipo": "folha",
+            "titulo": "Processamento de folha - Janeiro 2025",
+            "descricao": "Calcular folha de pagamento do mês de janeiro",
+            "prazo": "2025-01-31",
+            "responsavel": "Admin Teste",
+            "prioridade": "alta"
+        }
+        
+        success, response = self.make_request("POST", "/trabalhista/", token=token, data=test_legacy_data)
+        if success:
+            created_id = response.get("id")
+            self.log_test("Legacy POST trabalhista", True, f"Created via legacy endpoint with ID: {created_id}")
+        else:
+            self.log_test("Legacy POST trabalhista", False, response.get("error", ""))
 
     def test_fiscal_endpoints(self):
         """Test fiscal endpoints"""
