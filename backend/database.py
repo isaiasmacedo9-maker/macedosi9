@@ -75,3 +75,15 @@ async def get_tasks_collection():
 async def get_importacoes_extrato_collection():
     database = await get_database()
     return database.importacoes_extrato
+
+async def get_funcionarios_collection():
+    database = await get_database()
+    return database.funcionarios
+
+async def get_obrigacoes_trabalhistas_collection():
+    database = await get_database()
+    return database.obrigacoes_trabalhistas
+
+async def get_checklists_trabalhistas_collection():
+    database = await get_database()
+    return database.checklists_trabalhistas
