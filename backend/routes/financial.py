@@ -355,11 +355,7 @@ async def add_contato_cobranca(
 @router.post("/contas-receber/{conta_id}/proposta-renegociacao", response_model=PropostaRenegociacao)
 async def create_proposta_renegociacao(
     conta_id: str,
-    nova_data_vencimento: date,
-    novo_valor: float,
-    desconto_proposto: float = 0.0,
-    condicoes: str = "",
-    observacao: Optional[str] = None,
+    proposta_data: PropostaRenegociacao,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Create renegotiation proposal"""
@@ -373,29 +369,27 @@ async def create_proposta_renegociacao(
             detail="Conta a receber not found"
         )
     
-    proposta = PropostaRenegociacao(
-        titulo_id=conta_id,
-        nova_data_vencimento=nova_data_vencimento,
-        novo_valor=novo_valor,
-        desconto_proposto=desconto_proposto,
-        condicoes=condicoes,
-        observacao=observacao,
-        usuario_responsavel=current_user.name
-    )
+    # Update proposta with conta_id and user
+    proposta_data.titulo_id = conta_id
+    proposta_data.usuario_responsavel = current_user.name
     
     # Add to historical record
     historico_action = HistoricoAlteracao(
         acao="Proposta de renegociação criada",
         usuario=current_user.name,
-        observacao=f"Nova data: {nova_data_vencimento}, Novo valor: R${novo_valor}"
+        observacao=f"Nova data: {proposta_data.nova_data_vencimento}, Novo valor: R${proposta_data.novo_valor}"
     )
+    
+    # Convert date to datetime for MongoDB
+    historico_dict = historico_action.model_dump()
+    historico_dict["data"] = datetime.utcnow()
     
     await contas_collection.update_one(
         {"id": conta_id},
-        {"$push": {"historico_alteracoes": historico_action.model_dump()}}
+        {"$push": {"historico_alteracoes": historico_dict}}
     )
     
-    return proposta
+    return proposta_data
 
 @router.get("/cobranca/lembretes/{conta_id}")
 async def gerar_lembrete_cobranca(
