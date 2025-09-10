@@ -42,7 +42,7 @@ class MacedoSIAPITester:
         """Make HTTP request with proper headers"""
         # Handle trailing slash for specific endpoints that need it
         endpoint = endpoint.lstrip('/')
-        if endpoint in ['clients', 'financial/clients', 'financial/contas-receber']:
+        if endpoint in ['clients']:
             if not endpoint.endswith('/'):
                 endpoint += '/'
         url = f"{self.base_url}/{endpoint}"
