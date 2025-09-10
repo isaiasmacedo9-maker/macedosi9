@@ -1,34 +1,268 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* Custom scrollbars - Red theme */
+::-webkit-scrollbar {
+  width: 8px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+::-webkit-scrollbar-track {
+  background: rgba(20, 20, 20, 0.3);
+  border-radius: 4px;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  border-radius: 4px;
+  box-shadow: 0 0 5px rgba(220, 38, 38, 0.3);
 }
 
-.App-link {
-    color: #61dafb;
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #b91c1c, #dc2626);
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.4);
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Futuristic glow effects - Softer */
+.glow-red {
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.3), 
+              0 0 20px rgba(220, 38, 38, 0.15);
+}
+
+.glow-red-intense {
+  box-shadow: 0 0 15px rgba(220, 38, 38, 0.4), 
+              0 0 30px rgba(220, 38, 38, 0.2);
+}
+
+.glow-white {
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+/* Glass morphism effect - Softer */
+.glass {
+  backdrop-filter: blur(16px) saturate(180%);
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.08) 0%,
+    rgba(0, 0, 0, 0.85) 50%,
+    rgba(220, 38, 38, 0.04) 100%);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.glass-light {
+  backdrop-filter: blur(12px) saturate(180%);
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.06) 0%,
+    rgba(40, 40, 40, 0.6) 50%,
+    rgba(220, 38, 38, 0.02) 100%);
+  border: 1px solid rgba(220, 38, 38, 0.15);
+}
+
+.glass-intense {
+  backdrop-filter: blur(20px) saturate(200%);
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.1) 0%,
+    rgba(220, 38, 38, 0.08) 30%,
+    rgba(0, 0, 0, 0.7) 70%,
+    rgba(220, 38, 38, 0.04) 100%);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  box-shadow: 0 0 20px rgba(220, 38, 38, 0.2);
+}
+
+/* Neon text effects - Much softer */
+.neon-text {
+  color: #dc2626;
+  text-shadow: 0 0 3px rgba(220, 38, 38, 0.4),
+               0 0 6px rgba(220, 38, 38, 0.2);
+}
+
+.neon-text-white {
+  color: #ffffff;
+  text-shadow: 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.neon-text-cosmic {
+  background: linear-gradient(45deg, #dc2626, #ef4444);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Futuristic button styles */
+.btn-futuristic {
+  position: relative;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  border: none;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.2);
+}
+
+.btn-futuristic::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.6s;
+}
+
+.btn-futuristic:hover::before {
+  left: 100%;
+}
+
+.btn-futuristic:hover {
+  box-shadow: 0 0 20px rgba(220, 38, 38, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Card hover effects - Static */
+.card-hover {
+  transition: all 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4),
+              0 0 20px rgba(220, 38, 38, 0.3);
+}
+
+/* Loading spinner - Static glow */
+@keyframes spin-simple {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  animation: spin-simple 1s linear infinite;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.3);
+}
+
+/* Futuristic input styles */
+.input-futuristic {
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.04) 0%,
+    rgba(0, 0, 0, 0.8) 50%,
+    rgba(220, 38, 38, 0.02) 100%);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  transition: all 0.3s ease;
+  color: #ffffff;
+}
+
+.input-futuristic:focus {
+  border-color: rgba(220, 38, 38, 0.6);
+  box-shadow: 0 0 15px rgba(220, 38, 38, 0.2);
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.08) 0%,
+    rgba(0, 0, 0, 0.9) 50%,
+    rgba(220, 38, 38, 0.04) 100%);
+}
+
+/* Status indicators - Static */
+.status-online {
+  background: linear-gradient(135deg, #10b981, #22c55e);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.status-offline {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.4);
+}
+
+.status-warning {
+  background: linear-gradient(135deg, #f59e0b, #fbbf24);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+/* Futuristic table styles */
+.table-futuristic {
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.02) 0%,
+    rgba(0, 0, 0, 0.9) 100%);
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-futuristic thead tr {
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.15) 0%,
+    rgba(220, 38, 38, 0.08) 100%);
+}
+
+.table-futuristic tbody tr:hover {
+  background: linear-gradient(135deg, 
+    rgba(220, 38, 38, 0.08) 0%,
+    rgba(220, 38, 38, 0.04) 100%);
+  transform: scale(1.01);
+  transition: all 0.3s ease;
+  box-shadow: 0 0 15px rgba(220, 38, 38, 0.15);
+}
+
+/* Sidebar styles */
+.sidebar-futuristic {
+  background: linear-gradient(180deg, 
+    rgba(220, 38, 38, 0.08) 0%,
+    rgba(0, 0, 0, 0.95) 30%,
+    rgba(0, 0, 0, 0.98) 70%,
+    rgba(220, 38, 38, 0.04) 100%);
+  backdrop-filter: blur(20px);
+  border-right: 2px solid rgba(220, 38, 38, 0.25);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Background - Simple gradient */
+.bg-login {
+  background-image: url('https://customer-assets.emergentagent.com/job_mace-crm-data/artifacts/uftcum65_photo_2025-09-10_02-45-05.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  min-height: 100vh;
+}
+
+.bg-futuristic {
+  background: linear-gradient(135deg, 
+    #000000 0%,
+    #1a1a1a 25%,
+    #2d0a0a 50%,
+    #1a1a1a 75%,
+    #000000 100%);
+  position: relative;
+  min-height: 100vh;
+}
+
+.bg-futuristic::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 20%, rgba(220, 38, 38, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(220, 38, 38, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 40% 60%, rgba(220, 38, 38, 0.02) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* Border effects - Softer */
+.border-cosmic {
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  position: relative;
+}
+
+.border-cosmic::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(45deg, rgba(220, 38, 38, 0.2), rgba(220, 38, 38, 0.1));
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.2;
+  filter: blur(0.5px);
 }
