@@ -71,3 +71,7 @@ async def get_chats_collection():
 async def get_tasks_collection():
     database = await get_database()
     return database.tasks
+
+async def get_importacoes_extrato_collection():
+    database = await get_database()
+    return database.importacoes_extrato
