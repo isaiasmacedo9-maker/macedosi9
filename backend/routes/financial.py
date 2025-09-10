@@ -151,18 +151,18 @@ async def baixar_conta_receber(
         acao="Baixa realizada",
         usuario=current_user.name,
         observacao=observacao,
-        valor=valor_recebido
+        valor_novo=str(valor_recebido)
     )
     
     update_data = {
-        "situacao": "pago",
+        "situacao": SituacaoTitulo.PAGO,
         "data_recebimento": data_recebimento,
         "desconto_aplicado": desconto,
         "acrescimo_aplicado": acrescimo,
         "valor_quitado": valor_recebido,
         "total_liquido": conta.valor_original - desconto + acrescimo,
         "updated_at": datetime.utcnow(),
-        "$push": {"historico": historico_action.model_dump()}
+        "$push": {"historico_alteracoes": historico_action.model_dump()}
     }
     
     await contas_collection.update_one({"id": conta_id}, {"$set": update_data})
@@ -170,6 +170,342 @@ async def baixar_conta_receber(
     # Get updated conta
     updated_conta_data = await contas_collection.find_one({"id": conta_id})
     return ContaReceber(**updated_conta_data)
+
+@router.put("/contas-receber/{conta_id}", response_model=ContaReceber)
+async def update_conta_receber(
+    conta_id: str,
+    conta_update: ContaReceberUpdate,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Update conta a receber"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    conta_data = await contas_collection.find_one({"id": conta_id})
+    if not conta_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conta a receber not found"
+        )
+    
+    # Build update data
+    update_data = {k: v for k, v in conta_update.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.utcnow()
+    
+    # Add to history
+    historico_action = HistoricoAlteracao(
+        acao="Registro editado",
+        usuario=current_user.name,
+        observacao="Dados atualizados"
+    )
+    
+    await contas_collection.update_one(
+        {"id": conta_id}, 
+        {
+            "$set": update_data,
+            "$push": {"historico_alteracoes": historico_action.model_dump()}
+        }
+    )
+    
+    # Get updated conta
+    updated_conta_data = await contas_collection.find_one({"id": conta_id})
+    return ContaReceber(**updated_conta_data)
+
+@router.delete("/contas-receber/{conta_id}")
+async def delete_conta_receber(
+    conta_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Delete conta a receber"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    result = await contas_collection.delete_one({"id": conta_id})
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conta a receber not found"
+        )
+    
+    return {"message": "Conta a receber deleted successfully"}
+
+@router.post("/contas-receber/{conta_id}/duplicate", response_model=ContaReceber)
+async def duplicate_conta_receber(
+    conta_id: str,
+    nova_data_vencimento: date,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Duplicate conta a receber for recurring entries"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    conta_data = await contas_collection.find_one({"id": conta_id})
+    if not conta_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conta a receber not found"
+        )
+    
+    # Create new conta based on original
+    conta_original = ContaReceber(**conta_data)
+    nova_conta = ContaReceber(
+        empresa_id=conta_original.empresa_id,
+        empresa=conta_original.empresa,
+        descricao=conta_original.descricao,
+        documento=f"{conta_original.documento}-DUP",
+        tipo_documento=conta_original.tipo_documento,
+        forma_pagamento=conta_original.forma_pagamento,
+        conta=conta_original.conta,
+        centro_custo=conta_original.centro_custo,
+        plano_custo=conta_original.plano_custo,
+        data_emissao=date.today(),
+        data_vencimento=nova_data_vencimento,
+        valor_original=conta_original.valor_original,
+        cidade_atendimento=conta_original.cidade_atendimento,
+        usuario_responsavel=current_user.name,
+        historico_alteracoes=[
+            HistoricoAlteracao(
+                acao="Criado por duplicação",
+                usuario=current_user.name,
+                observacao=f"Duplicado do título {conta_id}"
+            )
+        ]
+    )
+    
+    await contas_collection.insert_one(nova_conta.model_dump())
+    return nova_conta
+
+# Cobrança e Contatos
+@router.post("/contas-receber/{conta_id}/contatos", response_model=ContatoCobranca)
+async def add_contato_cobranca(
+    conta_id: str,
+    contato_data: ContatoCobrancaCreate,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Add contact record to conta a receber"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    conta_data = await contas_collection.find_one({"id": conta_id})
+    if not conta_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conta a receber not found"
+        )
+    
+    contato = ContatoCobranca(
+        **contato_data.model_dump(),
+        usuario_responsavel=current_user.name
+    )
+    
+    await contas_collection.update_one(
+        {"id": conta_id},
+        {"$push": {"contatos_cobranca": contato.model_dump()}}
+    )
+    
+    return contato
+
+@router.post("/contas-receber/{conta_id}/proposta-renegociacao", response_model=PropostaRenegociacao)
+async def create_proposta_renegociacao(
+    conta_id: str,
+    nova_data_vencimento: date,
+    novo_valor: float,
+    desconto_proposto: float = 0.0,
+    condicoes: str = "",
+    observacao: Optional[str] = None,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Create renegotiation proposal"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    conta_data = await contas_collection.find_one({"id": conta_id})
+    if not conta_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conta a receber not found"
+        )
+    
+    proposta = PropostaRenegociacao(
+        titulo_id=conta_id,
+        nova_data_vencimento=nova_data_vencimento,
+        novo_valor=novo_valor,
+        desconto_proposto=desconto_proposto,
+        condicoes=condicoes,
+        observacao=observacao,
+        usuario_responsavel=current_user.name
+    )
+    
+    # Add to historical record
+    historico_action = HistoricoAlteracao(
+        acao="Proposta de renegociação criada",
+        usuario=current_user.name,
+        observacao=f"Nova data: {nova_data_vencimento}, Novo valor: R${novo_valor}"
+    )
+    
+    await contas_collection.update_one(
+        {"id": conta_id},
+        {"$push": {"historico_alteracoes": historico_action.model_dump()}}
+    )
+    
+    return proposta
+
+@router.get("/cobranca/lembretes/{conta_id}")
+async def gerar_lembrete_cobranca(
+    conta_id: str,
+    tipo: str = Query(..., regex="^(whatsapp|email)$"),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Generate collection reminder text"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    conta_data = await contas_collection.find_one({"id": conta_id})
+    if not conta_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conta a receber not found"
+        )
+    
+    conta = ContaReceber(**conta_data)
+    
+    if tipo == "whatsapp":
+        mensagem = f"""
+🏢 *{conta.empresa}*
+
+Prezado(a) cliente,
+
+Identificamos que o título referente ao documento *{conta.documento}* no valor de *R$ {conta.total_liquido:.2f}* com vencimento em *{conta.data_vencimento.strftime('%d/%m/%Y')}* encontra-se em aberto.
+
+Por gentileza, regularizar a situação o mais breve possível.
+
+Atenciosamente,
+Macedo SI - Contabilidade
+        """
+    else:  # email
+        mensagem = f"""
+Assunto: Cobrança - Documento {conta.documento}
+
+Prezado(a) {conta.empresa},
+
+Informamos que o título referente ao documento {conta.documento} no valor de R$ {conta.total_liquido:.2f} com vencimento em {conta.data_vencimento.strftime('%d/%m/%Y')} encontra-se em aberto em nossos registros.
+
+Solicitamos a gentileza de regularizar a situação o mais breve possível.
+
+Atenciosamente,
+Macedo SI - Contabilidade
+        """
+    
+    return {"mensagem": mensagem.strip(), "tipo": tipo}
+
+# Relatórios
+@router.get("/relatorios/inadimplencia")
+async def relatorio_inadimplencia(
+    cidade: Optional[str] = Query(None),
+    data_inicio: Optional[date] = Query(None),
+    data_fim: Optional[date] = Query(None),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Generate default report"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    # Build query
+    query = {"situacao": {"$in": [SituacaoTitulo.ATRASADO, SituacaoTitulo.EM_ABERTO]}}
+    
+    if current_user.role != "admin":
+        query["cidade_atendimento"] = {"$in": current_user.allowed_cities}
+    elif cidade:
+        query["cidade_atendimento"] = cidade
+    
+    if data_inicio and data_fim:
+        query["data_vencimento"] = {
+            "$gte": datetime.combine(data_inicio, datetime.min.time()),
+            "$lte": datetime.combine(data_fim, datetime.max.time())
+        }
+    
+    # Aggregate data
+    pipeline = [
+        {"$match": query},
+        {"$group": {
+            "_id": {
+                "cidade": "$cidade_atendimento",
+                "situacao": "$situacao"
+            },
+            "total_titulos": {"$sum": 1},
+            "valor_total": {"$sum": "$total_liquido"}
+        }},
+        {"$sort": {"_id.cidade": 1, "_id.situacao": 1}}
+    ]
+    
+    resultados = []
+    async for result in contas_collection.aggregate(pipeline):
+        resultados.append({
+            "cidade": result["_id"]["cidade"],
+            "situacao": result["_id"]["situacao"],
+            "total_titulos": result["total_titulos"],
+            "valor_total": result["valor_total"]
+        })
+    
+    return {"relatorio": resultados, "data_geracao": datetime.utcnow()}
+
+@router.get("/relatorios/recebimentos")
+async def relatorio_recebimentos(
+    data_inicio: date = Query(...),
+    data_fim: date = Query(...),
+    cidade: Optional[str] = Query(None),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Generate payment report"""
+    check_financial_access(current_user)
+    contas_collection = await get_contas_receber_collection()
+    
+    # Build query
+    query = {
+        "situacao": SituacaoTitulo.PAGO,
+        "data_recebimento": {
+            "$gte": data_inicio,
+            "$lte": data_fim
+        }
+    }
+    
+    if current_user.role != "admin":
+        query["cidade_atendimento"] = {"$in": current_user.allowed_cities}
+    elif cidade:
+        query["cidade_atendimento"] = cidade
+    
+    # Aggregate data
+    pipeline = [
+        {"$match": query},
+        {"$group": {
+            "_id": {
+                "forma_pagamento": "$forma_pagamento",
+                "cidade": "$cidade_atendimento"
+            },
+            "total_titulos": {"$sum": 1},
+            "valor_total": {"$sum": "$valor_quitado"},
+            "desconto_total": {"$sum": "$desconto_aplicado"},
+            "acrescimo_total": {"$sum": "$acrescimo_aplicado"}
+        }},
+        {"$sort": {"_id.cidade": 1, "_id.forma_pagamento": 1}}
+    ]
+    
+    resultados = []
+    async for result in contas_collection.aggregate(pipeline):
+        resultados.append({
+            "forma_pagamento": result["_id"]["forma_pagamento"],
+            "cidade": result["_id"]["cidade"],
+            "total_titulos": result["total_titulos"],
+            "valor_total": result["valor_total"],
+            "desconto_total": result["desconto_total"],
+            "acrescimo_total": result["acrescimo_total"]
+        })
+    
+    return {
+        "relatorio": resultados,
+        "periodo": {"inicio": data_inicio, "fim": data_fim},
+        "data_geracao": datetime.utcnow()
+    }
 
 # Financial Clients
 @router.post("/clients", response_model=FinancialClient)
