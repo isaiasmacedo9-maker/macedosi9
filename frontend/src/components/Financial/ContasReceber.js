@@ -8,6 +8,8 @@ import {
   Clock, TrendingUp, Upload, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
+import CreateContaModal from './CreateContaModal';
+import PaymentModal from './PaymentModal';
 
 const ContasReceber = () => {
   const { hasAccess, user } = useAuth();
