@@ -17,6 +17,7 @@ class MacedoSIAPITester:
         self.tests_run = 0
         self.tests_passed = 0
         self.failed_tests = []
+        self.test_conta_id = None  # Store test account ID for financial tests
         
         # Test users from init_database.py
         self.test_users = {
