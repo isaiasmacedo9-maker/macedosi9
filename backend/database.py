@@ -87,3 +87,23 @@ async def get_obrigacoes_trabalhistas_collection():
 async def get_checklists_trabalhistas_collection():
     database = await get_database()
     return database.checklists_trabalhistas
+
+async def get_notas_fiscais_collection():
+    database = await get_database()
+    return database.notas_fiscais
+
+async def get_apuracoes_fiscais_collection():
+    database = await get_database()
+    return database.apuracoes_fiscais
+
+async def get_tickets_collection():
+    database = await get_database()
+    return database.tickets
+
+async def get_base_conhecimento_collection():
+    database = await get_database()
+    return database.base_conhecimento
+
+async def get_avaliacoes_atendimento_collection():
+    database = await get_database()
+    return database.avaliacoes_atendimento
