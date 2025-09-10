@@ -483,6 +483,8 @@ test_plan:
     - "Interface Contas a Receber expandida"
     - "Interface Cadastro de Empresas expandida"
     - "Interface Trabalhista expandida"
+    - "Interface Fiscal expandida"
+    - "Interface Atendimento expandida"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
