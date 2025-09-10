@@ -21,6 +21,10 @@ class MacedoSIAPITester:
         self.test_solicitacao_id = None  # Store test solicitação ID for trabalhista tests
         self.test_funcionario_id = None  # Store test funcionário ID for trabalhista tests
         self.test_obrigacao_id = None  # Store test obrigação ID for trabalhista tests
+        self.test_obrigacao_fiscal_id = None  # Store test obrigação fiscal ID
+        self.test_nota_id = None  # Store test nota fiscal ID
+        self.test_ticket_id = None  # Store test ticket ID for atendimento tests
+        self.test_artigo_id = None  # Store test artigo ID for base conhecimento tests
         
         # Test users from init_database.py
         self.test_users = {
