@@ -142,6 +142,213 @@ async def init_clients():
                 estado="BA"
             ),
             tipo_regime="mei"
+        ),
+        Client(
+            nome_empresa="Supermercado Bom Preço Ltda",
+            nome_fantasia="Supermercado Bom Preço",
+            status="ativa",
+            cidade="jacobina",
+            telefone="(74) 3621-5678",
+            whatsapp="(74) 98888-7777",
+            email="gerencia@bompreco.com.br",
+            responsavel="Ana Costa",
+            cnpj="45.678.901/0001-23",
+            forma_envio="email",
+            codigo_iob="IOB004",
+            novo_cliente=False,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Av. Comercial, 890",
+                bairro="Centro",
+                cep="44700-100",
+                cidade="Jacobina",
+                estado="BA"
+            ),
+            tipo_regime="lucro_presumido"
+        ),
+        Client(
+            nome_empresa="Oficina Mecânica do Zé Ltda",
+            nome_fantasia="Oficina do Zé",
+            status="ativa",
+            cidade="ourolandia",
+            telefone="(74) 3633-9999",
+            whatsapp="(74) 99999-1111",
+            email="oficina@oficinadoze.com.br",
+            responsavel="José Ferreira",
+            cnpj="56.789.012/0001-45",
+            forma_envio="whatsapp",
+            codigo_iob="IOB005",
+            novo_cliente=True,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Rua das Oficinas, 234",
+                bairro="Industrial",
+                cep="44755-200",
+                cidade="Ourolândia",
+                estado="BA"
+            ),
+            tipo_regime="simples"
+        ),
+        Client(
+            nome_empresa="Farmácia Vida & Saúde Ltda",
+            nome_fantasia="Farmácia Vida & Saúde",
+            status="ativa",
+            cidade="umburanas",
+            telefone="(74) 3644-5555",
+            whatsapp="(74) 97777-8888",
+            email="atendimento@vidasaude.com.br",
+            responsavel="Dra. Paula Lima",
+            cnpj="67.890.123/0001-67",
+            forma_envio="email",
+            codigo_iob="IOB006",
+            novo_cliente=False,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Praça Central, 45",
+                bairro="Centro",
+                cep="44760-300",
+                cidade="Umburanas",
+                estado="BA"
+            ),
+            tipo_regime="simples"
+        ),
+        Client(
+            nome_empresa="Restaurante Sabor Caseiro Ltda",
+            nome_fantasia="Sabor Caseiro",
+            status="ativa",
+            cidade="jacobina",
+            telefone="(74) 3621-7777",
+            whatsapp="(74) 98555-4444",
+            email="pedidos@saborcaseiro.com.br",
+            responsavel="Chef Roberto",
+            cnpj="78.901.234/0001-89",
+            forma_envio="whatsapp",
+            codigo_iob="IOB007",
+            novo_cliente=True,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Rua dos Restaurantes, 567",
+                bairro="Centro",
+                cep="44700-400",
+                cidade="Jacobina",
+                estado="BA"
+            ),
+            tipo_regime="simples"
+        ),
+        Client(
+            nome_empresa="Loja de Roupas Fashion Store Ltda",
+            nome_fantasia="Fashion Store",
+            status="ativa",
+            cidade="ourolandia",
+            telefone="(74) 3633-3333",
+            whatsapp="(74) 99666-2222",
+            email="vendas@fashionstore.com.br",
+            responsavel="Isabella Santos",
+            cnpj="89.012.345/0001-01",
+            forma_envio="email",
+            codigo_iob="IOB008",
+            novo_cliente=False,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Rua da Moda, 678",
+                bairro="Centro",
+                cep="44755-500",
+                cidade="Ourolândia",
+                estado="BA"
+            ),
+            tipo_regime="lucro_presumido"
+        ),
+        Client(
+            nome_empresa="Escola Técnica Futuro Ltda",
+            nome_fantasia="Escola Futuro",
+            status="ativa",
+            cidade="umburanas",
+            telefone="(74) 3644-1111",
+            whatsapp="(74) 97333-5555",
+            email="secretaria@escolafuturo.com.br",
+            responsavel="Prof. Marcus Vinícius",
+            cnpj="90.123.456/0001-12",
+            forma_envio="email",
+            codigo_iob="IOB009",
+            novo_cliente=True,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Av. da Educação, 789",
+                bairro="Educacional",
+                cep="44760-600",
+                cidade="Umburanas",
+                estado="BA"
+            ),
+            tipo_regime="lucro_presumido"
+        ),
+        Client(
+            nome_empresa="Petshop Amigo Fiel ME",
+            nome_fantasia="Amigo Fiel Petshop",
+            status="ativa",
+            cidade="jacobina",
+            telefone="(74) 3621-2222",
+            whatsapp="(74) 98222-9999",
+            email="cuidados@amigofiel.com.br",
+            responsavel="Veterinária Dra. Carla",
+            cnpj="01.234.567/0001-90",
+            forma_envio="whatsapp",
+            codigo_iob="IOB010",
+            novo_cliente=False,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Rua dos Pets, 321",
+                bairro="Residencial",
+                cep="44700-700",
+                cidade="Jacobina",
+                estado="BA"
+            ),
+            tipo_regime="mei"
+        ),
+        Client(
+            nome_empresa="Transportadora Rápida Ltda",
+            nome_fantasia="Rápida Transportes",
+            status="ativa",
+            cidade="uberlandia",
+            telefone="(34) 3333-4444",
+            whatsapp="(34) 99888-7777",
+            email="logistica@rapidatransportes.com.br",
+            responsavel="Sr. Antonio Carlos",
+            cnpj="11.222.333/0001-44",
+            forma_envio="email",
+            codigo_iob="IOB011",
+            novo_cliente=True,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Rod. BR-050, Km 15",
+                bairro="Distrito Industrial",
+                cep="38400-000",
+                cidade="Uberlândia",
+                estado="MG"
+            ),
+            tipo_regime="lucro_real"
+        ),
+        Client(
+            nome_empresa="Consultório Odontológico Sorriso Ltda",
+            nome_fantasia="Clínica Sorriso",
+            status="suspensa",
+            cidade="jacobina",
+            telefone="(74) 3621-8888",
+            whatsapp="(74) 98111-2222",
+            email="agendamento@clinicasorriso.com.br",
+            responsavel="Dr. Fernando Alves",
+            cnpj="22.333.444/0001-55",
+            forma_envio="whatsapp",
+            codigo_iob="IOB012",
+            novo_cliente=False,
+            tipo_empresa="matriz",
+            endereco=Address(
+                logradouro="Rua da Saúde, 456",
+                bairro="Centro",
+                cep="44700-800",
+                cidade="Jacobina",
+                estado="BA"
+            ),
+            tipo_regime="simples"
         )
     ]
     
