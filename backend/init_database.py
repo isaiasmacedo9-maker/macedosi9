@@ -711,6 +711,111 @@ async def init_trabalhista_data():
                 total_descontos=4800.00,
                 total_liquido=19200.00
             )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="4",
+            empresa="Supermercado Bom Preço Ltda",
+            tipo="demissao",
+            descricao="Demissão de funcionário - Operador de Caixa",
+            data_solicitacao=date(2025, 1, 10),
+            prazo=date(2025, 1, 15),
+            responsavel="Ana Costa",
+            status="concluido",
+            observacoes="Demissão por justa causa processada",
+            funcionario=FuncionarioData(
+                nome="Carlos Eduardo Santos",
+                cpf="987.654.321-00",
+                funcao="Operador de Caixa",
+                salario=1800.00,
+                motivo_demissao="Justa causa - abandono de emprego"
+            )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="7",
+            empresa="Restaurante Sabor Caseiro Ltda",
+            tipo="admissao",
+            descricao="Admissão de cozinheiro experiente",
+            data_solicitacao=date(2025, 1, 25),
+            prazo=date(2025, 1, 30),
+            responsavel="Chef Roberto",
+            status="pendente",
+            observacoes="Aguardando entrega dos documentos pelo funcionário",
+            funcionario=FuncionarioData(
+                nome="José da Cozinha",
+                cpf="456.789.123-00",
+                funcao="Cozinheiro",
+                salario=2200.00,
+                data_admissao=date(2025, 2, 1)
+            )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="8",
+            empresa="Loja de Roupas Fashion Store Ltda",
+            tipo="folha",
+            descricao="Folha de pagamento - Janeiro/2025",
+            data_solicitacao=date(2025, 1, 22),
+            prazo=date(2025, 1, 28),
+            responsavel="Isabella Santos",
+            status="em_andamento",
+            observacoes="Aguardando confirmação de horas extras",
+            detalhes=DetalheFolha(
+                total_funcionarios=5,
+                total_proventos=12000.00,
+                total_descontos=2400.00,
+                total_liquido=9600.00
+            )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="11",
+            empresa="Transportadora Rápida Ltda",
+            tipo="afastamento",
+            descricao="Afastamento por doença ocupacional - Motorista",
+            data_solicitacao=date(2025, 1, 12),
+            prazo=date(2025, 1, 17),
+            responsavel="Sr. Antonio Carlos",
+            status="concluido",
+            observacoes="CAT emitida e protocolo no INSS realizado",
+            funcionario=FuncionarioData(
+                nome="Pedro Caminhoneiro",
+                cpf="321.654.987-00",
+                funcao="Motorista",
+                salario=3200.00
+            )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="6",
+            empresa="Farmácia Vida & Saúde Ltda",
+            tipo="reclamacao",
+            descricao="Reclamação trabalhista - Ex-funcionário",
+            data_solicitacao=date(2025, 1, 8),
+            prazo=date(2025, 2, 8),
+            responsavel="Dra. Paula Lima",
+            status="atrasado",
+            observacoes="Aguardando parecer jurídico - prazo vencido",
+            funcionario=FuncionarioData(
+                nome="Funcionário Reclamante",
+                cpf="147.258.369-00",
+                funcao="Balconista",
+                salario=1600.00,
+                motivo_demissao="Demissão sem justa causa"
+            )
+        ),
+        SolicitacaoTrabalhista(
+            empresa_id="9",
+            empresa="Escola Técnica Futuro Ltda",
+            tipo="folha",
+            descricao="Folha de pagamento professores - Janeiro/2025",
+            data_solicitacao=date(2025, 1, 18),
+            prazo=date(2025, 1, 25),
+            responsavel="Prof. Marcus Vinícius",
+            status="em_andamento",
+            observacoes="Calculando adicional noturno dos professores",
+            detalhes=DetalheFolha(
+                total_funcionarios=15,
+                total_proventos=45000.00,
+                total_descontos=9000.00,
+                total_liquido=36000.00
+            )
         )
     ]
     
