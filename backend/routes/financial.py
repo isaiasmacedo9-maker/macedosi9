@@ -346,10 +346,12 @@ async def add_contato_cobranca(
             detail="Conta a receber not found"
         )
     
-    contato = ContatoCobranca(
-        **contato_data.model_dump(),
-        usuario_responsavel=current_user.name
-    )
+    # Create contato data without titulo_id (it's already in the conta)
+    contato_dict = contato_data.model_dump()
+    contato_dict.pop('titulo_id', None)  # Remove titulo_id as it's not part of ContatoCobranca model
+    contato_dict['usuario_responsavel'] = current_user.name
+    
+    contato = ContatoCobranca(**contato_dict)
     
     await contas_collection.update_one(
         {"id": conta_id},
