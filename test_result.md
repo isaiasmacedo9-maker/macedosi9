@@ -219,3 +219,5 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "Fase 1 do backend concluída - implementados modelos completos e APIs avançadas para módulo financeiro. Sistema de importação de extratos com OCR offline implementado mas precisa de testes. Próximo passo: testar backend e depois implementar frontend."
+  - agent: "testing"
+    message: "TESTES BACKEND CONCLUÍDOS - Autenticação 100% funcional. Módulo financeiro PARCIALMENTE operacional: CRUD básico, busca, lembretes e exportação funcionam. BUGS CRÍTICOS encontrados: /financial/clients não implementado (404), erros 500 em cobrança/duplicação/dashboard, parâmetros incorretos em renegociação/baixa (422). Outros módulos retornam 404 por falta de dados. Sistema tem boa base mas precisa correções específicas."
