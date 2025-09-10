@@ -150,11 +150,14 @@ backend:
     file: "routes/financial.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: false
         agent: "main"
         comment: "Sistema complexo de importação de extratos implementado com processamento de PDF/CSV, extração de dados, detecção de CNPJ, conciliação automática com títulos, sistema de score para matching, fila de classificação manual. Precisa de testes para validar funcionamento"
+      - working: false
+        agent: "testing"
+        comment: "TESTADO - Endpoint de listagem de importações funciona (retorna lista vazia). Endpoint de upload aceita requisições mas retorna erro 422 sem arquivo (comportamento esperado). Sistema de baixa de títulos falha com erro 422 por parâmetros incorretos (query vs body). Funcionalidade básica presente mas com bugs de implementação."
 
   - task: "Collection de Importações no Database"
     implemented: true
