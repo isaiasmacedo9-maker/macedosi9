@@ -994,6 +994,82 @@ async def classificar_movimento(
     return {"message": "Movimento classificado com sucesso"}
 
 # Financial Clients - Updated and expanded
+@router.post("/clients", response_model=FinancialClient)
+async def create_financial_client(
+    client_data: FinancialClientCreate,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Create new financial client"""
+    check_financial_access(current_user)
+    financial_clients_collection = await get_financial_clients_collection()
+    
+    # Check if client already exists
+    existing_client = await financial_clients_collection.find_one({"empresa_id": client_data.empresa_id})
+    if existing_client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Financial client already exists"
+        )
+    
+    # Create client dict with proper serialization
+    financial_client_dict = {
+        "id": str(uuid.uuid4()),
+        "empresa_id": client_data.empresa_id,
+        "empresa": client_data.empresa,
+        "valor_com_desconto": client_data.valor_com_desconto,
+        "valor_boleto": client_data.valor_boleto,
+        "dia_vencimento": client_data.dia_vencimento,
+        "tipo_honorario": client_data.tipo_honorario.value if hasattr(client_data.tipo_honorario, 'value') else client_data.tipo_honorario,
+        "empresa_individual_grupo": client_data.empresa_individual_grupo.value if hasattr(client_data.empresa_individual_grupo, 'value') else client_data.empresa_individual_grupo,
+        "contas_pagamento": client_data.contas_pagamento,
+        "tipo_pagamento": client_data.tipo_pagamento.value if hasattr(client_data.tipo_pagamento, 'value') else client_data.tipo_pagamento,
+        "forma_pagamento_especial": client_data.forma_pagamento_especial,
+        "tipo_empresa": client_data.tipo_empresa.value if hasattr(client_data.tipo_empresa, 'value') else client_data.tipo_empresa,
+        "status_pagamento": client_data.status_pagamento.value if hasattr(client_data.status_pagamento, 'value') else client_data.status_pagamento,
+        "observacoes": client_data.observacoes,
+        "ultimo_pagamento": None,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    
+    await financial_clients_collection.insert_one(financial_client_dict)
+    
+    return FinancialClient(**financial_client_dict)
+
+@router.get("/clients", response_model=List[FinancialClient])
+async def get_financial_clients(
+    current_user: UserResponse = Depends(get_current_user),
+    status_pagamento: Optional[str] = Query(None),
+    tipo_honorario: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500)
+):
+    """Get financial clients with filters"""
+    check_financial_access(current_user)
+    financial_clients_collection = await get_financial_clients_collection()
+    
+    # Build query
+    query = {}
+    
+    # Status filter
+    if status_pagamento:
+        query["status_pagamento"] = status_pagamento
+    
+    # Type filter
+    if tipo_honorario:
+        query["tipo_honorario"] = tipo_honorario
+    
+    # Search filter
+    if search:
+        query["empresa"] = {"$regex": search, "$options": "i"}
+    
+    clients_cursor = financial_clients_collection.find(query).skip(skip).limit(limit).sort("empresa", 1)
+    clients = []
+    async for client_data in clients_cursor:
+        clients.append(FinancialClient(**client_data))
+    
+    return clients
 @router.put("/clients/{client_id}", response_model=FinancialClient) 
 async def update_financial_client(
     client_id: str,
