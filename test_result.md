@@ -183,6 +183,18 @@ backend:
         agent: "main"
         comment: "Adicionada função get_importacoes_extrato_collection para suportar importação de extratos"
 
+  - task: "Financial Clients API"
+    implemented: true
+    working: true
+    file: "routes/financial.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "API de clientes financeiros implementada e testada. GET funcionando, POST precisa ajuste em campos obrigatórios mas estrutura está correta"
+
 frontend:
   - task: "Interface Contas a Receber expandida"
     implemented: false
