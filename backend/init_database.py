@@ -509,6 +509,155 @@ async def init_financial_data():
                         valor=1350.00
                     )
                 ]
+            ),
+            ContaReceber(
+                empresa_id="4",
+                empresa="Supermercado Bom Preço Ltda",
+                situacao="pago",
+                descricao="Honorários contábeis - Janeiro/2025",
+                documento="NF-001236",
+                forma_pagamento="transferencia",
+                conta="Banco do Brasil - CC 1234-5",
+                centro_custo="Honorários Mensais",
+                plano_custo="Receitas de Serviços",
+                data_emissao=date(2025, 1, 1),
+                data_vencimento=date(2025, 1, 5),
+                valor_original=2000.00,
+                observacao="Pagamento realizado via transferência",
+                cidade_atendimento="jacobina",
+                data_recebimento=date(2025, 1, 4),
+                valor_quitado=1800.00,
+                desconto_aplicado=200.00,
+                total_bruto=2000.00,
+                total_liquido=1800.00,
+                usuario_responsavel="Ana Costa",
+                historico=[
+                    HistoricoAction(
+                        data=datetime(2025, 1, 4, 14, 30, 0),
+                        acao="Desconto aplicado por pagamento antecipado",
+                        usuario="João Silva",
+                        valor=200.00
+                    ),
+                    HistoricoAction(
+                        data=datetime(2025, 1, 4, 15, 0, 0),
+                        acao="Pagamento recebido",
+                        usuario="Sistema",
+                        valor=1800.00
+                    )
+                ]
+            ),
+            ContaReceber(
+                empresa_id="7",
+                empresa="Restaurante Sabor Caseiro Ltda",
+                situacao="atrasado",
+                descricao="Honorários contábeis - Dezembro/2024",
+                documento="NF-001200",
+                forma_pagamento="boleto",
+                conta="Banco do Brasil - CC 1234-5",
+                centro_custo="Honorários Mensais",
+                plano_custo="Receitas de Serviços",
+                data_emissao=date(2024, 12, 1),
+                data_vencimento=date(2024, 12, 20),
+                valor_original=750.00,
+                observacao="Cliente com dificuldades financeiras",
+                cidade_atendimento="jacobina",
+                total_bruto=750.00,
+                total_liquido=750.00,
+                usuario_responsavel="Chef Roberto"
+            ),
+            ContaReceber(
+                empresa_id="8",
+                empresa="Loja de Roupas Fashion Store Ltda",
+                situacao="em_aberto",
+                descricao="Honorários contábeis - Janeiro/2025",
+                documento="NF-001237",
+                forma_pagamento="pix",
+                conta="Banco do Brasil - CC 1234-5",
+                centro_custo="Honorários Mensais",
+                plano_custo="Receitas de Serviços",
+                data_emissao=date(2025, 1, 1),
+                data_vencimento=date(2025, 1, 25),
+                valor_original=1250.00,
+                observacao="Aguardando vencimento",
+                cidade_atendimento="ourolandia",
+                total_bruto=1250.00,
+                total_liquido=1250.00,
+                usuario_responsavel="Isabella Santos"
+            ),
+            ContaReceber(
+                empresa_id="11",
+                empresa="Transportadora Rápida Ltda",
+                situacao="renegociado",
+                descricao="Honorários contábeis - Dezembro/2024",
+                documento="NF-001201",
+                forma_pagamento="transferencia",
+                conta="Banco do Brasil - CC 1234-5",
+                centro_custo="Honorários Mensais",
+                plano_custo="Receitas de Serviços",
+                data_emissao=date(2024, 12, 1),
+                data_vencimento=date(2024, 12, 30),
+                valor_original=2800.00,
+                observacao="Renegociado para pagamento parcelado",
+                cidade_atendimento="uberlandia",
+                total_bruto=2800.00,
+                total_liquido=2800.00,
+                usuario_responsavel="Sr. Antonio Carlos",
+                historico=[
+                    HistoricoAction(
+                        data=datetime(2025, 1, 5, 9, 0, 0),
+                        acao="Conta renegociada para 3x sem juros",
+                        usuario="Administrador",
+                        observacao="Cliente solicitou parcelamento"
+                    )
+                ]
+            ),
+            ContaReceber(
+                empresa_id="3",
+                empresa="Clínica Saúde & Vida ME",
+                situacao="em_aberto",
+                descricao="Honorários contábeis - Janeiro/2025",
+                documento="NF-001238",
+                forma_pagamento="boleto",
+                conta="Banco do Brasil - CC 1234-5",
+                centro_custo="Honorários Mensais",
+                plano_custo="Receitas de Serviços",
+                data_emissao=date(2025, 1, 1),
+                data_vencimento=date(2025, 2, 5),
+                valor_original=400.00,
+                observacao="MEI - valor reduzido",
+                cidade_atendimento="umburanas",
+                total_bruto=400.00,
+                total_liquido=400.00,
+                usuario_responsavel="Dr. Carlos Oliveira"
+            ),
+            ContaReceber(
+                empresa_id="10",
+                empresa="Petshop Amigo Fiel ME",
+                situacao="pago",
+                descricao="Honorários contábeis - Janeiro/2025",
+                documento="NF-001239",
+                forma_pagamento="pix",
+                conta="Banco do Brasil - CC 1234-5",
+                centro_custo="Honorários Mensais",
+                plano_custo="Receitas de Serviços",
+                data_emissao=date(2025, 1, 1),
+                data_vencimento=date(2025, 1, 15),
+                valor_original=350.00,
+                observacao="MEI - pagamento pontual",
+                cidade_atendimento="jacobina",
+                data_recebimento=date(2025, 1, 12),
+                valor_quitado=350.00,
+                total_bruto=350.00,
+                total_liquido=350.00,
+                usuario_responsavel="Dra. Carla",
+                historico=[
+                    HistoricoAction(
+                        data=datetime(2025, 1, 12, 16, 30, 0),
+                        acao="Pagamento via PIX recebido",
+                        usuario="Sistema",
+                        valor=350.00
+                    )
+                ]
             )
         ]
         
