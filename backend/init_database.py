@@ -858,6 +858,103 @@ async def init_fiscal_data():
             responsavel="Carlos Oliveira",
             status="em_andamento",
             observacoes="Em processo de validação"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="4",
+            empresa="Supermercado Bom Preço Ltda",
+            tipo="pgdas",
+            nome="PGDAS - Lucro Presumido Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 15),
+            responsavel="Ana Costa",
+            status="entregue",
+            valor=1200.00,
+            data_entrega=date(2025, 2, 10),
+            observacoes="Entregue antecipadamente"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="8",
+            empresa="Loja de Roupas Fashion Store Ltda",
+            tipo="dctf",
+            nome="DCTF - Declaração Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 25),
+            responsavel="Isabella Santos",
+            status="pendente",
+            valor=800.00,
+            observacoes="Aguardando documentação do cliente"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="9",
+            empresa="Escola Técnica Futuro Ltda",
+            tipo="sped",
+            nome="SPED Fiscal Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 15),
+            responsavel="Prof. Marcus Vinícius",
+            status="atrasado",
+            observacoes="Empresa não enviou documentos a tempo"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="11",
+            empresa="Transportadora Rápida Ltda",
+            tipo="defis",
+            nome="DEFIS - Declaração Anual 2024",
+            periodicidade="anual",
+            vencimento=date(2025, 3, 31),
+            responsavel="Sr. Antonio Carlos",
+            status="em_andamento",
+            valor=2500.00,
+            observacoes="Preparando documentação para lucro real"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="7",
+            empresa="Restaurante Sabor Caseiro Ltda",
+            tipo="pgdas",
+            nome="PGDAS - Simples Nacional Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 20),
+            responsavel="Chef Roberto",
+            status="pendente",
+            valor=320.00,
+            observacoes="Cliente solicitou extensão de prazo"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="6",
+            empresa="Farmácia Vida & Saúde Ltda",
+            tipo="darf",
+            nome="DARF - Recolhimento ISS Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 10),
+            responsavel="Dra. Paula Lima",
+            status="entregue",
+            valor=180.00,
+            data_entrega=date(2025, 2, 8),
+            observacoes="Recolhimento municipal efetuado"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="5",
+            empresa="Oficina Mecânica do Zé Ltda",
+            tipo="pgdas",
+            nome="PGDAS - Simples Nacional Janeiro/2025",
+            periodicidade="mensal",
+            vencimento=date(2025, 2, 20),
+            responsavel="José Ferreira",
+            status="atrasado",
+            valor=290.00,
+            observacoes="Cliente com dificuldades de pagamento"
+        ),
+        ObrigacaoFiscal(
+            empresa_id="12",
+            empresa="Consultório Odontológico Sorriso Ltda",
+            tipo="pgdas",
+            nome="PGDAS - Simples Nacional Dezembro/2024",
+            periodicidade="mensal",
+            vencimento=date(2025, 1, 20),
+            responsavel="Dr. Fernando Alves",
+            status="atrasado",
+            valor=150.00,
+            observacoes="Empresa suspensa - regularização pendente"
         )
     ]
     
