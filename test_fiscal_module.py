@@ -214,13 +214,15 @@ class FiscalModuleTester:
             self.log_test("GET Notas Fiscais with Filters", False, response.get("error", ""))
         
         # Test POST - Create new nota fiscal
+        import random
+        unique_num = random.randint(1000, 9999)
         test_nota_data = {
             "empresa_id": "emp-test-001",
             "empresa": "Empresa Teste Fiscal LTDA",
             "tipo": "saida",
-            "numero": 123,
+            "numero": unique_num,
             "serie": "1",
-            "chave_nfe": "35250112345678000190550010000012311234567890",
+            "chave_nfe": f"35250112345678000190550010000{unique_num:06d}1234567890",
             "data_emissao": "2025-01-15",
             "emitente_cnpj": "12.345.678/0001-90",
             "emitente_razao_social": "Empresa Teste Fiscal LTDA",
