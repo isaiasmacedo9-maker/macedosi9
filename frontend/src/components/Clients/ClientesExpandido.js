@@ -93,6 +93,14 @@ const ClientesExpandido = () => {
     try {
       await api.post('/clients', formData);
       toast.success('Cliente criado com sucesso!');
+      
+      // Notificar sobre envio automático para financeiro
+      if (formData.cidade) {
+        toast.info(`📨 Notificação automática enviada para o setor Financeiro de ${formData.cidade}`, {
+          duration: 5000
+        });
+      }
+      
       setShowModal(false);
       resetForm();
       loadClients();
