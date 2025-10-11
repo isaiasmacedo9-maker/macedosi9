@@ -40,6 +40,13 @@ const Layout = ({ children }) => {
       emoji: '📋'
     },
     {
+      name: 'Comercial',
+      icon: Briefcase,
+      path: '/comercial',
+      access: ['Comercial'],
+      emoji: '💼'
+    },
+    {
       name: 'Clientes',
       icon: Users,
       path: '/clientes',
