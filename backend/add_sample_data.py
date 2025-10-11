@@ -40,38 +40,40 @@ def create_clients(token):
         {
             "nome_empresa": "Comercial ABC Produtos Ltda",
             "nome_fantasia": "ABC Comércio",
-            "cnpj": "98.765.432/0001-10",
-            "inscricao_estadual": "987.654.321.098",
+            "cnpj": "98765432000110",
             "email": "financeiro@abccomercio.com.br",
             "telefone": "(11) 2345-6789",
-            "celular": "(11) 97654-3210",
-            "cep": "04567-000",
-            "logradouro": "Rua Vergueiro",
-            "numero": "2500",
-            "bairro": "Vila Mariana",
-            "cidade": "São Paulo",
-            "estado": "SP",
-            "setor": "fiscal",
-            "status": "ativo",
-            "responsavel": "Admin"
+            "whatsapp": "(11) 97654-3210",
+            "cidade_atendimento": "São Paulo",
+            "tipo_regime": "lucro_presumido",
+            "status_empresa": "ativa",
+            "endereco": {
+                "logradouro": "Rua Vergueiro",
+                "numero": "2500",
+                "bairro": "Vila Mariana",
+                "cep": "04567-000",
+                "cidade": "São Paulo",
+                "estado": "SP"
+            }
         },
         {
             "nome_empresa": "Indústria XYZ S/A",
             "nome_fantasia": "XYZ Indústria",
-            "cnpj": "11.222.333/0001-44",
-            "inscricao_estadual": "111.222.333.444",
+            "cnpj": "11222333000144",
             "email": "contato@xyzindustria.com.br",
             "telefone": "(11) 4567-8901",
-            "celular": "(11) 96543-2109",
-            "cep": "08200-000",
-            "logradouro": "Av. Industrial",
-            "numero": "500",
-            "bairro": "Centro",
-            "cidade": "São Paulo",
-            "estado": "SP",
-            "setor": "trabalhista",
-            "status": "ativo",
-            "responsavel": "Admin"
+            "whatsapp": "(11) 96543-2109",
+            "cidade_atendimento": "São Paulo",
+            "tipo_regime": "lucro_real",
+            "status_empresa": "ativa",
+            "endereco": {
+                "logradouro": "Av. Industrial",
+                "numero": "500",
+                "bairro": "Centro",
+                "cep": "08200-000",
+                "cidade": "São Paulo",
+                "estado": "SP"
+            }
         }
     ]
     
