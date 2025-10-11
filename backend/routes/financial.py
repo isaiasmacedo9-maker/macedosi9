@@ -922,7 +922,7 @@ async def listar_importacoes(
         query["cidade"] = {"$in": current_user.allowed_cities}
     
     importacoes = []
-    async for importacao_data in await importacoes_collection.find(query, skip=skip, limit=limit):
+    for importacao_data in await importacoes_collection.find(query, skip=skip, limit=limit):
         importacoes.append(ImportacaoExtrato(**importacao_data))
     
     return importacoes
