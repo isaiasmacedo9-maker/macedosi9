@@ -87,7 +87,8 @@ class DatabaseAdapter:
         stmt = stmt.limit(limit).offset(skip)
         result = await self.session.execute(stmt)
         objects = result.scalars().all()
-        return [convert_to_dict(obj) for obj in objects]
+        # Convert objects without loading relationships to avoid async issues
+        return [convert_to_dict(obj, exclude_relations=True) for obj in objects]
     
     async def insert_one(self, collection_name: str, document: Dict):
         """Insert single document/record"""
