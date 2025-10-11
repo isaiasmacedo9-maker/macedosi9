@@ -173,9 +173,10 @@ async def get_clients(
             {"responsavel": {"$regex": search, "$options": "i"}}
         ]
     
-    cursor = clients_collection.find(filter_query).skip(skip).limit(limit)
+    # Fetch data with filters
+    clients_data = await clients_collection.find(filter_query, limit=limit, skip=skip)
     clients = []
-    async for client_data in cursor:
+    for client_data in clients_data:
         clients.append(Client(**client_data))
     
     total = await clients_collection.count_documents(filter_query)
