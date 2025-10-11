@@ -329,6 +329,7 @@ async def criar_tickets_atendimento(empresas):
                 "responsavel": "Atendimento",
                 "equipe": "Suporte",
                 "data_abertura": datetime.utcnow() - timedelta(days=random.randint(0, 15)),
+                "sla": "normal",
                 "prazo_primeira_resposta": datetime.utcnow() + timedelta(hours=4),
                 "prazo_resolucao": datetime.utcnow() + timedelta(days=2),
                 "sla_primeira_resposta_violado": False,
