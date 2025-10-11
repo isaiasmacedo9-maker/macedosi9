@@ -2,9 +2,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models.user import User, UserResponse
+from models.user import User, UserResponse, UserLogin, UserCreate, UserUpdate
 import os
 from pathlib import Path
 from dotenv import load_dotenv
