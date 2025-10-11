@@ -143,7 +143,7 @@ const Configuracoes = () => {
             <div className="text-center">
               <div className="w-3 h-3 bg-blue-600 rounded-full mx-auto mb-2"></div>
               <p className="text-white font-medium">Banco de Dados</p>
-              <p className="text-gray-400 text-sm">MongoDB Conectado</p>
+              <p className="text-gray-400 text-sm">SQLite Conectado</p>
             </div>
             <div className="text-center">
               <div className="w-3 h-3 bg-green-600 rounded-full mx-auto mb-2"></div>
