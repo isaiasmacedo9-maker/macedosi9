@@ -184,7 +184,7 @@ async def populate_database():
         })
     
     for obrigacao in obrigacoes_fiscais:
-        await database.'obrigacoes_fiscais', obrigacao)
+        await database.obrigacoes_fiscais.insert_one(obrigacao)
     print(f"✅ {len(obrigacoes_fiscais)} obrigações fiscais criadas!")
     
     # 4. CRIAR NOTAS FISCAIS
