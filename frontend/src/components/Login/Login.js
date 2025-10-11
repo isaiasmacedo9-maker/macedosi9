@@ -112,22 +112,16 @@ const Login = () => {
             <p className="text-xs text-gray-400 text-center mb-4">Acesso rápido para teste:</p>
             <div className="grid grid-cols-1 gap-2">
               <button
-                onClick={() => quickLogin('admin@macedo.com.br', 'admin123')}
+                onClick={() => quickLogin('admin@macedosi.com', 'admin123')}
                 className="text-xs text-gray-300 hover:text-red-400 p-2 rounded-lg hover:bg-black/50 transition-colors"
               >
-                👑 Admin: admin@macedo.com.br
+                👑 Admin: admin@macedosi.com
               </button>
               <button
-                onClick={() => quickLogin('colaborador@macedo.com.br', 'colab123')}
+                onClick={() => quickLogin('colaborador@macedosi.com', 'teste123')}
                 className="text-xs text-gray-300 hover:text-red-400 p-2 rounded-lg hover:bg-black/50 transition-colors"
               >
-                👤 Colaborador: colaborador@macedo.com.br
-              </button>
-              <button
-                onClick={() => quickLogin('fiscal@macedo.com.br', 'fiscal123')}
-                className="text-xs text-gray-300 hover:text-red-400 p-2 rounded-lg hover:bg-black/50 transition-colors"
-              >
-                📊 Fiscal: fiscal@macedo.com.br
+                👤 Colaborador: colaborador@macedosi.com
               </button>
             </div>
           </div>
