@@ -7,7 +7,7 @@ import Dashboard from "./components/Dashboard/Dashboard";
 import ClientesExpandido from "./components/Clients/ClientesExpandido";
 import FinancialClients from "./components/Clients/FinancialClients";
 import FinanceiroExpandido from "./components/Financial/FinanceiroExpandido";
-import Trabalhista from "./components/Trabalhista/Trabalhista";
+import TrabalhistaExpandido from "./components/Trabalhista/TrabalhistaExpandido";
 import FiscalExpandido from "./components/Fiscal/FiscalExpandido";
 import AtendimentoAgendamento from "./components/Atendimento/AtendimentoAgendamento";
 import PainelContadores from "./components/Contadores/PainelContadores";
