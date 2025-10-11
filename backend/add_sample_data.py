@@ -21,20 +21,21 @@ def create_clients(token):
         {
             "nome_empresa": "Tech Solutions Brasil Ltda",
             "nome_fantasia": "Tech Solutions",
-            "cnpj": "12.345.678/0001-90",
-            "inscricao_estadual": "123.456.789.012",
+            "cnpj": "12345678000190",
             "email": "contato@techsolutions.com.br",
             "telefone": "(11) 3456-7890",
-            "celular": "(11) 98765-4321",
-            "cep": "01310-100",
-            "logradouro": "Av. Paulista",
-            "numero": "1000",
-            "bairro": "Bela Vista",
-            "cidade": "São Paulo",
-            "estado": "SP",
-            "setor": "contabilidade",
-            "status": "ativo",
-            "responsavel": "Admin"
+            "whatsapp": "(11) 98765-4321",
+            "cidade_atendimento": "São Paulo",
+            "tipo_regime": "simples",
+            "status_empresa": "ativa",
+            "endereco": {
+                "logradouro": "Av. Paulista",
+                "numero": "1000",
+                "bairro": "Bela Vista",
+                "cep": "01310-100",
+                "cidade": "São Paulo",
+                "estado": "SP"
+            }
         },
         {
             "nome_empresa": "Comercial ABC Produtos Ltda",
