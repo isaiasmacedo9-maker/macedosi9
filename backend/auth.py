@@ -52,17 +52,34 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def authenticate_user(email: str, password: str) -> Optional[User]:
     """Authenticate user credentials"""
-    users_collection = await get_users_collection()
-    user_data = await users_collection.find_one({"email": email, "is_active": True})
-    
-    if not user_data:
-        return None
-    
-    user = User(**user_data)
-    if not verify_password(password, user.password_hash):
-        return None
-    
-    return user
+    if USE_SQL:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(UserSQL).where(UserSQL.email == email, UserSQL.is_active == True)
+            )
+            user_obj = result.scalar_one_or_none()
+            
+            if not user_obj:
+                return None
+            
+            user_data = convert_to_dict(user_obj)
+            user = User(**user_data)
+            if not verify_password(password, user.password_hash):
+                return None
+            
+            return user
+    else:
+        users_collection = await get_users_collection()
+        user_data = await users_collection.find_one({"email": email, "is_active": True})
+        
+        if not user_data:
+            return None
+        
+        user = User(**user_data)
+        if not verify_password(password, user.password_hash):
+            return None
+        
+        return user
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> UserResponse:
     """Get current authenticated user"""
