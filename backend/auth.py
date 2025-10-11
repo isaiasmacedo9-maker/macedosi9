@@ -5,8 +5,22 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models.user import User, UserResponse
-from database import get_users_collection
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+USE_SQL = os.getenv('USE_SQL', 'false').lower() == 'true'
+
+if USE_SQL:
+    from sqlalchemy import select
+    from database_sql import AsyncSessionLocal
+    from models_sql import UserSQL
+    from crud_sql import convert_to_dict
+else:
+    from database import get_users_collection
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "macedo-si-secret-key-2025")
