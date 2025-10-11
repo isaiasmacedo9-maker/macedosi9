@@ -28,30 +28,33 @@ async def create_client(
         )
     
     async with DatabaseAdapter() as db:
-        # Check if CNPJ already exists
-        existing_client = await db.find_one("clients", {"cnpj": client_data.cnpj})
-        if existing_client:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="CNPJ already registered"
-            )
-        
-        client = Client(**client_data.model_dump())
-        await db.insert_one("clients", client.model_dump())
-        
-        # Enviar notificação automática para o setor financeiro da cidade
-        await send_notification_to_financial(client, current_user)
-        
-        return client
+    
+    # Check if CNPJ already exists
+    existing_client = await clients_collection.find_one({"cnpj": client_data.cnpj})
+    if existing_client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CNPJ already registered"
+        )
+    
+    client = Client(**client_data.model_dump())
+    await clients_collection.insert_one(client.model_dump())
+    
+    # Enviar notificação automática para o setor financeiro da cidade
+    await send_notification_to_financial(client, current_user)
+    
+    return client
 
 async def send_notification_to_financial(client: Client, creator: UserResponse):
     """Envia notificação automática para todos do financeiro da cidade"""
     try:
         async with DatabaseAdapter() as db:
-        async with DatabaseAdapter() as db:
+
+                    chat_collection = await get_chat_enhanced_collection()
+        
         # Buscar todos os usuários do setor financeiro da mesma cidade
         financial_users = []
-        async for user_data in await db.find("users", {
+        async for user_data in users_collection.find({
             "allowed_sectors": "financeiro",
             "allowed_cities": client.cidade
         }):
@@ -150,6 +153,7 @@ async def get_clients(
 ):
     """Get clients with filters"""
     async with DatabaseAdapter() as db:
+    
     # Build filter
     filter_query = {}
     
@@ -170,12 +174,12 @@ async def get_clients(
             {"responsavel": {"$regex": search, "$options": "i"}}
         ]
     
-    cursor = await db.find("clients", filter_query).skip(skip).limit(limit)
+    cursor = clients_collection.find(filter_query).skip(skip).limit(limit)
     clients = []
     async for client_data in cursor:
         clients.append(Client(**client_data))
     
-    total = await db.count_documents("clients", filter_query)
+    total = await clients_collection.count_documents(filter_query)
     
     return {
         "clients": clients,
@@ -191,7 +195,8 @@ async def get_client(
 ):
     """Get client by ID"""
     async with DatabaseAdapter() as db:
-    client_data = await db.find_one("clients", {"id": client_id})
+
+            client_data = await await db.find_one("clients", {"id": client_id})
     
     if not client_data:
         raise HTTPException(
@@ -217,8 +222,9 @@ async def update_client(
 ):
     """Update client"""
     async with DatabaseAdapter() as db:
+    
     # Check if client exists
-    existing_client = await db.find_one("clients", {"id": client_id})
+    existing_client = await clients_collection.find_one({"id": client_id})
     if not existing_client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -237,13 +243,13 @@ async def update_client(
     update_data = client_update.model_dump(exclude_unset=True)
     if update_data:
         update_data["updated_at"] = datetime.utcnow()
-        await db.update_one("clients", 
+        await clients_collection.update_one(
             {"id": client_id}, 
             {"$set": update_data}
         )
     
     # Return updated client
-    updated_client_data = await db.find_one("clients", {"id": client_id})
+    updated_client_data = await clients_collection.find_one({"id": client_id})
     return Client(**updated_client_data)
 
 @router.delete("/{client_id}")
@@ -253,8 +259,9 @@ async def delete_client(
 ):
     """Delete client"""
     async with DatabaseAdapter() as db:
+    
     # Check if client exists
-    existing_client = await db.find_one("clients", {"id": client_id})
+    existing_client = await clients_collection.find_one({"id": client_id})
     if not existing_client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -269,7 +276,7 @@ async def delete_client(
             detail="Access denied for this city"
         )
     
-    await db.delete_one("clients", {"id": client_id})
+    await clients_collection.delete_one({"id": client_id})
     return {"message": "Client deleted successfully"}
 
 @router.get("/cnpj/{cnpj}")
@@ -279,7 +286,8 @@ async def get_client_by_cnpj(
 ):
     """Get client by CNPJ"""
     async with DatabaseAdapter() as db:
-    client_data = await db.find_one("clients", {"cnpj": cnpj})
+
+            client_data = await await db.find_one("clients", {"cnpj": cnpj})
     
     if not client_data:
         raise HTTPException(
