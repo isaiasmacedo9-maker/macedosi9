@@ -421,7 +421,7 @@ async def populate_database():
         })
     
     for srv in servicos:
-        await database.'services', srv)
+        await database.services.insert_one(srv)
     print(f"✅ {len(servicos)} serviços criados!")
     
     # 12. CRIAR CONTRATOS (COMERCIAL)
