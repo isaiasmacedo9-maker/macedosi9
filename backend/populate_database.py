@@ -10,7 +10,7 @@ import uuid
 async def populate_database():
     print("🚀 Iniciando população do banco de dados...")
     
-    db = DatabaseAdapter()
+    database = await get_database()
     
     # Limpar dados existentes (opcional - comentar se não quiser limpar)
     # await clear_all_data(db)
