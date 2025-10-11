@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 
-# Import database connection - MIGRATED TO SQL
-from database_sql import init_db, close_db
+# Import database connection - Using adapter for SQL/MongoDB
+from database_adapter import startup_database, shutdown_database
 
 # Import routes
 from routes.auth import router as auth_router
