@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
-import { Settings, Save, User, Shield } from 'lucide-react';
+import { Settings, Save, User, Shield, Users as UsersIcon } from 'lucide-react';
 
 const Configuracoes = () => {
   const { user } = useAuth();
