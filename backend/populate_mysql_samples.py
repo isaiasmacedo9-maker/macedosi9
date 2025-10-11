@@ -320,7 +320,7 @@ async def criar_tickets_atendimento(empresas):
                 "numero": numero_ticket,
                 "empresa_id": str(uuid.uuid4()),
                 "empresa": emp["nome"],
-                "assunto": assunto,
+                "titulo": assunto,
                 "descricao": f"Cliente {emp['fantasia']} solicitou ajuda com: {assunto.lower()}",
                 "tipo": random.choice(["duvida", "solicitacao", "reclamacao"]),
                 "prioridade": random.choice(["alta", "media", "baixa"]),
@@ -331,6 +331,8 @@ async def criar_tickets_atendimento(empresas):
                 "data_abertura": datetime.utcnow() - timedelta(days=random.randint(0, 15)),
                 "prazo_primeira_resposta": datetime.utcnow() + timedelta(hours=4),
                 "prazo_resolucao": datetime.utcnow() + timedelta(days=2),
+                "sla_primeira_resposta_violado": False,
+                "sla_resolucao_violado": False,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
             }
