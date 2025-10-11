@@ -4,6 +4,8 @@ from models.user import UserLogin, UserResponse, User, UserCreate, UserUpdate
 from auth import authenticate_user, create_access_token, get_password_hash, get_current_user, get_admin_user, ACCESS_TOKEN_EXPIRE_MINUTES
 from database import get_users_collection
 from datetime import datetime
+from config import USE_SQL
+from database_sql import AsyncSessionLocal
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
