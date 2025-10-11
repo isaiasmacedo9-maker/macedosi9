@@ -125,7 +125,6 @@ async def get_configuration(current_user = Depends(get_admin_user)):
 @router.get("/basic")
 async def list_users_basic(current_user = Depends(get_current_user)):
     """Lista usuários básicos (para chat) - não exige admin"""
-    from auth import get_current_user
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(UserSQL).where(UserSQL.is_active == True))
         users = result.scalars().all()
