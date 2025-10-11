@@ -343,7 +343,7 @@ async def populate_database():
     })
     
     for rec in recalculos:
-        await database.'recalculos_trabalhistas', rec)
+        await database.recalculos_trabalhistas.insert_one(rec)
     print(f"✅ {len(recalculos)} recalculos criados!")
     
     # 9. CRIAR OBRIGAÇÕES TRABALHISTAS
