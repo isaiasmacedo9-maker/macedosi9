@@ -21,7 +21,7 @@ async def create_client(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Create new client"""
-    if not check_city_access(current_user, client_data.cidade):
+    if not check_city_access(current_user, client_data.cidade_atendimento):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied for this city"
