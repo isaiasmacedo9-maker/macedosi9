@@ -41,7 +41,7 @@ function App() {
                       <Route path="/clientes-financeiro" element={<FinancialClients />} />
                       <Route path="/contas-receber" element={<ContasReceber />} />
                       <Route path="/trabalhista" element={<Trabalhista />} />
-                      <Route path="/fiscal" element={<Fiscal />} />
+                      <Route path="/fiscal" element={<FiscalExpandido />} />
                       <Route path="/atendimento" element={<Atendimento />} />
                       <Route path="/chat" element={<ChatEnhanced />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
