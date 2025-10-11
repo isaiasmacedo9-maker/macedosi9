@@ -10,52 +10,36 @@ class CompatCollection:
     
     def __init__(self, collection_name: str):
         self.collection_name = collection_name
-        self._adapter = None
-    
-    async def __aenter__(self):
-        self._adapter = DatabaseAdapter()
-        await self._adapter.__aenter__()
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._adapter:
-            await self._adapter.__aexit__(exc_type, exc_val, exc_tb)
     
     async def find_one(self, query: Dict) -> Dict:
         """Find single document"""
-        if self._adapter:
-            return await self._adapter.find_one(self.collection_name, query)
-        return None
+        async with DatabaseAdapter() as db:
+            return await db.find_one(self.collection_name, query)
     
     async def find(self, query: Dict = None, limit: int = 100, skip: int = 0) -> List[Dict]:
         """Find multiple documents"""
-        if self._adapter:
-            return await self._adapter.find(self.collection_name, query or {}, limit=limit, skip=skip)
-        return []
+        async with DatabaseAdapter() as db:
+            return await db.find(self.collection_name, query or {}, limit=limit, skip=skip)
     
     async def insert_one(self, document: Dict) -> Dict:
         """Insert single document"""
-        if self._adapter:
-            return await self._adapter.insert_one(self.collection_name, document)
-        return {}
+        async with DatabaseAdapter() as db:
+            return await db.insert_one(self.collection_name, document)
     
     async def update_one(self, query: Dict, update_data: Dict) -> Dict:
         """Update single document"""
-        if self._adapter:
-            return await self._adapter.update_one(self.collection_name, query, update_data)
-        return {}
+        async with DatabaseAdapter() as db:
+            return await db.update_one(self.collection_name, query, update_data)
     
     async def delete_one(self, query: Dict) -> Dict:
         """Delete single document"""
-        if self._adapter:
-            return await self._adapter.delete_one(self.collection_name, query)
-        return {}
+        async with DatabaseAdapter() as db:
+            return await db.delete_one(self.collection_name, query)
     
     async def count_documents(self, query: Dict = None) -> int:
         """Count documents"""
-        if self._adapter:
-            return await self._adapter.count_documents(self.collection_name, query or {})
-        return 0
+        async with DatabaseAdapter() as db:
+            return await db.count_documents(self.collection_name, query or {})
 
 # Wrapper functions that return compat collections
 async def get_clients_collection():
