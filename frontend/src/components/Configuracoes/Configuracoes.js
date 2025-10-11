@@ -39,6 +39,21 @@ const Configuracoes = () => {
         </div>
       </div>
 
+      {/* Menu de Navegação */}
+      {user?.role === 'admin' && (
+        <div className="glass p-4 rounded-2xl">
+          <div className="flex gap-4">
+            <button
+              onClick={() => navigate('/configuracoes/usuarios')}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+            >
+              <UsersIcon size={20} />
+              Gerenciar Usuários
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* User Profile */}
         <div className="glass p-6 rounded-2xl">
