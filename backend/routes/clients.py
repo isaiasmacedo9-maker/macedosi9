@@ -3,8 +3,9 @@ from typing import Optional, List
 from models.client import Client, ClientCreate, ClientUpdate
 from models.user import UserResponse
 from auth import get_current_user
-from database import get_clients_collection
+from database import get_clients_collection, get_users_collection, get_chat_enhanced_collection
 from datetime import datetime
+import uuid
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
