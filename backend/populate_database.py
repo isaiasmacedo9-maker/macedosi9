@@ -159,7 +159,7 @@ async def populate_database():
             })
     
     for conta in contas_receber:
-        await db.insert('contas_receber', conta)
+        await db.insert_one('contas_receber', conta)
     print(f"✅ {len(contas_receber)} contas a receber criadas!")
     
     # 3. CRIAR OBRIGAÇÕES FISCAIS
@@ -184,7 +184,7 @@ async def populate_database():
         })
     
     for obrigacao in obrigacoes_fiscais:
-        await db.insert('obrigacoes_fiscais', obrigacao)
+        await db.insert_one('obrigacoes_fiscais', obrigacao)
     print(f"✅ {len(obrigacoes_fiscais)} obrigações fiscais criadas!")
     
     # 4. CRIAR NOTAS FISCAIS
@@ -210,7 +210,7 @@ async def populate_database():
         })
     
     for nota in notas_fiscais:
-        await db.insert('notas_fiscais', nota)
+        await db.insert_one('notas_fiscais', nota)
     print(f"✅ {len(notas_fiscais)} notas fiscais criadas!")
     
     # 5. CRIAR SOLICITAÇÕES TRABALHISTAS
@@ -234,7 +234,7 @@ async def populate_database():
         })
     
     for sol in solicitacoes:
-        await db.insert('solicitacoes_trabalhistas', sol)
+        await db.insert_one('solicitacoes_trabalhistas', sol)
     print(f"✅ {len(solicitacoes)} solicitações trabalhistas criadas!")
     
     # 6. CRIAR ADMISSÕES
@@ -275,7 +275,7 @@ async def populate_database():
         })
     
     for adm in admissoes:
-        await db.insert('admissoes_trabalhistas', adm)
+        await db.insert_one('admissoes_trabalhistas', adm)
     print(f"✅ {len(admissoes)} admissões criadas!")
     
     # 7. CRIAR DEMISSÕES
@@ -312,7 +312,7 @@ async def populate_database():
     })
     
     for dem in demissoes:
-        await db.insert('demissoes_trabalhistas', dem)
+        await db.insert_one('demissoes_trabalhistas', dem)
     print(f"✅ {len(demissoes)} demissões criadas!")
     
     # 8. CRIAR RECALCULOS
@@ -343,7 +343,7 @@ async def populate_database():
     })
     
     for rec in recalculos:
-        await db.insert('recalculos_trabalhistas', rec)
+        await db.insert_one('recalculos_trabalhistas', rec)
     print(f"✅ {len(recalculos)} recalculos criados!")
     
     # 9. CRIAR OBRIGAÇÕES TRABALHISTAS
@@ -367,7 +367,7 @@ async def populate_database():
         })
     
     for obr in obrigacoes_trab:
-        await db.insert('obrigacoes_trabalhistas', obr)
+        await db.insert_one('obrigacoes_trabalhistas', obr)
     print(f"✅ {len(obrigacoes_trab)} obrigações trabalhistas criadas!")
     
     # 10. CRIAR AGENDAMENTOS
@@ -395,7 +395,7 @@ async def populate_database():
         })
     
     for agd in agendamentos:
-        await db.insert('agendamentos', agd)
+        await db.insert_one('agendamentos', agd)
     print(f"✅ {len(agendamentos)} agendamentos criados!")
     
     # 11. CRIAR SERVIÇOS
@@ -421,7 +421,7 @@ async def populate_database():
         })
     
     for srv in servicos:
-        await db.insert('services', srv)
+        await db.insert_one('services', srv)
     print(f"✅ {len(servicos)} serviços criados!")
     
     # 12. CRIAR CONTRATOS (COMERCIAL)
@@ -444,7 +444,7 @@ async def populate_database():
         })
     
     for ctr in contratos:
-        await db.insert('contratos', ctr)
+        await db.insert_one('contratos', ctr)
     print(f"✅ {len(contratos)} contratos criados!")
     
     print("\n" + "="*60)
