@@ -185,26 +185,31 @@ async def criar_notas_fiscais(empresas):
             for j in range(num_notas):
                 data_emissao = date.today() - timedelta(days=random.randint(1, 30))
                 
+                valor_total = random.choice([1500.00, 2500.00, 3500.00, 5000.00])
                 nota = {
                     "id": str(uuid.uuid4()),
                     "empresa_id": str(uuid.uuid4()),
-                    "empresa_nome": emp["nome"],
-                    "empresa_cnpj": emp["cnpj"],
-                    "tipo_nota": random.choice(["entrada", "saida"]),
-                    "numero_nota": f"{random.randint(1000, 9999)}",
+                    "empresa": emp["nome"],
+                    "tipo": random.choice(["entrada", "saida"]),
+                    "numero": random.randint(1000, 9999),
                     "serie": "1",
-                    "chave_acesso": f"{random.randint(10000000, 99999999)}{random.randint(10000000, 99999999)}{random.randint(10000, 99999)}",
+                    "chave_nfe": f"{random.randint(10000000, 99999999)}{random.randint(10000000, 99999999)}{random.randint(10000, 99999)}",
                     "data_emissao": datetime.combine(data_emissao, datetime.min.time()),
-                    "valor_total": random.choice([1500.00, 2500.00, 3500.00, 5000.00]),
-                    "base_calculo_icms": 0.0,
+                    "emitente_cnpj": emp["cnpj"],
+                    "emitente_razao_social": emp["nome"],
+                    "destinatario_cnpj": "00.000.000/0000-00",
+                    "destinatario_razao_social": "Cliente Exemplo",
+                    "valor_total": valor_total,
+                    "valor_produtos": valor_total,
+                    "valor_servicos": 0.0,
+                    "base_icms": 0.0,
                     "valor_icms": 0.0,
-                    "base_calculo_icms_st": 0.0,
-                    "valor_icms_st": 0.0,
+                    "base_ipi": 0.0,
                     "valor_ipi": 0.0,
                     "valor_pis": 0.0,
                     "valor_cofins": 0.0,
+                    "valor_iss": 0.0,
                     "status_conciliacao": random.choice(["pendente", "conciliado"]),
-                    "observacoes": f"NF-e {j+1} da empresa {emp['fantasia']}",
                     "created_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow()
                 }
