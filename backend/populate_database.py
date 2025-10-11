@@ -210,7 +210,7 @@ async def populate_database():
         })
     
     for nota in notas_fiscais:
-        await database.'notas_fiscais', nota)
+        await database.notas_fiscais.insert_one(nota)
     print(f"✅ {len(notas_fiscais)} notas fiscais criadas!")
     
     # 5. CRIAR SOLICITAÇÕES TRABALHISTAS
