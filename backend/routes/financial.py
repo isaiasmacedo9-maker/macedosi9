@@ -1198,9 +1198,9 @@ async def search_contas_receber(
         query["forma_pagamento"] = {"$in": [fp.value for fp in filters.forma_pagamento]}
     
     # Execute query
-    contas_cursor = await contas_collection.find(query, skip=skip, limit=limit)
+    contas_data = await contas_collection.find(query, skip=skip, limit=limit)
     contas = []
-    async for conta_data in contas_cursor:
+    for conta_data in contas_data:
         contas.append(ContaReceber(**conta_data))
     
     return contas
