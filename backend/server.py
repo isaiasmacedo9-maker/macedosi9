@@ -19,6 +19,7 @@ from routes.chat import router as chat_router
 from routes.tasks import router as tasks_router
 from routes.users_management import router as users_management_router
 from routes.chat_enhanced import router as chat_enhanced_router
+from routes.services import router as services_router
 
 # Lifespan events
 @asynccontextmanager
