@@ -9,7 +9,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from models.user import UserResponse
 from auth import get_current_user
-from database import get_db_adapter
+from database_adapter import get_db_adapter
 from datetime import datetime, date
 import uuid
 
