@@ -247,6 +247,16 @@ class DatabaseAdapter:
         
         return model(**processed_data)
 
+# Global adapter instance
+_db_adapter = None
+
+async def get_db_adapter():
+    """Get or create database adapter instance"""
+    global _db_adapter
+    if _db_adapter is None:
+        _db_adapter = DatabaseAdapter()
+    return _db_adapter
+
 # Startup/shutdown functions
 async def startup_database():
     """Initialize database on startup"""
