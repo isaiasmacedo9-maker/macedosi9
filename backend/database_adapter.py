@@ -103,7 +103,7 @@ class DatabaseAdapter:
         
         return {"inserted_id": obj.id}
     
-    async def update_one(self, collection_name: str, query: Dict, update: Dict):
+    async def update_one(self, collection_name: str, query: Dict, update_data: Dict):
         """Update single document/record"""
         if not self.use_sql:
             raise NotImplementedError("MongoDB support disabled")
@@ -111,7 +111,7 @@ class DatabaseAdapter:
         model = self._get_sql_model(collection_name)
         
         # Extract $set from update
-        set_data = update.get('$set', update)
+        set_data = update_data.get('$set', update_data)
         
         # Build UPDATE statement
         stmt = update(model)
