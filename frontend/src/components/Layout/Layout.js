@@ -84,8 +84,9 @@ const Layout = ({ children }) => {
       name: 'Configurações',
       icon: Settings,
       path: '/configuracoes',
-      access: [],
-      emoji: '⚙️'
+      access: ['admin'],
+      emoji: '⚙️',
+      adminOnly: true
     }
   ];
 
