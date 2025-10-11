@@ -40,7 +40,106 @@ async def create_client(
     client = Client(**client_data.model_dump())
     await clients_collection.insert_one(client.model_dump())
     
+    # Enviar notificação automática para o setor financeiro da cidade
+    await send_notification_to_financial(client, current_user)
+    
     return client
+
+async def send_notification_to_financial(client: Client, creator: UserResponse):
+    """Envia notificação automática para todos do financeiro da cidade"""
+    try:
+        users_collection = await get_users_collection()
+        chat_collection = await get_chat_enhanced_collection()
+        
+        # Buscar todos os usuários do setor financeiro da mesma cidade
+        financial_users = []
+        async for user_data in users_collection.find({
+            "allowed_sectors": "financeiro",
+            "allowed_cities": client.cidade
+        }):
+            # Não enviar para quem criou
+            if user_data.get("id") != creator.id:
+                financial_users.append(user_data)
+        
+        if not financial_users:
+            return  # Nenhum usuário do financeiro nesta cidade
+        
+        # Criar mensagem de notificação
+        message_text = f"""🏢 **Nova Empresa Cadastrada**
+
+📋 **Empresa:** {client.nome_empresa}
+{f"🏷️ **Nome Fantasia:** {client.nome_fantasia}" if client.nome_fantasia else ""}
+📄 **CNPJ:** {client.cnpj}
+📍 **Cidade:** {client.cidade}/{client.estado}
+📞 **Telefone:** {client.telefone if client.telefone else "Não informado"}
+✉️ **Email:** {client.email}
+🏭 **Setor:** {client.setor}
+👤 **Cadastrado por:** {creator.name}
+📅 **Data:** {datetime.now().strftime("%d/%m/%Y às %H:%M")}
+
+ℹ️ Esta empresa foi cadastrada e está disponível para vinculação em contas a receber."""
+        
+        # Enviar mensagem direta para cada usuário do financeiro
+        for user in financial_users:
+            conversation_id = str(uuid.uuid4())
+            
+            # Criar/buscar conversa privada
+            existing_conversation = await chat_collection.find_one({
+                "tipo": "privado",
+                "$or": [
+                    {"participantes": {"$all": [creator.id, user.get("id")]}},
+                    {"participantes": {"$all": [user.get("id"), creator.id]}}
+                ]
+            })
+            
+            if existing_conversation:
+                conversation_id = existing_conversation.get("id")
+            else:
+                # Criar nova conversa privada
+                new_conversation = {
+                    "id": conversation_id,
+                    "tipo": "privado",
+                    "nome": f"Chat com {user.get('name')}",
+                    "participantes": [creator.id, user.get("id")],
+                    "criado_por": creator.id,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+                await chat_collection.insert_one(new_conversation)
+            
+            # Enviar mensagem
+            message = {
+                "id": str(uuid.uuid4()),
+                "conversation_id": conversation_id,
+                "remetente_id": "system",  # Sistema automático
+                "remetente_nome": "Sistema - Notificação Automática",
+                "mensagem": message_text,
+                "tipo": "notificacao",
+                "data_envio": datetime.utcnow(),
+                "lida": False,
+                "metadata": {
+                    "tipo_notificacao": "nova_empresa",
+                    "empresa_id": client.id,
+                    "empresa_nome": client.nome_empresa,
+                    "criador": creator.name
+                }
+            }
+            
+            # Adicionar mensagem à conversa
+            await chat_collection.update_one(
+                {"id": conversation_id},
+                {
+                    "$push": {"mensagens": message},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            )
+        
+        print(f"✅ Notificações enviadas para {len(financial_users)} usuários do financeiro em {client.cidade}")
+        
+    except Exception as e:
+        # Log do erro mas não falhar o cadastro
+        print(f"⚠️ Erro ao enviar notificações: {str(e)}")
+        # Não lançar exceção para não bloquear o cadastro da empresa
 
 @router.get("/")
 async def get_clients(
