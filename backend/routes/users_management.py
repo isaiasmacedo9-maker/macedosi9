@@ -122,6 +122,31 @@ async def get_configuration(current_user = Depends(get_admin_user)):
         "setores": SETORES_DISPONIVEIS
     }
 
+@router.get("/basic")
+async def list_users_basic(current_user = Depends(get_current_user)):
+    """Lista usuários básicos (para chat) - não exige admin"""
+    from auth import get_current_user
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(UserSQL).where(UserSQL.is_active == True))
+        users = result.scalars().all()
+        
+        # Buscar status online
+        users_response = []
+        for user in users:
+            result = await session.execute(
+                select(UserOnlineStatusSQL).where(UserOnlineStatusSQL.user_id == user.id)
+            )
+            online_status = result.scalar_one_or_none()
+            
+            users_response.append({
+                'id': user.id,
+                'name': user.name,
+                'email': user.email,
+                'is_online': online_status.is_online if online_status else False
+            })
+        
+        return users_response
+
 @router.get("/", response_model=List[UserResponse])
 async def list_users(current_user = Depends(get_admin_user)):
     """Lista todos os usuários com permissões"""
