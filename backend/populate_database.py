@@ -4,7 +4,7 @@ Script para popular o banco de dados com dados de exemplo
 import asyncio
 import sys
 from datetime import datetime, timedelta
-from database_adapter import DatabaseAdapter
+from database import get_clients_collection, get_database
 import uuid
 
 async def populate_database():
