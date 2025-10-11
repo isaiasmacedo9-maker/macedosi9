@@ -448,16 +448,19 @@ backend:
         comment: "VALIDADO - Collections MongoDB criadas e funcionando: atendimento, base_conhecimento, avaliacoes_atendimento. Operações de CRUD testadas com sucesso."
 
   - task: "MySQL Migration - Route Adapter Integration"
-    implemented: false
+    implemented: true
     working: false
     file: "routes/*.py"
-    stuck_count: 1
+    stuck_count: 2
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: false
         agent: "testing"
         comment: "CRITICAL ISSUE - MySQL migration completed but routes not updated to use database adapter. All API endpoints failing with 500 errors because routes still use MongoDB functions (get_contas_receber_collection(), etc.) which return None when USE_SQL=true. Need to update all routes to use database_adapter.get_db_adapter() pattern like trabalhista_servicos.py. MySQL connection working, 5 users migrated, authentication working, but API endpoints incompatible."
+      - working: false
+        agent: "testing"
+        comment: "PARTIAL SUCCESS - Data migration completed successfully with all expected records populated: ✅ Clientes (10/10), ✅ Obrigações Fiscais (6/5), ✅ Notas Fiscais (11/10), ✅ Solicitações Trabalhistas (5/5), ✅ Funcionários (11/11). CRITICAL ISSUE: SQLAlchemy async relationship problems causing 500 errors in 5/7 endpoints. Routes use database_compat.py which works for simple queries but fails on models with relationships (ContatoCobranca, HistoricoAlteracao, Conversas). Only Clientes and Notas Fiscais endpoints working via API. Authentication working (admin@macedosi.com/admin123). Need to fix SQLAlchemy relationship handling in database adapter."
 
 frontend:
   - task: "Interface Contas a Receber expandida"
