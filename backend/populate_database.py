@@ -234,7 +234,7 @@ async def populate_database():
         })
     
     for sol in solicitacoes:
-        await database.'solicitacoes_trabalhistas', sol)
+        await database.solicitacoes_trabalhistas.insert_one(sol)
     print(f"✅ {len(solicitacoes)} solicitações trabalhistas criadas!")
     
     # 6. CRIAR ADMISSÕES
