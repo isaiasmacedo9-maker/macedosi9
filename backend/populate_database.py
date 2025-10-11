@@ -159,7 +159,7 @@ async def populate_database():
             })
     
     for conta in contas_receber:
-        await database.'contas_receber', conta)
+        await database.contas_receber.insert_one(conta)
     print(f"✅ {len(contas_receber)} contas a receber criadas!")
     
     # 3. CRIAR OBRIGAÇÕES FISCAIS
