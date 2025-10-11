@@ -127,7 +127,7 @@ const Layout = ({ children }) => {
 
         <nav className="flex-1 px-4 py-6 space-y-2">
           {menuItems.map((item) => {
-            if (!hasMenuAccess(item.access)) return null;
+            if (!hasMenuAccess(item)) return null;
             
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
