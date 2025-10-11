@@ -53,10 +53,10 @@ async def send_notification_to_financial(client: Client, creator: UserResponse):
         
         # Buscar todos os usuários do setor financeiro da mesma cidade
         financial_users = []
-        async for user_data in users_collection.find({
+        for user_data in (await users_collection.find({
             "allowed_sectors": "financeiro",
             "allowed_cities": client.cidade
-        }):
+        })):
             # Não enviar para quem criou
             if user_data.get("id") != creator.id:
                 financial_users.append(user_data)

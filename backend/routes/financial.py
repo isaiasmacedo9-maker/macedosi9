@@ -126,7 +126,7 @@ async def get_contas_receber(
             {"descricao": {"$regex": search, "$options": "i"}}
         ]
     
-    contas_cursor = contas_collection.find(query).skip(skip).limit(limit).sort("data_vencimento", -1)
+    contas_cursor = await contas_collection.find(query, skip=skip, limit=limit)
     contas = []
     async for conta_data in contas_cursor:
         contas.append(ContaReceber(**conta_data))
@@ -842,7 +842,7 @@ async def encontrar_candidatos_conciliacao(movimento: MovimentoExtrato, contas_c
         "total_liquido": {"$gte": movimento.valor - 0.50, "$lte": movimento.valor + 0.50}  # Value tolerance
     }
     
-    async for conta_data in contas_collection.find(query):
+    for conta_data in (await contas_collection.find(query)):
         conta = ContaReceber(**conta_data)
         score = calcular_score_match(movimento, conta)
         
@@ -922,7 +922,7 @@ async def listar_importacoes(
         query["cidade"] = {"$in": current_user.allowed_cities}
     
     importacoes = []
-    async for importacao_data in importacoes_collection.find(query).skip(skip).limit(limit).sort("data_importacao", -1):
+    async for importacao_data in await importacoes_collection.find(query, skip=skip, limit=limit):
         importacoes.append(ImportacaoExtrato(**importacao_data))
     
     return importacoes
@@ -1077,7 +1077,7 @@ async def get_financial_clients(
     if search:
         query["empresa"] = {"$regex": search, "$options": "i"}
     
-    clients_cursor = financial_clients_collection.find(query).skip(skip).limit(limit).sort("empresa", 1)
+    clients_cursor = await financial_clients_collection.find(query, skip=skip, limit=limit)
     clients = []
     async for client_data in clients_cursor:
         clients.append(FinancialClient(**client_data))
@@ -1198,7 +1198,7 @@ async def search_contas_receber(
         query["forma_pagamento"] = {"$in": [fp.value for fp in filters.forma_pagamento]}
     
     # Execute query
-    contas_cursor = contas_collection.find(query).skip(skip).limit(limit).sort("data_vencimento", -1)
+    contas_cursor = await contas_collection.find(query, skip=skip, limit=limit)
     contas = []
     async for conta_data in contas_cursor:
         contas.append(ContaReceber(**conta_data))
@@ -1234,7 +1234,7 @@ async def export_contas_receber(
     
     # Get data
     contas = []
-    async for conta_data in contas_collection.find(query):
+    for conta_data in (await contas_collection.find(query)):
         contas.append(ContaReceber(**conta_data))
     
     if formato == "json":
