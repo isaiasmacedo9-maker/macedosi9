@@ -10,10 +10,7 @@ from models.financial import (
 )
 from models.user import UserResponse
 from auth import get_current_user
-from database import (
-    get_contas_receber_collection, get_financial_clients_collection,
-    get_importacoes_extrato_collection
-)
+from database_adapter import DatabaseAdapter
 from datetime import datetime, date, timedelta
 import json
 import uuid
