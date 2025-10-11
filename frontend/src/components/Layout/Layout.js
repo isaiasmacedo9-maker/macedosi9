@@ -90,10 +90,13 @@ const Layout = ({ children }) => {
     }
   ];
 
-  const hasMenuAccess = (access) => {
+  const hasMenuAccess = (menuItem) => {
+    // Se tem adminOnly, só admin pode ver
+    if (menuItem.adminOnly && user?.role !== 'admin') return false;
+    
     if (user?.role === 'admin') return true;
-    if (access.length === 0) return true;
-    return access.some(sector => user?.allowed_sectors.includes(sector));
+    if (menuItem.access.length === 0) return true;
+    return menuItem.access.some(sector => user?.allowed_sectors?.includes(sector));
   };
 
   const handleLogout = () => {
