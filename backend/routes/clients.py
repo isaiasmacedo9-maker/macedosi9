@@ -28,21 +28,21 @@ async def create_client(
         )
     
     async with DatabaseAdapter() as db:
-    # Check if CNPJ already exists
-    existing_client = await db.find_one("clients", {"cnpj": client_data.cnpj})
-    if existing_client:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CNPJ already registered"
-        )
-    
-    client = Client(**client_data.model_dump())
-    await db.insert_one("clients", client.model_dump())
-    
-    # Enviar notificação automática para o setor financeiro da cidade
-    await send_notification_to_financial(client, current_user)
-    
-    return client
+        # Check if CNPJ already exists
+        existing_client = await db.find_one("clients", {"cnpj": client_data.cnpj})
+        if existing_client:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CNPJ already registered"
+            )
+        
+        client = Client(**client_data.model_dump())
+        await db.insert_one("clients", client.model_dump())
+        
+        # Enviar notificação automática para o setor financeiro da cidade
+        await send_notification_to_financial(client, current_user)
+        
+        return client
 
 async def send_notification_to_financial(client: Client, creator: UserResponse):
     """Envia notificação automática para todos do financeiro da cidade"""
