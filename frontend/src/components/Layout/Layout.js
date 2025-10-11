@@ -32,6 +32,13 @@ const Layout = ({ children }) => {
       emoji: '📊'
     },
     {
+      name: 'Serviços',
+      icon: FileText,
+      path: '/servicos',
+      access: [],
+      emoji: '📋'
+    },
+    {
       name: 'Clientes',
       icon: Users,
       path: '/clientes',
