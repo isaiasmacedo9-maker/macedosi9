@@ -8,7 +8,7 @@ import ClientsList from "./components/Clients/ClientsList";
 import FinancialClients from "./components/Clients/FinancialClients";
 import ContasReceber from "./components/Financial/ContasReceber";
 import Trabalhista from "./components/Trabalhista/Trabalhista";
-import Fiscal from "./components/Fiscal/Fiscal";
+import FiscalExpandido from "./components/Fiscal/FiscalExpandido";
 import Atendimento from "./components/Atendimento/Atendimento";
 import Configuracoes from "./components/Configuracoes/Configuracoes";
 import Chat from "./components/Chat/Chat";
