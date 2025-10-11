@@ -10,10 +10,7 @@ from models.fiscal import (
 )
 from models.user import UserResponse
 from auth import get_current_user
-from database import (
-    get_fiscal_collection, get_notas_fiscais_collection,
-    get_apuracoes_fiscais_collection
-)
+from database_adapter import DatabaseAdapter
 from datetime import datetime, date, timedelta
 import uuid
 import base64
