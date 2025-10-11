@@ -9,6 +9,12 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Import novos modelos para criar tabelas
+from models_chat_users import (
+    UserPermissionSQL, UserOnlineStatusSQL, ConversationSQL,
+    ConversationMemberSQL, ChatMessageSQL, MessageReadStatusSQL
+)
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
