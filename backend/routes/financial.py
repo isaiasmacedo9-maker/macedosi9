@@ -100,7 +100,7 @@ async def get_contas_receber(
 ):
     """Get contas a receber with filters"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
     # Build query
     query = {}
@@ -123,7 +123,7 @@ async def get_contas_receber(
             {"descricao": {"$regex": search, "$options": "i"}}
         ]
     
-    contas_cursor = contas_collection.find(query).skip(skip).limit(limit).sort("data_vencimento", -1)
+    contas_cursor = await db.find("contas_receber", query).skip(skip).limit(limit).sort("data_vencimento", -1)
     contas = []
     async for conta_data in contas_cursor:
         contas.append(ContaReceber(**conta_data))
@@ -137,8 +137,8 @@ async def get_conta_receber(
 ):
     """Get conta a receber by ID"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    async with DatabaseAdapter() as db:
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     
     if not conta_data:
         raise HTTPException(
@@ -156,8 +156,8 @@ async def baixar_conta_receber(
 ):
     """Dar baixa em conta a receber"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    async with DatabaseAdapter() as db:
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     
     if not conta_data:
         raise HTTPException(
@@ -187,7 +187,7 @@ async def baixar_conta_receber(
     }
     
     # Update the document with both $set and $push operations
-    await contas_collection.update_one(
+    await await db.update_one("contas_receber", 
         {"id": conta_id}, 
         {
             "$set": update_data,
@@ -196,7 +196,7 @@ async def baixar_conta_receber(
     )
     
     # Get updated conta
-    updated_conta_data = await contas_collection.find_one({"id": conta_id})
+    updated_conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     return ContaReceber(**updated_conta_data)
 
 @router.put("/contas-receber/{conta_id}", response_model=ContaReceber)
@@ -207,9 +207,9 @@ async def update_conta_receber(
 ):
     """Update conta a receber"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     if not conta_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -227,7 +227,7 @@ async def update_conta_receber(
         observacao="Dados atualizados"
     )
     
-    await contas_collection.update_one(
+    await await db.update_one("contas_receber", 
         {"id": conta_id}, 
         {
             "$set": update_data,
@@ -236,7 +236,7 @@ async def update_conta_receber(
     )
     
     # Get updated conta
-    updated_conta_data = await contas_collection.find_one({"id": conta_id})
+    updated_conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     return ContaReceber(**updated_conta_data)
 
 @router.delete("/contas-receber/{conta_id}")
@@ -246,9 +246,9 @@ async def delete_conta_receber(
 ):
     """Delete conta a receber"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
-    result = await contas_collection.delete_one({"id": conta_id})
+    result = await await db.delete_one("contas_receber", {"id": conta_id})
     if result.deleted_count == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -265,9 +265,9 @@ async def duplicate_conta_receber(
 ):
     """Duplicate conta a receber for recurring entries"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     if not conta_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -320,7 +320,7 @@ async def duplicate_conta_receber(
         "updated_at": datetime.utcnow()
     }
     
-    await contas_collection.insert_one(nova_conta_dict)
+    await await db.insert_one("contas_receber", nova_conta_dict)
     
     # Convert back to model for response
     return ContaReceber(**nova_conta_dict)
@@ -334,9 +334,9 @@ async def add_contato_cobranca(
 ):
     """Add contact record to conta a receber"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     if not conta_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -350,7 +350,7 @@ async def add_contato_cobranca(
     
     contato = ContatoCobranca(**contato_dict)
     
-    await contas_collection.update_one(
+    await await db.update_one("contas_receber", 
         {"id": conta_id},
         {"$push": {"contatos_cobranca": contato.model_dump()}}
     )
@@ -365,9 +365,9 @@ async def create_proposta_renegociacao(
 ):
     """Create renegotiation proposal"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     if not conta_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -389,7 +389,7 @@ async def create_proposta_renegociacao(
     historico_dict = historico_action.model_dump()
     historico_dict["data"] = datetime.utcnow()
     
-    await contas_collection.update_one(
+    await await db.update_one("contas_receber", 
         {"id": conta_id},
         {"$push": {"historico_alteracoes": historico_dict}}
     )
@@ -404,9 +404,9 @@ async def gerar_lembrete_cobranca(
 ):
     """Generate collection reminder text"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
-    conta_data = await contas_collection.find_one({"id": conta_id})
+    conta_data = await await db.find_one("contas_receber", {"id": conta_id})
     if not conta_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -454,7 +454,7 @@ async def relatorio_inadimplencia(
 ):
     """Generate default report"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
     # Build query
     query = {"situacao": {"$in": [SituacaoTitulo.ATRASADO, SituacaoTitulo.EM_ABERTO]}}
@@ -504,7 +504,7 @@ async def relatorio_recebimentos(
 ):
     """Generate payment report"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
     # Build query - convert dates to datetime for MongoDB
     query = {
@@ -583,8 +583,8 @@ async def importar_extrato(
     )
     
     # Save import record
-    importacoes_collection = await get_importacoes_extrato_collection()
-    await importacoes_collection.insert_one(importacao.model_dump())
+    async with DatabaseAdapter() as db:
+    await await db.insert_one("importacoes_extrato", importacao.model_dump())
     
     try:
         # Read file content
@@ -602,7 +602,7 @@ async def importar_extrato(
         importacao.status = "processando_matches"
         importacao.log_processamento.append(f"Arquivo processado: {len(movimentos)} movimentos encontrados")
         
-        await importacoes_collection.update_one(
+        await await db.update_one("importacoes_extrato", 
             {"id": importacao.id},
             {"$set": importacao.model_dump()}
         )
@@ -616,7 +616,7 @@ async def importar_extrato(
         importacao.status = "concluido"
         importacao.log_processamento.append(f"Conciliação automática: {baixas_automaticas} títulos baixados")
         
-        await importacoes_collection.update_one(
+        await await db.update_one("importacoes_extrato", 
             {"id": importacao.id},
             {"$set": importacao.model_dump()}
         )
@@ -628,7 +628,7 @@ async def importar_extrato(
         importacao.status = "erro"
         importacao.log_processamento.append(f"Erro no processamento: {str(e)}")
         
-        await importacoes_collection.update_one(
+        await await db.update_one("importacoes_extrato", 
             {"id": importacao.id},
             {"$set": importacao.model_dump()}
         )
@@ -791,10 +791,10 @@ def criar_movimento_from_csv(campos: List[str]) -> Optional[MovimentoExtrato]:
 
 async def processar_conciliacao_automatica(importacao_id: str, usuario: str) -> int:
     """Process automatic reconciliation"""
-    importacoes_collection = await get_importacoes_extrato_collection()
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
+    async with DatabaseAdapter() as db:
     
-    importacao_data = await importacoes_collection.find_one({"id": importacao_id})
+    importacao_data = await await db.find_one("importacoes_extrato", {"id": importacao_id})
     if not importacao_data:
         return 0
     
@@ -822,7 +822,7 @@ async def processar_conciliacao_automatica(importacao_id: str, usuario: str) -> 
             movimento.score_match = melhor_candidato["score"]
     
     # Update import with processed movements
-    await importacoes_collection.update_one(
+    await await db.update_one("importacoes_extrato", 
         {"id": importacao_id},
         {"$set": {"movimentos": [m.model_dump() for m in importacao.movimentos]}}
     )
@@ -839,7 +839,7 @@ async def encontrar_candidatos_conciliacao(movimento: MovimentoExtrato, contas_c
         "total_liquido": {"$gte": movimento.valor - 0.50, "$lte": movimento.valor + 0.50}  # Value tolerance
     }
     
-    async for conta_data in contas_collection.find(query):
+    async for conta_data in await db.find("contas_receber", query):
         conta = ContaReceber(**conta_data)
         score = calcular_score_match(movimento, conta)
         
@@ -896,7 +896,7 @@ async def realizar_baixa_automatica(titulo_data: Dict, movimento: MovimentoExtra
         "updated_at": datetime.utcnow()
     }
     
-    await contas_collection.update_one(
+    await await db.update_one("contas_receber", 
         {"id": titulo.id}, 
         {
             "$set": update_data,
@@ -912,14 +912,14 @@ async def listar_importacoes(
 ):
     """List import history"""
     check_financial_access(current_user)
-    importacoes_collection = await get_importacoes_extrato_collection()
+    async with DatabaseAdapter() as db:
     
     query = {}
     if current_user.role != "admin":
         query["cidade"] = {"$in": current_user.allowed_cities}
     
     importacoes = []
-    async for importacao_data in importacoes_collection.find(query).skip(skip).limit(limit).sort("data_importacao", -1):
+    async for importacao_data in await db.find("importacoes_extrato", query).skip(skip).limit(limit).sort("data_importacao", -1):
         importacoes.append(ImportacaoExtrato(**importacao_data))
     
     return importacoes
@@ -931,9 +931,9 @@ async def obter_fila_classificacao(
 ):
     """Get classification queue for manual processing"""
     check_financial_access(current_user)
-    importacoes_collection = await get_importacoes_extrato_collection()
+    async with DatabaseAdapter() as db:
     
-    importacao_data = await importacoes_collection.find_one({"id": importacao_id})
+    importacao_data = await await db.find_one("importacoes_extrato", {"id": importacao_id})
     if not importacao_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -958,10 +958,10 @@ async def classificar_movimento(
 ):
     """Manually classify movement"""
     check_financial_access(current_user)
-    importacoes_collection = await get_importacoes_extrato_collection()
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
+    async with DatabaseAdapter() as db:
     
-    importacao_data = await importacoes_collection.find_one({"id": classificacao.movimento_id.split('_')[0]})
+    importacao_data = await await db.find_one("importacoes_extrato", {"id": classificacao.movimento_id.split('_')[0]})
     if not importacao_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -986,7 +986,7 @@ async def classificar_movimento(
     # Process classification
     if classificacao.acao == "associar_titulo" and classificacao.titulo_id:
         # Associate with existing título
-        titulo_data = await contas_collection.find_one({"id": classificacao.titulo_id})
+        titulo_data = await await db.find_one("contas_receber", {"id": classificacao.titulo_id})
         if titulo_data:
             await realizar_baixa_automatica(titulo_data, movimento_encontrado, current_user.name, contas_collection)
     
@@ -996,7 +996,7 @@ async def classificar_movimento(
     movimento_encontrado.data_classificacao = datetime.utcnow()
     
     # Update import
-    await importacoes_collection.update_one(
+    await await db.update_one("importacoes_extrato", 
         {"id": importacao.id},
         {"$set": {"movimentos": [m.model_dump() for m in importacao.movimentos]}}
     )
@@ -1011,10 +1011,10 @@ async def create_financial_client(
 ):
     """Create new financial client"""
     check_financial_access(current_user)
-    financial_clients_collection = await get_financial_clients_collection()
+    async with DatabaseAdapter() as db:
     
     # Check if client already exists
-    existing_client = await financial_clients_collection.find_one({"empresa_id": client_data.empresa_id})
+    existing_client = await await db.find_one("financial_clients", {"empresa_id": client_data.empresa_id})
     if existing_client:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1042,7 +1042,7 @@ async def create_financial_client(
         "updated_at": datetime.utcnow()
     }
     
-    await financial_clients_collection.insert_one(financial_client_dict)
+    await await db.insert_one("financial_clients", financial_client_dict)
     
     return FinancialClient(**financial_client_dict)
 
@@ -1057,7 +1057,7 @@ async def get_financial_clients(
 ):
     """Get financial clients with filters"""
     check_financial_access(current_user)
-    financial_clients_collection = await get_financial_clients_collection()
+    async with DatabaseAdapter() as db:
     
     # Build query
     query = {}
@@ -1074,7 +1074,7 @@ async def get_financial_clients(
     if search:
         query["empresa"] = {"$regex": search, "$options": "i"}
     
-    clients_cursor = financial_clients_collection.find(query).skip(skip).limit(limit).sort("empresa", 1)
+    clients_cursor = await db.find("financial_clients", query).skip(skip).limit(limit).sort("empresa", 1)
     clients = []
     async for client_data in clients_cursor:
         clients.append(FinancialClient(**client_data))
@@ -1088,9 +1088,9 @@ async def update_financial_client(
 ):
     """Update financial client"""
     check_financial_access(current_user)
-    financial_clients_collection = await get_financial_clients_collection()
+    async with DatabaseAdapter() as db:
     
-    client_data = await financial_clients_collection.find_one({"id": client_id})
+    client_data = await await db.find_one("financial_clients", {"id": client_id})
     if not client_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1101,10 +1101,10 @@ async def update_financial_client(
     update_data = {k: v for k, v in client_update.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
     
-    await financial_clients_collection.update_one({"id": client_id}, {"$set": update_data})
+    await await db.update_one("financial_clients", {"id": client_id}, {"$set": update_data})
     
     # Get updated client
-    updated_client_data = await financial_clients_collection.find_one({"id": client_id})
+    updated_client_data = await await db.find_one("financial_clients", {"id": client_id})
     return FinancialClient(**updated_client_data)
 
 @router.delete("/clients/{client_id}")
@@ -1114,9 +1114,9 @@ async def delete_financial_client(
 ):
     """Delete financial client"""
     check_financial_access(current_user)
-    financial_clients_collection = await get_financial_clients_collection()
+    async with DatabaseAdapter() as db:
     
-    result = await financial_clients_collection.delete_one({"id": client_id})
+    result = await await db.delete_one("financial_clients", {"id": client_id})
     if result.deleted_count == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1132,9 +1132,9 @@ async def get_financial_client(
 ):
     """Get financial client by ID"""
     check_financial_access(current_user)
-    financial_clients_collection = await get_financial_clients_collection()
+    async with DatabaseAdapter() as db:
     
-    client_data = await financial_clients_collection.find_one({"id": client_id})
+    client_data = await await db.find_one("financial_clients", {"id": client_id})
     if not client_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1153,7 +1153,7 @@ async def search_contas_receber(
 ):
     """Advanced search for contas a receber"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
     # Build query from filters
     query = {}
@@ -1195,7 +1195,7 @@ async def search_contas_receber(
         query["forma_pagamento"] = {"$in": [fp.value for fp in filters.forma_pagamento]}
     
     # Execute query
-    contas_cursor = contas_collection.find(query).skip(skip).limit(limit).sort("data_vencimento", -1)
+    contas_cursor = await db.find("contas_receber", query).skip(skip).limit(limit).sort("data_vencimento", -1)
     contas = []
     async for conta_data in contas_cursor:
         contas.append(ContaReceber(**conta_data))
@@ -1213,7 +1213,7 @@ async def export_contas_receber(
 ):
     """Export contas a receber data"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
     # Build query
     query = {}
@@ -1231,7 +1231,7 @@ async def export_contas_receber(
     
     # Get data
     contas = []
-    async for conta_data in contas_collection.find(query):
+    async for conta_data in await db.find("contas_receber", query):
         contas.append(ContaReceber(**conta_data))
     
     if formato == "json":
@@ -1256,7 +1256,7 @@ async def export_contas_receber(
 async def get_dashboard_stats(current_user: UserResponse = Depends(get_current_user)):
     """Get comprehensive financial dashboard statistics"""
     check_financial_access(current_user)
-    contas_collection = await get_contas_receber_collection()
+    async with DatabaseAdapter() as db:
     
     # Build base query for user access
     base_query = {}
