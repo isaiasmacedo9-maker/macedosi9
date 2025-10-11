@@ -114,7 +114,7 @@ async def populate_database():
     ]
     
     for cliente in clientes:
-        await db.insert_one('clients', cliente)
+        await database.clients.insert_one(cliente)
     print(f"✅ {len(clientes)} clientes criados!")
     
     # 2. CRIAR CONTAS A RECEBER (FINANCEIRO)
