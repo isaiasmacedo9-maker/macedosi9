@@ -113,16 +113,26 @@ const Configuracoes = () => {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Setores Permitidos</label>
-              <div className="flex flex-wrap gap-2">
-                {user?.allowed_sectors?.map((sector) => (
-                  <span
-                    key={sector}
-                    className="px-3 py-1 bg-green-600/20 text-green-400 border border-green-600/30 rounded-full text-sm capitalize"
-                  >
-                    {sector}
-                  </span>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Setores e Visualizações</label>
+              <div className="space-y-3">
+                {user?.permissoes?.map((perm) => (
+                  <div key={perm.setor} className="bg-gray-700/50 p-3 rounded-lg">
+                    <p className="text-white font-medium mb-2">{perm.setor}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {perm.visualizacoes.map((vis) => (
+                        <span
+                          key={vis}
+                          className="px-2 py-1 bg-green-600/20 text-green-400 border border-green-600/30 rounded text-xs"
+                        >
+                          {vis}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 ))}
+                {(!user?.permissoes || user.permissoes.length === 0) && (
+                  <p className="text-gray-400 text-sm">Nenhuma permissão configurada</p>
+                )}
               </div>
             </div>
           </div>
