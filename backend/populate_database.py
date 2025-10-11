@@ -444,7 +444,7 @@ async def populate_database():
         })
     
     for ctr in contratos:
-        await database.'contratos', ctr)
+        await database.contratos.insert_one(ctr)
     print(f"✅ {len(contratos)} contratos criados!")
     
     print("\n" + "="*60)
