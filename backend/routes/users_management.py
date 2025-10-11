@@ -9,7 +9,7 @@ from sqlalchemy import select, delete, and_
 from database_sql import AsyncSessionLocal
 from models_sql import UserSQL
 from models_chat_users import UserPermissionSQL, UserOnlineStatusSQL
-from auth import get_admin_user, get_password_hash
+from auth import get_admin_user, get_current_user, get_password_hash
 from crud_sql import convert_to_dict, json_dumps, json_loads
 import json
 
