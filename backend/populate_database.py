@@ -312,7 +312,7 @@ async def populate_database():
     })
     
     for dem in demissoes:
-        await database.'demissoes_trabalhistas', dem)
+        await database.demissoes_trabalhistas.insert_one(dem)
     print(f"✅ {len(demissoes)} demissões criadas!")
     
     # 8. CRIAR RECALCULOS
