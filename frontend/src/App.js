@@ -39,7 +39,7 @@ function App() {
                       <Route path="/comercial" element={<Comercial />} />
                       <Route path="/clientes" element={<ClientsList />} />
                       <Route path="/clientes-financeiro" element={<FinancialClients />} />
-                      <Route path="/contas-receber" element={<ContasReceber />} />
+                      <Route path="/contas-receber" element={<FinanceiroExpandido />} />
                       <Route path="/trabalhista" element={<Trabalhista />} />
                       <Route path="/fiscal" element={<FiscalExpandido />} />
                       <Route path="/atendimento" element={<Atendimento />} />
