@@ -67,6 +67,7 @@ async def health_check():
 
 # Include routers
 api_router.include_router(auth_router)
+api_router.include_router(users_management_router)
 api_router.include_router(clients_router)
 api_router.include_router(financial_router)
 api_router.include_router(trabalhista_router)
@@ -74,6 +75,7 @@ api_router.include_router(fiscal_router)
 api_router.include_router(atendimento_router)
 api_router.include_router(configuracoes_router)
 api_router.include_router(chat_router)
+api_router.include_router(chat_enhanced_router)
 api_router.include_router(tasks_router)
 
 # Include the API router in the main app
