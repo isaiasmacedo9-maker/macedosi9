@@ -126,9 +126,9 @@ async def get_contas_receber(
             {"descricao": {"$regex": search, "$options": "i"}}
         ]
     
-    contas_cursor = await contas_collection.find(query, skip=skip, limit=limit)
+    contas_data = await contas_collection.find(query, skip=skip, limit=limit)
     contas = []
-    async for conta_data in contas_cursor:
+    for conta_data in contas_data:
         contas.append(ContaReceber(**conta_data))
     
     return contas
