@@ -367,7 +367,7 @@ async def populate_database():
         })
     
     for obr in obrigacoes_trab:
-        await database.'obrigacoes_trabalhistas', obr)
+        await database.obrigacoes_trabalhistas.insert_one(obr)
     print(f"✅ {len(obrigacoes_trab)} obrigações trabalhistas criadas!")
     
     # 10. CRIAR AGENDAMENTOS
