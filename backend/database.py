@@ -68,6 +68,10 @@ async def get_chats_collection():
     database = await get_database()
     return database.chats
 
+async def get_chat_enhanced_collection():
+    database = await get_database()
+    return database.chat_enhanced
+
 async def get_tasks_collection():
     database = await get_database()
     return database.tasks
