@@ -395,7 +395,7 @@ async def populate_database():
         })
     
     for agd in agendamentos:
-        await database.'agendamentos', agd)
+        await database.agendamentos.insert_one(agd)
     print(f"✅ {len(agendamentos)} agendamentos criados!")
     
     # 11. CRIAR SERVIÇOS
