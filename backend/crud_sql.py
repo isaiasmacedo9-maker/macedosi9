@@ -241,6 +241,25 @@ def convert_to_dict(obj, exclude_relations=False):
         
         result[column.name] = value
     
+    # Convert flattened endereco fields back to nested object for clients
+    if 'endereco_logradouro' in result:
+        result['endereco'] = {
+            'logradouro': result.get('endereco_logradouro', ''),
+            'numero': result.get('endereco_numero', ''),
+            'complemento': result.get('endereco_complemento', ''),
+            'bairro': result.get('endereco_bairro', ''),
+            'distrito': result.get('endereco_distrito', ''),
+            'cep': result.get('endereco_cep', ''),
+            'cidade': result.get('endereco_cidade', ''),
+            'estado': result.get('endereco_estado', '')
+        }
+        # Remove flattened fields
+        for key in ['endereco_logradouro', 'endereco_numero', 'endereco_complemento', 
+                    'endereco_bairro', 'endereco_distrito', 'endereco_cep', 
+                    'endereco_cidade', 'endereco_estado']:
+            if key in result:
+                del result[key]
+    
     # Include relationships if not excluded
     if not exclude_relations and hasattr(obj, '__mapper__'):
         for rel in obj.__mapper__.relationships:
