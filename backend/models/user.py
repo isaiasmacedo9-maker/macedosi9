@@ -34,6 +34,10 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class PermissaoSetor(BaseModel):
+    setor: str
+    visualizacoes: List[str]
+
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -41,5 +45,6 @@ class UserResponse(BaseModel):
     role: str
     allowed_cities: List[str]
     allowed_sectors: List[str]
+    permissoes: Optional[List[PermissaoSetor]] = []
     is_active: bool
     created_at: datetime
