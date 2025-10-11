@@ -97,7 +97,7 @@ const ChatEnhanced = () => {
   const loadUsers = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/users-management/`, {
+      const response = await fetch(`${API_URL}/api/users-management/basic`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
