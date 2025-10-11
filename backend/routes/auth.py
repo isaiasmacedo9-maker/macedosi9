@@ -18,6 +18,26 @@ async def login(user_credentials: UserLogin):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Buscar permissões do usuário se estiver usando SQL
+    permissoes_list = []
+    if USE_SQL:
+        from sqlalchemy import select
+        from models_chat_users import UserPermissionSQL
+        from crud_sql import json_loads
+        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(UserPermissionSQL).where(UserPermissionSQL.user_id == user.id)
+            )
+            permissions = result.scalars().all()
+            permissoes_list = [
+                {
+                    'setor': p.setor,
+                    'visualizacoes': json_loads(p.visualizacoes)
+                }
+                for p in permissions
+            ]
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
@@ -33,6 +53,7 @@ async def login(user_credentials: UserLogin):
             role=user.role,
             allowed_cities=user.allowed_cities,
             allowed_sectors=user.allowed_sectors,
+            permissoes=permissoes_list,
             is_active=user.is_active,
             created_at=user.created_at
         )
