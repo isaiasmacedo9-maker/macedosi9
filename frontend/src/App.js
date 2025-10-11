@@ -43,7 +43,8 @@ function App() {
                       <Route path="/contas-receber" element={<FinanceiroExpandido />} />
                       <Route path="/trabalhista" element={<Trabalhista />} />
                       <Route path="/fiscal" element={<FiscalExpandido />} />
-                      <Route path="/atendimento" element={<Atendimento />} />
+                      <Route path="/atendimento" element={<AtendimentoAgendamento />} />
+                      <Route path="/contadores" element={<PainelContadores />} />
                       <Route path="/chat" element={<ChatEnhanced />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/configuracoes/usuarios" element={<Users />} />
