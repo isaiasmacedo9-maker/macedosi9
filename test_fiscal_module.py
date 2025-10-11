@@ -306,7 +306,8 @@ class FiscalModuleTester:
             "nome": "Teste Cálculo Vencimento",
             "periodicidade": "mensal",
             "dia_vencimento": 20,
-            "responsavel": "Teste Calc"
+            "responsavel": "Teste Calc",
+            "regime_tributario": "simples_nacional"
         }
         
         success, response = self.make_request("POST", "/fiscal/obrigacoes", data=calc_test_data)
