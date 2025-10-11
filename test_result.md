@@ -472,6 +472,18 @@ frontend:
         agent: "main"
         comment: "Ainda não implementado - precisa expandir para incluir todos os campos especificados"
 
+  - task: "Interface Fiscal expandida"
+    implemented: true
+    working: "NA"
+    file: "components/Fiscal/FiscalExpandido.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Interface completa implementada com: Dashboard com stats, CRUD completo de obrigações fiscais (filtros por tipo, status, regime, responsável, busca), CRUD de notas fiscais (filtros por tipo, conciliação, período), Upload de XML NFe, Tabelas avançadas com ações (editar, excluir), Modais para criação/edição, Integração com backend 100% funcional. Aguardando testes."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
