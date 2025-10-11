@@ -6,6 +6,7 @@ import { Settings, Save, User, Shield, Users as UsersIcon } from 'lucide-react';
 
 const Configuracoes = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [configurations, setConfigurations] = useState([]);
   const [loading, setLoading] = useState(true);
 
