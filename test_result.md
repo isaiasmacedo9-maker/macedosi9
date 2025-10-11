@@ -447,6 +447,18 @@ backend:
         agent: "testing"
         comment: "VALIDADO - Collections MongoDB criadas e funcionando: atendimento, base_conhecimento, avaliacoes_atendimento. Operações de CRUD testadas com sucesso."
 
+  - task: "MySQL Migration - Route Adapter Integration"
+    implemented: false
+    working: false
+    file: "routes/*.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "CRITICAL ISSUE - MySQL migration completed but routes not updated to use database adapter. All API endpoints failing with 500 errors because routes still use MongoDB functions (get_contas_receber_collection(), etc.) which return None when USE_SQL=true. Need to update all routes to use database_adapter.get_db_adapter() pattern like trabalhista_servicos.py. MySQL connection working, 5 users migrated, authentication working, but API endpoints incompatible."
+
 frontend:
   - task: "Interface Contas a Receber expandida"
     implemented: true
