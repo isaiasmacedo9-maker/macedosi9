@@ -15,6 +15,7 @@ from models_chat_users import (
     ConversationMemberSQL, ChatMessageSQL, MessageReadStatusSQL
 )
 from models_services import ServicoSQL, ComentarioServicoSQL
+from models_comercial import ServicoComercialSQL, OrdemServicoSQL, ContratoSQL, HistoricoContratoSQL
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
