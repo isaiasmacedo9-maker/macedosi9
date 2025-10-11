@@ -100,7 +100,7 @@ async def get_contas_receber(
 ):
     """Get contas a receber with filters"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     # Build query
     query = {}
@@ -137,9 +137,8 @@ async def get_conta_receber(
 ):
     """Get conta a receber by ID"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
-
-            conta_data = await await db.find_one("contas_receber", {"id": conta_id})
+    contas_collection = await get_contas_receber_collection()
+    conta_data = await contas_collection.find_one({"id": conta_id})
     
     if not conta_data:
         raise HTTPException(
@@ -157,9 +156,8 @@ async def baixar_conta_receber(
 ):
     """Dar baixa em conta a receber"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
-
-            conta_data = await await db.find_one("contas_receber", {"id": conta_id})
+    contas_collection = await get_contas_receber_collection()
+    conta_data = await contas_collection.find_one({"id": conta_id})
     
     if not conta_data:
         raise HTTPException(
@@ -209,7 +207,7 @@ async def update_conta_receber(
 ):
     """Update conta a receber"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     conta_data = await contas_collection.find_one({"id": conta_id})
     if not conta_data:
@@ -248,7 +246,7 @@ async def delete_conta_receber(
 ):
     """Delete conta a receber"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     result = await contas_collection.delete_one({"id": conta_id})
     if result.deleted_count == 0:
@@ -267,7 +265,7 @@ async def duplicate_conta_receber(
 ):
     """Duplicate conta a receber for recurring entries"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     conta_data = await contas_collection.find_one({"id": conta_id})
     if not conta_data:
@@ -336,7 +334,7 @@ async def add_contato_cobranca(
 ):
     """Add contact record to conta a receber"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     conta_data = await contas_collection.find_one({"id": conta_id})
     if not conta_data:
@@ -367,7 +365,7 @@ async def create_proposta_renegociacao(
 ):
     """Create renegotiation proposal"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     conta_data = await contas_collection.find_one({"id": conta_id})
     if not conta_data:
@@ -406,7 +404,7 @@ async def gerar_lembrete_cobranca(
 ):
     """Generate collection reminder text"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     conta_data = await contas_collection.find_one({"id": conta_id})
     if not conta_data:
@@ -456,7 +454,7 @@ async def relatorio_inadimplencia(
 ):
     """Generate default report"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     # Build query
     query = {"situacao": {"$in": [SituacaoTitulo.ATRASADO, SituacaoTitulo.EM_ABERTO]}}
@@ -506,7 +504,7 @@ async def relatorio_recebimentos(
 ):
     """Generate payment report"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     # Build query - convert dates to datetime for MongoDB
     query = {
@@ -585,9 +583,8 @@ async def importar_extrato(
     )
     
     # Save import record
-    async with DatabaseAdapter() as db:
-
-            await await db.insert_one("importacoes_extrato", importacao.model_dump())
+    importacoes_collection = await get_importacoes_extrato_collection()
+    await importacoes_collection.insert_one(importacao.model_dump())
     
     try:
         # Read file content
@@ -794,9 +791,8 @@ def criar_movimento_from_csv(campos: List[str]) -> Optional[MovimentoExtrato]:
 
 async def processar_conciliacao_automatica(importacao_id: str, usuario: str) -> int:
     """Process automatic reconciliation"""
-    async with DatabaseAdapter() as db:
-
-            contas_collection = await get_contas_receber_collection()
+    importacoes_collection = await get_importacoes_extrato_collection()
+    contas_collection = await get_contas_receber_collection()
     
     importacao_data = await importacoes_collection.find_one({"id": importacao_id})
     if not importacao_data:
@@ -916,7 +912,7 @@ async def listar_importacoes(
 ):
     """List import history"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    importacoes_collection = await get_importacoes_extrato_collection()
     
     query = {}
     if current_user.role != "admin":
@@ -935,7 +931,7 @@ async def obter_fila_classificacao(
 ):
     """Get classification queue for manual processing"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    importacoes_collection = await get_importacoes_extrato_collection()
     
     importacao_data = await importacoes_collection.find_one({"id": importacao_id})
     if not importacao_data:
@@ -962,9 +958,8 @@ async def classificar_movimento(
 ):
     """Manually classify movement"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
-
-            contas_collection = await get_contas_receber_collection()
+    importacoes_collection = await get_importacoes_extrato_collection()
+    contas_collection = await get_contas_receber_collection()
     
     importacao_data = await importacoes_collection.find_one({"id": classificacao.movimento_id.split('_')[0]})
     if not importacao_data:
@@ -1016,7 +1011,7 @@ async def create_financial_client(
 ):
     """Create new financial client"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    financial_clients_collection = await get_financial_clients_collection()
     
     # Check if client already exists
     existing_client = await financial_clients_collection.find_one({"empresa_id": client_data.empresa_id})
@@ -1062,7 +1057,7 @@ async def get_financial_clients(
 ):
     """Get financial clients with filters"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    financial_clients_collection = await get_financial_clients_collection()
     
     # Build query
     query = {}
@@ -1093,7 +1088,7 @@ async def update_financial_client(
 ):
     """Update financial client"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    financial_clients_collection = await get_financial_clients_collection()
     
     client_data = await financial_clients_collection.find_one({"id": client_id})
     if not client_data:
@@ -1119,7 +1114,7 @@ async def delete_financial_client(
 ):
     """Delete financial client"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    financial_clients_collection = await get_financial_clients_collection()
     
     result = await financial_clients_collection.delete_one({"id": client_id})
     if result.deleted_count == 0:
@@ -1137,7 +1132,7 @@ async def get_financial_client(
 ):
     """Get financial client by ID"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    financial_clients_collection = await get_financial_clients_collection()
     
     client_data = await financial_clients_collection.find_one({"id": client_id})
     if not client_data:
@@ -1158,7 +1153,7 @@ async def search_contas_receber(
 ):
     """Advanced search for contas a receber"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     # Build query from filters
     query = {}
@@ -1218,7 +1213,7 @@ async def export_contas_receber(
 ):
     """Export contas a receber data"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     # Build query
     query = {}
@@ -1261,7 +1256,7 @@ async def export_contas_receber(
 async def get_dashboard_stats(current_user: UserResponse = Depends(get_current_user)):
     """Get comprehensive financial dashboard statistics"""
     check_financial_access(current_user)
-    async with DatabaseAdapter() as db:
+    contas_collection = await get_contas_receber_collection()
     
     # Build base query for user access
     base_query = {}

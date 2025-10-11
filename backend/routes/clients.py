@@ -3,7 +3,7 @@ from typing import Optional, List
 from models.client import Client, ClientCreate, ClientUpdate
 from models.user import UserResponse
 from auth import get_current_user
-from database_adapter import DatabaseAdapter
+from database import get_clients_collection, get_users_collection, get_chat_enhanced_collection
 from datetime import datetime
 import uuid
 
@@ -27,7 +27,7 @@ async def create_client(
             detail="Access denied for this city"
         )
     
-    async with DatabaseAdapter() as db:
+    clients_collection = await get_clients_collection()
     
     # Check if CNPJ already exists
     existing_client = await clients_collection.find_one({"cnpj": client_data.cnpj})
@@ -48,9 +48,8 @@ async def create_client(
 async def send_notification_to_financial(client: Client, creator: UserResponse):
     """Envia notificação automática para todos do financeiro da cidade"""
     try:
-        async with DatabaseAdapter() as db:
-
-                    chat_collection = await get_chat_enhanced_collection()
+        users_collection = await get_users_collection()
+        chat_collection = await get_chat_enhanced_collection()
         
         # Buscar todos os usuários do setor financeiro da mesma cidade
         financial_users = []
@@ -152,7 +151,7 @@ async def get_clients(
     limit: int = Query(100, ge=1, le=1000)
 ):
     """Get clients with filters"""
-    async with DatabaseAdapter() as db:
+    clients_collection = await get_clients_collection()
     
     # Build filter
     filter_query = {}
@@ -194,9 +193,8 @@ async def get_client(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Get client by ID"""
-    async with DatabaseAdapter() as db:
-
-            client_data = await await db.find_one("clients", {"id": client_id})
+    clients_collection = await get_clients_collection()
+    client_data = await clients_collection.find_one({"id": client_id})
     
     if not client_data:
         raise HTTPException(
@@ -221,7 +219,7 @@ async def update_client(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Update client"""
-    async with DatabaseAdapter() as db:
+    clients_collection = await get_clients_collection()
     
     # Check if client exists
     existing_client = await clients_collection.find_one({"id": client_id})
@@ -258,7 +256,7 @@ async def delete_client(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Delete client"""
-    async with DatabaseAdapter() as db:
+    clients_collection = await get_clients_collection()
     
     # Check if client exists
     existing_client = await clients_collection.find_one({"id": client_id})
@@ -285,9 +283,8 @@ async def get_client_by_cnpj(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Get client by CNPJ"""
-    async with DatabaseAdapter() as db:
-
-            client_data = await await db.find_one("clients", {"cnpj": cnpj})
+    clients_collection = await get_clients_collection()
+    client_data = await clients_collection.find_one({"cnpj": cnpj})
     
     if not client_data:
         raise HTTPException(
