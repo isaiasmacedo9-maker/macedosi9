@@ -384,7 +384,7 @@ async def create_nota_fiscal(
         "valor_servicos": nota_data.valor_servicos,
         "cfop": nota_data.cfop,
         "natureza_operacao": nota_data.natureza_operacao,
-        "status_conciliacao": StatusConciliacao.NAO_CONCILIADA.value,
+        "status_conciliacao": StatusConciliacao.NAO_CONCILIADO.value,
         "xml_content": None,
         "observacoes": getattr(nota_data, 'observacoes', None),
         "created_at": datetime.utcnow(),
