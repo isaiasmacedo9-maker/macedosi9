@@ -79,6 +79,7 @@ api_router.include_router(configuracoes_router)
 api_router.include_router(chat_router)
 api_router.include_router(chat_enhanced_router)
 api_router.include_router(services_router)
+api_router.include_router(comercial_router)
 api_router.include_router(tasks_router)
 
 # Include the API router in the main app
