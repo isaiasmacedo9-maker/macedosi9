@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import Login from "./components/Login/Login";
 import Dashboard from "./components/Dashboard/Dashboard";
-import ClientsList from "./components/Clients/ClientsList";
+import ClientesExpandido from "./components/Clients/ClientesExpandido";
 import FinancialClients from "./components/Clients/FinancialClients";
 import FinanceiroExpandido from "./components/Financial/FinanceiroExpandido";
 import Trabalhista from "./components/Trabalhista/Trabalhista";
