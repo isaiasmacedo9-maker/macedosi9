@@ -12,6 +12,7 @@ from routes.auth import router as auth_router
 from routes.clients import router as clients_router
 from routes.financial import router as financial_router
 from routes.trabalhista import router as trabalhista_router
+from routes.trabalhista_servicos import router as trabalhista_servicos_router
 from routes.fiscal import router as fiscal_router
 from routes.atendimento import router as atendimento_router
 from routes.configuracoes import router as configuracoes_router
