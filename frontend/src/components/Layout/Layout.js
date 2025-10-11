@@ -14,7 +14,8 @@ import {
   X,
   Building2,
   Wallet,
-  MessageCircle
+  MessageCircle,
+  Briefcase
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
