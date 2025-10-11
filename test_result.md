@@ -588,14 +588,11 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Interface Contas a Receber expandida"
-    - "Interface Cadastro de Empresas expandida"
-    - "Interface Trabalhista expandida"
-    - "Interface Fiscal expandida"
-    - "Interface Atendimento expandida"
-  stuck_tasks: []
+    - "MySQL Migration - Route Adapter Integration"
+  stuck_tasks:
+    - "MySQL Migration - Route Adapter Integration"
   test_all: false
-  test_priority: "high_first"
+  test_priority: "stuck_first"
 
 agent_communication:
   - agent: "main"
