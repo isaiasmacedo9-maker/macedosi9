@@ -34,7 +34,6 @@ async def create_obrigacao(
 ):
     """Create new obrigacao fiscal"""
     check_fiscal_access(current_user)
-    fiscal_collection = await get_fiscal_collection()
     
     # Calculate next due date based on periodicity
     hoje = date.today()
@@ -119,7 +118,9 @@ async def create_obrigacao(
         "updated_at": datetime.utcnow()
     }
     
-    await fiscal_collection.insert_one(obrigacao_dict)
+    async with DatabaseAdapter() as db:
+        await db.insert_one("fiscal", obrigacao_dict)
+    
     return ObrigacaoFiscal(**obrigacao_dict)
 
 @router.get("/obrigacoes", response_model=List[ObrigacaoFiscal])
