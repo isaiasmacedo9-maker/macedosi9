@@ -28,7 +28,7 @@ class MacedoSIAPITester:
         
         # Test users from init_database.py
         self.test_users = {
-            "admin": {"email": "admin@macedo.com.br", "password": "admin123"},
+            "admin": {"email": "admin@macedosi.com", "password": "admin123"},
             "colaborador": {"email": "colaborador@macedo.com.br", "password": "colab123"},
             "fiscal": {"email": "fiscal@macedo.com.br", "password": "fiscal123"}
         }
