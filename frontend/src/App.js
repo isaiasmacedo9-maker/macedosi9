@@ -14,6 +14,7 @@ import Configuracoes from "./components/Configuracoes/Configuracoes";
 import Chat from "./components/Chat/Chat";
 import ChatEnhanced from "./components/Chat/ChatEnhanced";
 import Users from "./components/Settings/Users";
+import Services from "./components/Services/Services";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout/Layout";
 import { Toaster } from "sonner";
