@@ -6,7 +6,7 @@ import Login from "./components/Login/Login";
 import Dashboard from "./components/Dashboard/Dashboard";
 import ClientsList from "./components/Clients/ClientsList";
 import FinancialClients from "./components/Clients/FinancialClients";
-import ContasReceber from "./components/Financial/ContasReceber";
+import FinanceiroExpandido from "./components/Financial/FinanceiroExpandido";
 import Trabalhista from "./components/Trabalhista/Trabalhista";
 import FiscalExpandido from "./components/Fiscal/FiscalExpandido";
 import Atendimento from "./components/Atendimento/Atendimento";
