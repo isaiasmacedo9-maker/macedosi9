@@ -21,11 +21,11 @@ from routes.tasks import router as tasks_router
 # Lifespan events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    await connect_to_mongo()
+    # Startup - Initialize SQL database
+    await init_db()
     yield
     # Shutdown
-    await close_mongo_connection()
+    await close_db()
 
 # Create the main app
 app = FastAPI(
