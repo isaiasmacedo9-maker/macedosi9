@@ -275,7 +275,7 @@ async def populate_database():
         })
     
     for adm in admissoes:
-        await database.'admissoes_trabalhistas', adm)
+        await database.admissoes_trabalhistas.insert_one(adm)
     print(f"✅ {len(admissoes)} admissões criadas!")
     
     # 7. CRIAR DEMISSÕES
