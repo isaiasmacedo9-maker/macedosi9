@@ -9,10 +9,18 @@ from models.trabalhista import (
 )
 from models.user import UserResponse
 from auth import get_current_user
-from database import (
-    get_trabalhista_collection, get_funcionarios_collection, 
-    get_obrigacoes_trabalhistas_collection, get_checklists_trabalhistas_collection
-)
+import os
+_USE_SQL = os.getenv('USE_SQL', 'false').lower() == 'true'
+if _USE_SQL:
+    from database_compat import (
+        get_trabalhista_collection, get_funcionarios_collection, 
+        get_obrigacoes_trabalhistas_collection, get_checklists_trabalhistas_collection
+    )
+else:
+    from database import (
+        get_trabalhista_collection, get_funcionarios_collection, 
+        get_obrigacoes_trabalhistas_collection, get_checklists_trabalhistas_collection
+    )
 from datetime import datetime, date, timedelta
 import uuid
 
@@ -116,9 +124,19 @@ async def get_solicitacoes(
             {"responsavel": {"$regex": search, "$options": "i"}}
         ]
     
-    solicitacoes_cursor = trabalhista_collection.find(query).skip(skip).limit(limit).sort("data_solicitacao", -1)
+    # Use CompatCursor with skip and limit parameters
+    solicitacoes_cursor = trabalhista_collection.find(query, skip=skip, limit=limit)
     solicitacoes = []
     async for solicitacao_data in solicitacoes_cursor:
+        # Ensure list fields have default values
+        if solicitacao_data.get('documentos_anexos') is None:
+            solicitacao_data['documentos_anexos'] = []
+        if solicitacao_data.get('documentos_necessarios') is None:
+            solicitacao_data['documentos_necessarios'] = []
+        if solicitacao_data.get('checklist_items') is None:
+            solicitacao_data['checklist_items'] = []
+        if solicitacao_data.get('historico_alteracoes') is None:
+            solicitacao_data['historico_alteracoes'] = []
         solicitacoes.append(SolicitacaoTrabalhista(**solicitacao_data))
     
     return solicitacoes

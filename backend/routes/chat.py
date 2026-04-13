@@ -3,7 +3,12 @@ from typing import List, Optional
 from models.chat import Chat, ChatCreate, Message, MessageCreate
 from models.user import UserResponse
 from auth import get_current_user
-from database import get_chats_collection
+import os
+_USE_SQL = os.getenv('USE_SQL', 'false').lower() == 'true'
+if _USE_SQL:
+    from database_compat import get_chats_collection
+else:
+    from database import get_chats_collection
 from datetime import datetime
 
 router = APIRouter(prefix="/chat", tags=["Chat"])

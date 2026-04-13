@@ -23,6 +23,7 @@ class TipoEmpresa(str, Enum):
 class TipoRegime(str, Enum):
     MEI = "mei"
     SIMPLES = "simples"
+    SIMPLES_NACIONAL = "simples_nacional"
     LUCRO_PRESUMIDO = "lucro_presumido"
     LUCRO_REAL = "lucro_real"
 

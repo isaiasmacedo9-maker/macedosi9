@@ -16,6 +16,10 @@ class TipoObrigacao(str, Enum):
     GIAS = "gias"
     DIF = "dif"
     DIRF = "dirf"
+    GFIP = "gfip"
+    ESOCIAL = "esocial"
+    REINF = "reinf"
+    OUTROS = "outros"
 
 class StatusObrigacao(str, Enum):
     PENDENTE = "pendente"

@@ -3,7 +3,14 @@ from typing import List, Optional
 from models.task import Task, TaskCreate, TaskUpdate, TaskComment
 from models.user import UserResponse
 from auth import get_current_user
-from database import get_tasks_collection
+import os
+USE_SQL = os.getenv('USE_SQL', 'false').lower() == 'true'
+if USE_SQL:
+    from database_compat import CompatCollection
+    async def get_tasks_collection():
+        return CompatCollection("tasks")
+else:
+    from database import get_tasks_collection
 from datetime import datetime
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])

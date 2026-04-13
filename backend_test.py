@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 class MacedoSIAPITester:
-    def __init__(self, base_url="https://db-migration-hub-1.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://fastapi-mysql-test.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.tokens = {}  # Store tokens for different users
         self.tests_run = 0

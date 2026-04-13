@@ -9,6 +9,7 @@ class TipoSolicitacao(str, Enum):
     ADMISSAO = "admissao"
     DEMISSAO = "demissao" 
     FOLHA = "folha"
+    FOLHA_PAGAMENTO = "folha_pagamento"
     AFASTAMENTO = "afastamento"
     RECLAMACAO = "reclamacao"
     FERIAS = "ferias"
@@ -16,6 +17,7 @@ class TipoSolicitacao(str, Enum):
     ALTERACAO_CONTRATUAL = "alteracao_contratual"
     AUXILIO_DOENCA = "auxilio_doenca"
     LICENCA_MATERNIDADE = "licenca_maternidade"
+    OUTROS = "outros"
 
 class StatusSolicitacao(str, Enum):
     PENDENTE = "pendente"

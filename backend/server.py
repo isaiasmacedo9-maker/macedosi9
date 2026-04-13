@@ -1,5 +1,7 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
@@ -43,6 +45,19 @@ app = FastAPI(
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# Middleware to fix HTTPS redirects behind proxy
+class HTTPSRedirectFixMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if response.status_code in (301, 302, 307, 308):
+            location = response.headers.get("location", "")
+            forwarded_proto = request.headers.get("x-forwarded-proto", "")
+            if location.startswith("http://") and (forwarded_proto == "https" or "preview.emergentagent.com" in request.url.host):
+                response.headers["location"] = location.replace("http://", "https://", 1)
+        return response
+
+app.add_middleware(HTTPSRedirectFixMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

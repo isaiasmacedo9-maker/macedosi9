@@ -241,6 +241,11 @@ async def get_obrigacoes(
                     if not (vencimento_inicio <= venc_date <= vencimento_fim):
                         continue
             
+            # Ensure list fields have default values
+            if obrigacao_data.get('historico_entregas') is None:
+                obrigacao_data['historico_entregas'] = []
+            if obrigacao_data.get('documentos_anexos') is None:
+                obrigacao_data['documentos_anexos'] = []
             filtered_obrigacoes.append(ObrigacaoFiscal(**obrigacao_data))
     
     return filtered_obrigacoes

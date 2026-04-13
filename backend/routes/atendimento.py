@@ -9,10 +9,18 @@ from models.atendimento import (
 )
 from models.user import UserResponse
 from auth import get_current_user
-from database import (
-    get_atendimento_collection, get_base_conhecimento_collection,
-    get_avaliacoes_atendimento_collection
-)
+import os
+_USE_SQL = os.getenv('USE_SQL', 'false').lower() == 'true'
+if _USE_SQL:
+    from database_compat import (
+        get_atendimento_collection, get_base_conhecimento_collection,
+        get_avaliacoes_atendimento_collection
+    )
+else:
+    from database import (
+        get_atendimento_collection, get_base_conhecimento_collection,
+        get_avaliacoes_atendimento_collection
+    )
 from datetime import datetime, date, timedelta
 import uuid
 

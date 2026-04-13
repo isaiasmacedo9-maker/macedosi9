@@ -147,7 +147,7 @@ const Dashboard = () => {
         
         <StatCard
           title="Contas em Aberto"
-          value={`R$ ${stats.financial.total_aberto?.toLocaleString('pt-BR') || '0'}`}
+          value={`R$ ${(stats.financial.total_aberto?.valor ?? stats.financial.total_aberto ?? 0).toLocaleString('pt-BR')}`}
           icon={DollarSign}
           color="text-yellow-400"
           emoji="💰"
