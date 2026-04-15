@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../config/api';
 import { 
@@ -14,6 +15,7 @@ import {
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     clients: 0,
     financial: { total_aberto: 0, total_atrasado: 0, total_recebido: 0 },
@@ -80,21 +82,25 @@ const Dashboard = () => {
     loadDashboardData();
   }, [user]);
 
-  const StatCard = ({ title, value, icon: Icon, color, trend, emoji }) => (
-    <div className="glass p-6 rounded-2xl card-hover">
+  const StatCard = ({ title, value, icon: Icon, color, trend, emoji, onClick }) => (
+    <div 
+      className="glass p-6 rounded-2xl card-hover cursor-pointer transition-all duration-200 hover:scale-[1.02]" 
+      onClick={onClick}
+      data-testid={`stat-card-${title.toLowerCase().replace(/\s+/g, '-')}`}
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-gray-400 text-sm font-medium flex items-center">
             <span className="mr-2">{emoji}</span>
             {title}
           </p>
-          <p className={`text-2xl font-bold mt-2 ${color}`}>
+          <span className={`text-2xl font-bold mt-2 block ${color}`}>
             {loading ? (
-              <div className="spinner w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full"></div>
+              <span className="spinner w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full inline-block"></span>
             ) : (
               value
             )}
-          </p>
+          </span>
           {trend && (
             <p className="text-sm text-gray-500 mt-1">{trend}</p>
           )}
@@ -143,6 +149,7 @@ const Dashboard = () => {
           icon={Users}
           color="text-blue-400"
           emoji="🏢"
+          onClick={() => navigate('/clientes')}
         />
         
         <StatCard
@@ -151,6 +158,7 @@ const Dashboard = () => {
           icon={DollarSign}
           color="text-yellow-400"
           emoji="💰"
+          onClick={() => navigate('/contas-receber')}
         />
 
         <StatCard
@@ -159,6 +167,7 @@ const Dashboard = () => {
           icon={Clock}
           color="text-orange-400"
           emoji="📋"
+          onClick={() => navigate('/tarefas?status=pendente')}
         />
 
         <StatCard
@@ -167,6 +176,7 @@ const Dashboard = () => {
           icon={CheckCircle}
           color="text-green-400"
           emoji="✅"
+          onClick={() => navigate('/tarefas?status=concluida')}
         />
       </div>
 
@@ -178,30 +188,46 @@ const Dashboard = () => {
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {user?.role === 'admin' || user?.allowed_sectors?.includes('comercial') ? (
-            <button className="p-4 rounded-xl bg-gradient-to-r from-blue-600/20 to-blue-800/20 border border-blue-600/30 hover:from-blue-600/30 hover:to-blue-800/30 transition-all duration-200 text-center">
+            <button 
+              onClick={() => navigate('/clientes')}
+              data-testid="quick-access-clientes"
+              className="p-4 rounded-xl bg-gradient-to-r from-blue-600/20 to-blue-800/20 border border-blue-600/30 hover:from-blue-600/30 hover:to-blue-800/30 transition-all duration-200 text-center"
+            >
               <Building2 className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-              <span className="text-sm text-white">🏢 Clientes</span>
+              <span className="text-sm text-white">Clientes</span>
             </button>
           ) : null}
           
           {user?.role === 'admin' || user?.allowed_sectors?.includes('financeiro') ? (
-            <button className="p-4 rounded-xl bg-gradient-to-r from-green-600/20 to-green-800/20 border border-green-600/30 hover:from-green-600/30 hover:to-green-800/30 transition-all duration-200 text-center">
+            <button 
+              onClick={() => navigate('/contas-receber')}
+              data-testid="quick-access-financeiro"
+              className="p-4 rounded-xl bg-gradient-to-r from-green-600/20 to-green-800/20 border border-green-600/30 hover:from-green-600/30 hover:to-green-800/30 transition-all duration-200 text-center"
+            >
               <DollarSign className="w-8 h-8 text-green-400 mx-auto mb-2" />
-              <span className="text-sm text-white">💸 Financeiro</span>
+              <span className="text-sm text-white">Financeiro</span>
             </button>
           ) : null}
           
           {user?.role === 'admin' || user?.allowed_sectors?.includes('trabalhista') ? (
-            <button className="p-4 rounded-xl bg-gradient-to-r from-purple-600/20 to-purple-800/20 border border-purple-600/30 hover:from-purple-600/30 hover:to-purple-800/30 transition-all duration-200 text-center">
+            <button 
+              onClick={() => navigate('/trabalhista')}
+              data-testid="quick-access-trabalhista"
+              className="p-4 rounded-xl bg-gradient-to-r from-purple-600/20 to-purple-800/20 border border-purple-600/30 hover:from-purple-600/30 hover:to-purple-800/30 transition-all duration-200 text-center"
+            >
               <FileText className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-              <span className="text-sm text-white">👥 Trabalhista</span>
+              <span className="text-sm text-white">Trabalhista</span>
             </button>
           ) : null}
           
           {user?.role === 'admin' || user?.allowed_sectors?.includes('fiscal') ? (
-            <button className="p-4 rounded-xl bg-gradient-to-r from-yellow-600/20 to-yellow-800/20 border border-yellow-600/30 hover:from-yellow-600/30 hover:to-yellow-800/30 transition-all duration-200 text-center">
+            <button 
+              onClick={() => navigate('/fiscal')}
+              data-testid="quick-access-fiscal"
+              className="p-4 rounded-xl bg-gradient-to-r from-yellow-600/20 to-yellow-800/20 border border-yellow-600/30 hover:from-yellow-600/30 hover:to-yellow-800/30 transition-all duration-200 text-center"
+            >
               <FileText className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
-              <span className="text-sm text-white">📋 Fiscal</span>
+              <span className="text-sm text-white">Fiscal</span>
             </button>
           ) : null}
         </div>

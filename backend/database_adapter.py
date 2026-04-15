@@ -197,6 +197,7 @@ class DatabaseAdapter:
             'configuracoes': ConfiguracaoSQL,
             'chats': ChatSQL,
             'tasks': TaskSQL,
+            'guias_fiscais': GuiaFiscalSQL,
         }
         
         model = mapping.get(collection_name)

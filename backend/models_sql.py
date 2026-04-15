@@ -585,3 +585,26 @@ class TaskSQL(Base):
     tags = Column(Text)  # JSON string list
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==================== GUIAS FISCAIS ====================
+class GuiaFiscalSQL(Base):
+    __tablename__ = "guias_fiscais"
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    empresa_id = Column(String(36), nullable=False, index=True)
+    empresa_nome = Column(String(255), nullable=False)
+    tipo_guia = Column(String(100), nullable=False, index=True)
+    competencia = Column(String(7), nullable=False, index=True)  # YYYY-MM
+    valor = Column(Float, nullable=False)
+    data_vencimento = Column(Date, nullable=False, index=True)
+    data_pagamento = Column(Date)
+    status = Column(String(50), default="pendente", index=True)  # pendente, pago, atrasado
+    colaborador_responsavel = Column(String(255), nullable=False, index=True)
+    colaborador_lancamento_id = Column(String(36), nullable=False)
+    colaborador_lancamento_nome = Column(String(255), nullable=False)
+    observacoes = Column(Text)
+    arquivo_guia = Column(String(500))  # path to PDF
+    arquivo_comprovante = Column(String(500))  # path to payment proof
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

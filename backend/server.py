@@ -25,6 +25,7 @@ from routes.chat_enhanced import router as chat_enhanced_router
 from routes.services import router as services_router
 from routes.comercial import router as comercial_router
 from routes.agendamentos import router as agendamentos_router
+from routes.guias_fiscais import router as guias_fiscais_router
 
 # Lifespan events
 @asynccontextmanager
@@ -95,12 +96,13 @@ api_router.include_router(trabalhista_servicos_router)
 api_router.include_router(fiscal_router)
 api_router.include_router(atendimento_router)
 api_router.include_router(configuracoes_router)
-api_router.include_router(chat_router)
 api_router.include_router(chat_enhanced_router)
+api_router.include_router(chat_router)
 api_router.include_router(services_router)
 api_router.include_router(comercial_router)
 api_router.include_router(tasks_router)
 api_router.include_router(agendamentos_router)
+api_router.include_router(guias_fiscais_router)
 
 # Include the API router in the main app
 app.include_router(api_router)
