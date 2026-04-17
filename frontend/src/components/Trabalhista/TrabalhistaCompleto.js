@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../config/api';
+import {
+  mockClients,
+  mockTrabalhistaAdmissoes,
+  mockTrabalhistaCalendario,
+  mockTrabalhistaDashboardServicos,
+  mockTrabalhistaDashboardStats,
+  mockTrabalhistaDemissoes,
+  mockTrabalhistaObrigacoes,
+  mockTrabalhistaRecalculos,
+  mockTrabalhistaRelatorio,
+  mockTrabalhistaSolicitacoes,
+} from '../../dev/mockData';
 import { 
   Users, Plus, FileText, Calendar, AlertCircle, CheckCircle,
   Clock, Filter, Search, Eye, Edit, Trash2, X, Upload,
@@ -8,6 +20,52 @@ import {
   MessageCircle, Send, Paperclip, CalendarDays, BarChart3
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const WORKFORCE_STORAGE_KEY = 'mock_trabalhista_workforce_v1';
+const WORKFORCE_SYNC_KEY = 'mock_trabalhista_workforce_sync_v1';
+const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
+
+const CCT_RULES = [
+  { keywords: ['frentista', 'posto'], convenio: 'CCT de Postos de Combustíveis' },
+  { keywords: ['farmaceutico', 'atendente farmacia', 'drogaria'], convenio: 'CCT do Comércio Farmacêutico' },
+  { keywords: ['motorista', 'entregador', 'logistica'], convenio: 'CCT de Transportes e Logística' },
+  { keywords: ['vendedor', 'balconista', 'caixa'], convenio: 'CCT do Comércio Varejista' },
+  { keywords: ['recepcionista', 'auxiliar administrativo', 'assistente administrativo'], convenio: 'CCT Administrativa/Escritórios' },
+  { keywords: ['tecnico enfermagem', 'enfermeiro', 'clinica'], convenio: 'CCT da Saúde' },
+];
+
+const normalizeText = (value = '') =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const identifyCctForRole = (role = '') => {
+  const normalizedRole = normalizeText(role);
+  const rule = CCT_RULES.find((item) => item.keywords.some((keyword) => normalizedRole.includes(normalizeText(keyword))));
+  return rule ? rule.convenio : null;
+};
+
+const readWorkforceMap = () => {
+  try {
+    const raw = localStorage.getItem(WORKFORCE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const mergeClientsUnique = (...lists) => {
+  const map = new Map();
+  lists.flat().forEach((client) => {
+    if (!client) return;
+    const key = client.id || client.cnpj || `${client.nome_empresa}-${client.nome_fantasia}`;
+    if (!map.has(key)) map.set(key, client);
+  });
+  return Array.from(map.values());
+};
 
 const TrabalhistaCompleto = () => {
   const { hasAccess, user } = useAuth();
@@ -121,13 +179,141 @@ const TrabalhistaCompleto = () => {
     decimo_terceiro: 0,
     multa_fgts: 0
   });
+  const [workforceMap, setWorkforceMap] = useState({});
+  const [workforceSync, setWorkforceSync] = useState({ admissoes: [], demissoes: [] });
+  const [workforceForm, setWorkforceForm] = useState({
+    empresa_id: '',
+    nome: '',
+    cpf: '',
+    cargo: '',
+    salario: '',
+    data_admissao: '',
+  });
+  const [importReportByCompany, setImportReportByCompany] = useState({});
 
   useEffect(() => {
     if (hasAccess([], ['trabalhista'])) {
       loadDashboard();
       loadClientes();
+      setWorkforceMap(readWorkforceMap());
+      try {
+        const rawSync = localStorage.getItem(WORKFORCE_SYNC_KEY);
+        if (rawSync) {
+          const parsedSync = JSON.parse(rawSync);
+          if (parsedSync && typeof parsedSync === 'object') setWorkforceSync(parsedSync);
+        }
+      } catch {}
     }
   }, []);
+
+  useEffect(() => {
+    if (!clientes.length) return;
+    setWorkforceMap((current) => {
+      const next = { ...current };
+      let changed = false;
+      clientes.forEach((client) => {
+        if (!next[client.id]) {
+          changed = true;
+          next[client.id] = {
+            empresa_id: client.id,
+            empresa_nome: client.nome_empresa,
+            prolaboreMensal: 1200,
+            receita12m: 220000,
+            funcionarios: [],
+          };
+        }
+      });
+      if (changed) {
+        localStorage.setItem(WORKFORCE_STORAGE_KEY, JSON.stringify(next));
+      }
+      return changed ? next : current;
+    });
+  }, [clientes]);
+
+  useEffect(() => {
+    localStorage.setItem(WORKFORCE_STORAGE_KEY, JSON.stringify(workforceMap));
+  }, [workforceMap]);
+
+  useEffect(() => {
+    localStorage.setItem(WORKFORCE_SYNC_KEY, JSON.stringify(workforceSync));
+  }, [workforceSync]);
+
+  useEffect(() => {
+    if (!admissoes.length && !demissoes.length) return;
+
+    setWorkforceMap((currentMap) => {
+      let nextMap = { ...currentMap };
+      let changed = false;
+      const trackedAdmissoes = new Set(workforceSync.admissoes || []);
+      const trackedDemissoes = new Set(workforceSync.demissoes || []);
+
+      admissoes.forEach((item) => {
+        if (!item?.id || trackedAdmissoes.has(item.id)) return;
+        const companyId = item.empresa_id;
+        if (!companyId) return;
+        const company = nextMap[companyId] || {
+          empresa_id: companyId,
+          empresa_nome: item.empresa || clientes.find((c) => c.id === companyId)?.nome_empresa || 'Empresa',
+          prolaboreMensal: 1200,
+          receita12m: 220000,
+          funcionarios: [],
+        };
+        const existing = (company.funcionarios || []).some((func) => {
+          const sameByCpf = item.cpf && func.cpf && String(func.cpf) === String(item.cpf);
+          const sameByName = normalizeText(func.nome) === normalizeText(item.funcionario_nome || '');
+          return sameByCpf || sameByName;
+        });
+        if (existing) {
+          trackedAdmissoes.add(item.id);
+          return;
+        }
+
+        nextMap[companyId] = {
+          ...company,
+          funcionarios: [
+            ...(company.funcionarios || []),
+            {
+              id: `func-adm-${item.id}`,
+              nome: item.funcionario_nome || 'Colaborador',
+              cpf: item.cpf || '',
+              cargo: item.cargo || 'Não informado',
+              salario: Number(item.salario || 0),
+              data_admissao: item.data_admissao || new Date().toISOString().slice(0, 10),
+              cctAplicavel: identifyCctForRole(item.cargo || ''),
+            },
+          ],
+        };
+        trackedAdmissoes.add(item.id);
+        changed = true;
+      });
+
+      demissoes.forEach((item) => {
+        if (!item?.id || trackedDemissoes.has(item.id)) return;
+        const companyId = item.empresa_id;
+        if (!companyId || !nextMap[companyId]) return;
+        const demissaoCpf = String(item.cpf || '').trim();
+        const demissaoNome = normalizeText(item.funcionario_nome || '');
+        nextMap[companyId] = {
+          ...nextMap[companyId],
+          funcionarios: (nextMap[companyId].funcionarios || []).filter((func) => {
+            const sameByCpf = demissaoCpf && func.cpf && String(func.cpf).trim() === demissaoCpf;
+            const sameByName = normalizeText(func.nome || '') === demissaoNome;
+            return !(sameByCpf || sameByName);
+          }),
+        };
+        trackedDemissoes.add(item.id);
+        changed = true;
+      });
+
+      if (changed) {
+        setWorkforceSync({
+          admissoes: Array.from(trackedAdmissoes),
+          demissoes: Array.from(trackedDemissoes),
+        });
+      }
+      return changed ? nextMap : currentMap;
+    });
+  }, [admissoes, demissoes, clientes, workforceSync.admissoes, workforceSync.demissoes]);
 
   useEffect(() => {
     if (activeTab === 'recalculos') {
@@ -147,6 +333,18 @@ const TrabalhistaCompleto = () => {
     }
   }, [activeTab, selectedMonth, relatorioType]);
 
+  useEffect(() => {
+    if (!hasAccess([], ['trabalhista'])) return undefined;
+    if (activeTab !== 'dashboard' && activeTab !== 'clientes_empresas') return undefined;
+
+    const intervalId = setInterval(() => {
+      loadAdmissoes();
+      loadDemissoes();
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [activeTab, hasAccess]);
+
   const loadDashboard = async () => {
     try {
       setLoading(true);
@@ -158,17 +356,29 @@ const TrabalhistaCompleto = () => {
       setDashboardServicos(servicosResponse.data);
     } catch (error) {
       console.error('Erro ao carregar dashboard:', error);
+      setDashboardStats(mockTrabalhistaDashboardStats);
+      setDashboardServicos(mockTrabalhistaDashboardServicos);
     } finally {
       setLoading(false);
     }
   };
 
   const loadClientes = async () => {
+    let localMockClients = [];
+    try {
+      const localRaw = localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY);
+      const parsed = localRaw ? JSON.parse(localRaw) : [];
+      localMockClients = Array.isArray(parsed) ? parsed : [];
+    } catch {}
+
     try {
       const response = await api.get('/clients?limit=1000');
-      setClientes(response.data.clients || []);
+      const apiClients = response.data?.clients || response.data || [];
+      const baseClients = Array.isArray(apiClients) && apiClients.length ? apiClients : mockClients;
+      setClientes(mergeClientsUnique(baseClients, localMockClients));
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
+      setClientes(mergeClientsUnique(mockClients, localMockClients));
     }
   };
 
@@ -179,7 +389,7 @@ const TrabalhistaCompleto = () => {
       setRecalculos(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar recalculos:', error);
-      toast.error('Erro ao carregar recalculos');
+      setRecalculos(mockTrabalhistaRecalculos);
     } finally {
       setLoading(false);
     }
@@ -192,7 +402,7 @@ const TrabalhistaCompleto = () => {
       setAdmissoes(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar admissões:', error);
-      toast.error('Erro ao carregar admissões');
+      setAdmissoes(mockTrabalhistaAdmissoes);
     } finally {
       setLoading(false);
     }
@@ -205,7 +415,7 @@ const TrabalhistaCompleto = () => {
       setDemissoes(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar demissões:', error);
-      toast.error('Erro ao carregar demissões');
+      setDemissoes(mockTrabalhistaDemissoes);
     } finally {
       setLoading(false);
     }
@@ -218,7 +428,7 @@ const TrabalhistaCompleto = () => {
       setSolicitacoes(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar solicitações:', error);
-      toast.error('Erro ao carregar solicitações');
+      setSolicitacoes(mockTrabalhistaSolicitacoes);
     } finally {
       setLoading(false);
     }
@@ -231,7 +441,7 @@ const TrabalhistaCompleto = () => {
       setObrigacoes(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar obrigações:', error);
-      toast.error('Erro ao carregar obrigações');
+      setObrigacoes(mockTrabalhistaObrigacoes);
     } finally {
       setLoading(false);
     }
@@ -315,6 +525,7 @@ const TrabalhistaCompleto = () => {
       setCalendarioData(eventosFiltrados.sort((a, b) => new Date(a.data) - new Date(b.data)));
     } catch (error) {
       console.error('Erro ao carregar calendário:', error);
+      setCalendarioData(mockTrabalhistaCalendario);
     } finally {
       setLoading(false);
     }
@@ -327,7 +538,7 @@ const TrabalhistaCompleto = () => {
       setRelatorioData(response.data);
     } catch (error) {
       console.error('Erro ao carregar relatório:', error);
-      toast.error('Erro ao carregar relatório');
+      setRelatorioData(mockTrabalhistaRelatorio);
     } finally {
       setLoading(false);
     }
@@ -448,6 +659,218 @@ const TrabalhistaCompleto = () => {
     } catch (error) {
       toast.error('Erro ao fazer upload do documento');
     }
+  };
+
+  const handleCreateEmployee = () => {
+    if (!workforceForm.empresa_id || !workforceForm.nome || !workforceForm.cargo) {
+      toast.error('Informe empresa, nome e cargo para adicionar funcionário.');
+      return;
+    }
+
+    const cct = identifyCctForRole(workforceForm.cargo);
+    const employee = {
+      id: `func-${Date.now()}`,
+      nome: workforceForm.nome,
+      cpf: workforceForm.cpf,
+      cargo: workforceForm.cargo,
+      salario: Number(workforceForm.salario || 0),
+      data_admissao: workforceForm.data_admissao || new Date().toISOString().slice(0, 10),
+      cctAplicavel: cct,
+    };
+
+    setWorkforceMap((current) => {
+      const company = current[workforceForm.empresa_id] || {
+        empresa_id: workforceForm.empresa_id,
+        empresa_nome: clientes.find((c) => c.id === workforceForm.empresa_id)?.nome_empresa || 'Empresa',
+        prolaboreMensal: 1200,
+        receita12m: 220000,
+        funcionarios: [],
+      };
+      return {
+        ...current,
+        [workforceForm.empresa_id]: {
+          ...company,
+          funcionarios: [...(company.funcionarios || []), employee],
+        },
+      };
+    });
+
+    if (cct) {
+      toast.success(`Funcionário adicionado. Atenção: aplicar ${cct}.`);
+    } else {
+      toast.success('Funcionário adicionado.');
+    }
+
+    setWorkforceForm({
+      empresa_id: workforceForm.empresa_id,
+      nome: '',
+      cpf: '',
+      cargo: '',
+      salario: '',
+      data_admissao: '',
+    });
+  };
+
+  const handleRemoveEmployee = (empresaId, employeeId) => {
+    setWorkforceMap((current) => {
+      const company = current[empresaId];
+      if (!company) return current;
+      return {
+        ...current,
+        [empresaId]: {
+          ...company,
+          funcionarios: (company.funcionarios || []).filter((item) => item.id !== employeeId),
+        },
+      };
+    });
+  };
+
+  const handleImportEmployeesCsv = async (empresaId, file) => {
+    if (!file) return;
+    if (String(file.name || '').toLowerCase().endsWith('.xlsx')) {
+      toast.error('Importação .xlsx depende da API ativa. Se a API estiver offline, use CSV temporariamente.');
+      return;
+    }
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) {
+      toast.error('Arquivo sem dados. Use CSV com cabeçalho.');
+      return;
+    }
+
+    const delimiter = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].split(delimiter).map((item) => normalizeText(item.trim()));
+    const idxNome = headers.findIndex((h) => h.includes('nome'));
+    const idxCpf = headers.findIndex((h) => h.includes('cpf'));
+    const idxCargo = headers.findIndex((h) => h.includes('cargo'));
+    const idxSalario = headers.findIndex((h) => h.includes('salario'));
+    const idxAdmissao = headers.findIndex((h) => h.includes('admiss'));
+
+    const report = [];
+    const imported = lines.slice(1).map((line, lineIndex) => {
+      const cols = line.split(delimiter);
+      const role = (cols[idxCargo] || '').trim();
+      const nome = (cols[idxNome] || '').trim();
+      if (!nome) {
+        report.push({ linha: lineIndex + 2, status: 'erro', motivo: 'Nome obrigatorio ausente' });
+        return null;
+      }
+      report.push({ linha: lineIndex + 2, status: 'ok', motivo: 'Importado' });
+      return {
+        id: `func-import-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        nome,
+        cpf: (cols[idxCpf] || '').trim(),
+        cargo: role,
+        salario: Number(String(cols[idxSalario] || '0').replace(',', '.')) || 0,
+        data_admissao: (cols[idxAdmissao] || '').trim() || new Date().toISOString().slice(0, 10),
+        cctAplicavel: identifyCctForRole(role),
+      };
+    }).filter(Boolean);
+
+    setWorkforceMap((current) => {
+      const company = current[empresaId];
+      if (!company) return current;
+      return {
+        ...current,
+        [empresaId]: {
+          ...company,
+          funcionarios: [...(company.funcionarios || []), ...imported],
+        },
+      };
+    });
+    setImportReportByCompany((current) => ({
+      ...current,
+      [empresaId]: {
+        summary: {
+          total_linhas: report.length,
+          validas: imported.length,
+          invalidas: report.length - imported.length,
+        },
+        report,
+        source: 'csv-local',
+      },
+    }));
+    toast.success(`${imported.length} funcionário(s) importado(s).`);
+  };
+
+  const handleImportEmployeesFile = async (empresaId, file) => {
+    if (!file) return;
+
+    let imported = [];
+    let apiSummary = null;
+    let apiReport = [];
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await api.post('/trabalhista/servicos/import-funcionarios', body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const items = Array.isArray(response?.data?.items) ? response.data.items : [];
+      apiSummary = response?.data?.summary || null;
+      apiReport = Array.isArray(response?.data?.report) ? response.data.report : [];
+      imported = items
+        .map((item) => ({
+          id: `func-import-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          nome: item.nome || '',
+          cpf: item.cpf || '',
+          cargo: item.cargo || '',
+          salario: Number(item.salario || 0),
+          data_admissao: item.data_admissao || new Date().toISOString().slice(0, 10),
+          cctAplicavel: identifyCctForRole(item.cargo || ''),
+        }))
+        .filter((item) => item.nome);
+    } catch {
+      await handleImportEmployeesCsv(empresaId, file);
+      return;
+    }
+
+    setWorkforceMap((current) => {
+      const company = current[empresaId];
+      if (!company) return current;
+      return {
+        ...current,
+        [empresaId]: {
+          ...company,
+          funcionarios: [...(company.funcionarios || []), ...imported],
+        },
+      };
+    });
+    setImportReportByCompany((current) => ({
+      ...current,
+      [empresaId]: {
+        summary: apiSummary || {
+          total_linhas: imported.length,
+          validas: imported.length,
+          invalidas: 0,
+        },
+        report: apiReport,
+        source: 'api',
+      },
+    }));
+    if (apiSummary?.invalidas) {
+      toast.warning(`${imported.length} importado(s) e ${apiSummary.invalidas} linha(s) com erro.`);
+      return;
+    }
+    toast.success(`${imported.length} funcionário(s) importado(s) via API.`);
+  };
+
+  const handleDownloadEmployeeTemplate = () => {
+    const rows = [
+      ['nome', 'cpf', 'cargo', 'salario', 'data_admissao'],
+      ['João da Silva', '123.456.789-00', 'Auxiliar Administrativo', '1850.00', '2026-04-01'],
+      ['Maria Oliveira', '987.654.321-00', 'Atendente', '1620.00', '2026-04-05'],
+    ];
+    const csv = rows.map((row) => row.join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'modelo_importacao_funcionarios.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Modelo de planilha baixado.');
   };
 
   const handleSendToChat = async () => {
@@ -590,6 +1013,115 @@ const TrabalhistaCompleto = () => {
     return 'normal';
   };
 
+  const calculateVacationInfo = (employee) => {
+    const admission = new Date(employee?.data_admissao);
+    if (Number.isNaN(admission.getTime())) {
+      return {
+        periodo: '-',
+        venceEmDias: null,
+        status: 'sem_data',
+      };
+    }
+    const periodStart = new Date(admission);
+    const periodEnd = new Date(admission);
+    periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    const today = new Date();
+    const diffMs = periodEnd.getTime() - today.getTime();
+    const venceEmDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    let status = 'ok';
+    if (venceEmDias < 0) status = 'vencida';
+    else if (venceEmDias <= 30) status = 'urgente';
+    else if (venceEmDias <= 60) status = 'atencao';
+    return {
+      periodo: `${periodStart.toLocaleDateString('pt-BR')} a ${periodEnd.toLocaleDateString('pt-BR')}`,
+      venceEmDias,
+      status,
+    };
+  };
+
+  const calculateCctInfo = (employee) => {
+    if (!employee?.cctAplicavel) {
+      return { validade: '-', venceEmDias: null, status: 'nao_aplicavel' };
+    }
+    const admission = new Date(employee?.data_admissao);
+    if (Number.isNaN(admission.getTime())) {
+      return { validade: '-', venceEmDias: null, status: 'sem_data' };
+    }
+    const validityDate = new Date(admission);
+    validityDate.setFullYear(validityDate.getFullYear() + 1);
+    const today = new Date();
+    const diffMs = validityDate.getTime() - today.getTime();
+    const venceEmDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    let status = 'ok';
+    if (venceEmDias < 0) status = 'vencida';
+    else if (venceEmDias <= 30) status = 'expirando';
+    return {
+      validade: validityDate.toLocaleDateString('pt-BR'),
+      venceEmDias,
+      status,
+    };
+  };
+
+  const empresaWorkforceList = clientes.map((client) => {
+    const base = workforceMap[client.id] || { funcionarios: [], prolaboreMensal: 0, receita12m: 0 };
+    const funcionarios = base.funcionarios || [];
+    const totalFuncionarios = funcionarios.length;
+    const prolaboreMensal = Number(base.prolaboreMensal || 0);
+    const folhaMensalFuncionarios = funcionarios.reduce((sum, item) => sum + Number(item.salario || 0), 0);
+    const folhaMensal = folhaMensalFuncionarios + prolaboreMensal;
+    const receita12m = Number(base.receita12m || 0);
+    const fatorR = receita12m > 0 ? (folhaMensal * 12) / receita12m : 0;
+    const feriasVencendo = funcionarios.filter((item) => {
+      const adm = new Date(item.data_admissao);
+      if (Number.isNaN(adm.getTime())) return false;
+      const dias = Math.floor((Date.now() - adm.getTime()) / (1000 * 60 * 60 * 24));
+      return dias >= 335 && dias <= 395;
+    }).length;
+    return {
+      client,
+      funcionarios,
+      totalFuncionarios,
+      prolaboreMensal,
+      receita12m,
+      fatorR,
+      feriasVencendo,
+    };
+  });
+
+  const empresasSemFuncionarios = empresaWorkforceList.filter((item) => item.totalFuncionarios === 0).length;
+  const empresasComProlabore = empresaWorkforceList.filter((item) => item.totalFuncionarios === 0 && item.prolaboreMensal > 0).length;
+  const empresasComProlaboreEFuncionarios = empresaWorkforceList.filter((item) => item.totalFuncionarios > 0 && item.prolaboreMensal > 0).length;
+  const empresasFatorRRelevante = empresaWorkforceList.filter((item) => item.fatorR >= 0.28).length;
+  const vacationDetails = empresaWorkforceList.flatMap((row) =>
+    row.funcionarios.map((employee) => ({
+      empresaId: row.client.id,
+      empresa: row.client.nome_empresa,
+      nome: employee.nome,
+      cargo: employee.cargo,
+      ...calculateVacationInfo(employee),
+    }))
+  );
+  const vacationHighlights = {
+    urgentes: vacationDetails.filter((item) => item.status === 'urgente').length,
+    vencidas: vacationDetails.filter((item) => item.status === 'vencida').length,
+  };
+  const cctDetails = empresaWorkforceList.flatMap((row) =>
+    row.funcionarios
+      .filter((employee) => employee.cctAplicavel)
+      .map((employee) => ({
+        empresa: row.client.nome_empresa,
+        nome: employee.nome,
+        cargo: employee.cargo,
+        cct: employee.cctAplicavel,
+        ...calculateCctInfo(employee),
+      }))
+  );
+  const cctHighlights = {
+    ativas: cctDetails.filter((item) => item.status === 'ok').length,
+    expirando: cctDetails.filter((item) => item.status === 'expirando').length,
+    vencidas: cctDetails.filter((item) => item.status === 'vencida').length,
+  };
+
   if (!hasAccess([], ['trabalhista'])) {
     return (
       <div className="glass p-8 rounded-2xl text-center">
@@ -611,6 +1143,16 @@ const TrabalhistaCompleto = () => {
           </h1>
           <p className="text-gray-400 mt-2">Gestão completa de demandas trabalhistas</p>
         </div>
+        <button
+          onClick={() => {
+            setActiveTab('solicitacoes');
+            setShowSolicitacaoModal(true);
+          }}
+          className="btn-futuristic px-4 py-2 rounded-xl text-white font-semibold flex items-center space-x-2"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Novo Serviço</span>
+        </button>
       </div>
 
       {/* Dashboard Stats */}
@@ -713,6 +1255,7 @@ const TrabalhistaCompleto = () => {
       <div className="glass rounded-xl p-1 inline-flex flex-wrap gap-1">
         {[
           { key: 'dashboard', icon: '📊', label: 'Dashboard' },
+          { key: 'clientes_empresas', icon: '🏢', label: 'Empresas' },
           { key: 'recalculos', icon: '🧮', label: 'Recalculos' },
           { key: 'admissoes', icon: '➕', label: 'Admissões' },
           { key: 'demissoes', icon: '➖', label: 'Demissões' },
@@ -733,8 +1276,227 @@ const TrabalhistaCompleto = () => {
         ))}
       </div>
 
+      {activeTab === 'clientes_empresas' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="glass p-4 rounded-xl border border-gray-600/30">
+              <p className="text-gray-400 text-sm">Empresas sem funcionários</p>
+              <p className="text-3xl font-bold text-white mt-2">{empresasSemFuncionarios}</p>
+            </div>
+            <div className="glass p-4 rounded-xl border border-blue-600/30">
+              <p className="text-gray-400 text-sm">Apenas pró-labore</p>
+              <p className="text-3xl font-bold text-blue-300 mt-2">{empresasComProlabore}</p>
+            </div>
+            <div className="glass p-4 rounded-xl border border-emerald-600/30">
+              <p className="text-gray-400 text-sm">Pró-labore + funcionários</p>
+              <p className="text-3xl font-bold text-emerald-300 mt-2">{empresasComProlaboreEFuncionarios}</p>
+            </div>
+            <div className="glass p-4 rounded-xl border border-purple-600/30">
+              <p className="text-gray-400 text-sm">Empresas com Fator R ≥ 28%</p>
+              <p className="text-3xl font-bold text-purple-300 mt-2">{empresasFatorRRelevante}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="glass rounded-xl p-5 border border-amber-500/25">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-semibold text-white">Ferias e Prazos</h3>
+                <div className="text-xs text-gray-300">Urgentes: <span className="text-amber-300 font-semibold">{vacationHighlights.urgentes}</span> • Vencidas: <span className="text-rose-300 font-semibold">{vacationHighlights.vencidas}</span></div>
+              </div>
+              <div className="space-y-2 max-h-52 overflow-auto pr-1">
+                {vacationDetails.length === 0 ? (
+                  <p className="text-sm text-gray-400">Nenhum colaborador com dados de ferias disponiveis.</p>
+                ) : (
+                  vacationDetails.slice(0, 12).map((item, idx) => (
+                    <div key={`${item.empresaId}-${item.nome}-${idx}`} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                      <p className="text-sm text-white font-medium">{item.nome} <span className="text-xs text-gray-400">• {item.empresa}</span></p>
+                      <p className="text-xs text-gray-400">{item.periodo}</p>
+                      <p className={`text-xs mt-1 ${item.status === 'vencida' ? 'text-rose-300' : item.status === 'urgente' ? 'text-amber-300' : item.status === 'atencao' ? 'text-yellow-300' : 'text-emerald-300'}`}>
+                        {item.venceEmDias == null ? 'Sem prazo calculado' : item.venceEmDias < 0 ? `Vencida ha ${Math.abs(item.venceEmDias)} dia(s)` : `Vence em ${item.venceEmDias} dia(s)`}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="glass rounded-xl p-5 border border-blue-500/25">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-semibold text-white">Painel de CCT</h3>
+                <div className="text-xs text-gray-300">Ativas: <span className="text-emerald-300 font-semibold">{cctHighlights.ativas}</span> • Expirando: <span className="text-amber-300 font-semibold">{cctHighlights.expirando}</span> • Vencidas: <span className="text-rose-300 font-semibold">{cctHighlights.vencidas}</span></div>
+              </div>
+              <div className="space-y-2 max-h-52 overflow-auto pr-1">
+                {cctDetails.length === 0 ? (
+                  <p className="text-sm text-gray-400">Nenhuma CCT aplicavel identificada ate o momento.</p>
+                ) : (
+                  cctDetails.slice(0, 12).map((item, idx) => (
+                    <div key={`${item.empresa}-${item.nome}-${idx}`} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                      <p className="text-sm text-white font-medium">{item.nome} <span className="text-xs text-gray-400">• {item.empresa}</span></p>
+                      <p className="text-xs text-gray-300">{item.cct}</p>
+                      <p className={`text-xs mt-1 ${item.status === 'vencida' ? 'text-rose-300' : item.status === 'expirando' ? 'text-amber-300' : 'text-emerald-300'}`}>
+                        {item.status === 'vencida' ? `Vencida ha ${Math.abs(item.venceEmDias || 0)} dia(s)` : item.status === 'expirando' ? `Expira em ${item.venceEmDias} dia(s)` : `Valida ate ${item.validade}`}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="glass rounded-xl p-5">
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <h2 className="text-xl font-semibold text-white">Cadastro de funcionários por empresa</h2>
+              <button
+                onClick={handleDownloadEmployeeTemplate}
+                className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+              >
+                Baixar modelo de planilha
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <select
+                value={workforceForm.empresa_id}
+                onChange={(e) => setWorkforceForm((p) => ({ ...p, empresa_id: e.target.value }))}
+                className="md:col-span-2 bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white"
+              >
+                <option value="">Selecione a empresa</option>
+                {clientes.map((client) => (
+                  <option key={client.id} value={client.id}>{client.nome_empresa}</option>
+                ))}
+              </select>
+              <input value={workforceForm.nome} onChange={(e) => setWorkforceForm((p) => ({ ...p, nome: e.target.value }))} placeholder="Nome" className="bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white" />
+              <input value={workforceForm.cpf} onChange={(e) => setWorkforceForm((p) => ({ ...p, cpf: e.target.value }))} placeholder="CPF" className="bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white" />
+              <input value={workforceForm.cargo} onChange={(e) => setWorkforceForm((p) => ({ ...p, cargo: e.target.value }))} placeholder="Cargo/profissão" className="bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white" />
+              <input value={workforceForm.salario} onChange={(e) => setWorkforceForm((p) => ({ ...p, salario: e.target.value }))} placeholder="Salário" type="number" className="bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white" />
+              <input value={workforceForm.data_admissao} onChange={(e) => setWorkforceForm((p) => ({ ...p, data_admissao: e.target.value }))} type="date" className="bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white" />
+              <button onClick={handleCreateEmployee} className="btn-futuristic rounded-lg px-4 py-2 text-white flex items-center justify-center gap-2">
+                <Plus className="w-4 h-4" />
+                Adicionar
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-3">Importação: use CSV ou XLSX com colunas nome, cpf, cargo, salario, data_admissao.</p>
+          </div>
+
+          <div className="space-y-4">
+            {empresaWorkforceList.map((row) => (
+              <div key={row.client.id} className="glass rounded-xl p-5 border border-white/10">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">{row.client.nome_empresa}</h3>
+                    <p className="text-xs text-gray-400">
+                      Funcionários: {row.totalFuncionarios} • Pró-labore: {formatCurrency(row.prolaboreMensal)} • Fator R: {(row.fatorR * 100).toFixed(2)}%
+                    </p>
+                    {row.feriasVencendo > 0 ? <p className="text-xs text-amber-300 mt-1">Férias vencendo: {row.feriasVencendo}</p> : null}
+                    {importReportByCompany[row.client.id]?.summary ? (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-xs text-gray-300">
+                          Importacao ({importReportByCompany[row.client.id]?.source}): {importReportByCompany[row.client.id]?.summary?.validas || 0} valida(s), {importReportByCompany[row.client.id]?.summary?.invalidas || 0} invalida(s)
+                        </p>
+                        {(importReportByCompany[row.client.id]?.report || [])
+                          .filter((entry) => entry.status === 'erro')
+                          .slice(0, 3)
+                          .map((entry, index) => (
+                            <p key={`import-error-${row.client.id}-${index}`} className="text-xs text-rose-300">
+                              Linha {entry.linha}: {entry.motivo}
+                            </p>
+                          ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-300">Pró-labore</label>
+                    <input
+                      type="number"
+                      value={workforceMap[row.client.id]?.prolaboreMensal || 0}
+                      onChange={(e) =>
+                        setWorkforceMap((current) => ({
+                          ...current,
+                          [row.client.id]: { ...(current[row.client.id] || {}), prolaboreMensal: Number(e.target.value || 0), funcionarios: current[row.client.id]?.funcionarios || [] },
+                        }))
+                      }
+                      className="w-28 bg-black/30 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm"
+                    />
+                    <label className="text-xs text-gray-300">Receita 12m</label>
+                    <input
+                      type="number"
+                      value={workforceMap[row.client.id]?.receita12m || 0}
+                      onChange={(e) =>
+                        setWorkforceMap((current) => ({
+                          ...current,
+                          [row.client.id]: { ...(current[row.client.id] || {}), receita12m: Number(e.target.value || 0), funcionarios: current[row.client.id]?.funcionarios || [] },
+                        }))
+                      }
+                      className="w-32 bg-black/30 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm"
+                    />
+                    <label className="cursor-pointer rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10">
+                      Importar CSV
+                      <input type="file" className="hidden" accept=".csv,.txt,.xlsx,.xls" onChange={(e) => handleImportEmployeesFile(row.client.id, e.target.files?.[0])} />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead className="bg-white/5">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-gray-300">Nome</th>
+                        <th className="px-3 py-2 text-left text-gray-300">CPF</th>
+                        <th className="px-3 py-2 text-left text-gray-300">Cargo</th>
+                        <th className="px-3 py-2 text-left text-gray-300">Salário</th>
+                        <th className="px-3 py-2 text-left text-gray-300">Ferias</th>
+                        <th className="px-3 py-2 text-left text-gray-300">CCT</th>
+                        <th className="px-3 py-2 text-left text-gray-300">Validade CCT</th>
+                        <th className="px-3 py-2 text-right text-gray-300">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {row.funcionarios.length === 0 ? (
+                        <tr><td colSpan="8" className="px-3 py-4 text-center text-gray-400">Sem funcionários cadastrados.</td></tr>
+                      ) : (
+                        row.funcionarios.map((item) => (
+                          <tr key={item.id} className="border-t border-white/10">
+                            <td className="px-3 py-2 text-white">{item.nome}</td>
+                            <td className="px-3 py-2 text-gray-300">{item.cpf || '-'}</td>
+                            <td className="px-3 py-2 text-gray-300">{item.cargo}</td>
+                            <td className="px-3 py-2 text-gray-300">{formatCurrency(item.salario)}</td>
+                            <td className="px-3 py-2">
+                              {(() => {
+                                const info = calculateVacationInfo(item);
+                                if (info.venceEmDias == null) return <span className="text-xs text-gray-500">Sem data</span>;
+                                if (info.status === 'vencida') return <span className="text-xs text-rose-300">Vencida</span>;
+                                if (info.status === 'urgente') return <span className="text-xs text-amber-300">Vence em {info.venceEmDias} dia(s)</span>;
+                                if (info.status === 'atencao') return <span className="text-xs text-yellow-300">Vence em {info.venceEmDias} dia(s)</span>;
+                                return <span className="text-xs text-emerald-300">OK ({info.venceEmDias} dias)</span>;
+                              })()}
+                            </td>
+                            <td className="px-3 py-2">{item.cctAplicavel ? <span className="px-2 py-1 rounded-full text-[11px] border border-amber-500/30 bg-amber-500/15 text-amber-200">{item.cctAplicavel}</span> : <span className="text-gray-500">Não mapeada</span>}</td>
+                            <td className="px-3 py-2">
+                              {(() => {
+                                const cctInfo = calculateCctInfo(item);
+                                if (!item.cctAplicavel) return <span className="text-xs text-gray-500">N/A</span>;
+                                if (cctInfo.status === 'vencida') return <span className="text-xs text-rose-300">Vencida</span>;
+                                if (cctInfo.status === 'expirando') return <span className="text-xs text-amber-300">Expira em {cctInfo.venceEmDias} dia(s)</span>;
+                                return <span className="text-xs text-emerald-300">{cctInfo.validade}</span>;
+                              })()}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button onClick={() => handleRemoveEmployee(row.client.id, item.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-200 hover:bg-rose-500/20">
+                                Remover
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Content based on active tab - Simplified version showing structure */}
-      {activeTab !== 'dashboard' && (
+      {activeTab !== 'dashboard' && activeTab !== 'clientes_empresas' && (
         <div className="glass rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-white capitalize">{activeTab}</h2>

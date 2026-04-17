@@ -21,8 +21,14 @@ from models_agendamentos import AgendamentoSQL, DisponibilidadeContadorSQL, Bloq
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# SQLite database URL
-DATABASE_URL = os.environ.get('SQL_DATABASE_URL', 'sqlite+aiosqlite:///./macedo_si.db')
+# SQLite database URL (resolve relative path from backend dir for local stability)
+_raw_database_url = os.environ.get('SQL_DATABASE_URL', 'sqlite+aiosqlite:///./macedo_si.db')
+if _raw_database_url.startswith('sqlite+aiosqlite:///./'):
+    relative_db_path = _raw_database_url.replace('sqlite+aiosqlite:///./', '', 1)
+    resolved_db_path = (ROOT_DIR / relative_db_path).resolve().as_posix()
+    DATABASE_URL = f"sqlite+aiosqlite:///{resolved_db_path}"
+else:
+    DATABASE_URL = _raw_database_url
 
 # Create async engine
 engine = create_async_engine(

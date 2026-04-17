@@ -11,9 +11,42 @@ from models.user import UserResponse
 from auth import get_current_user
 from database_adapter import get_db_adapter
 from datetime import datetime, date
+import io
 import uuid
+import pandas as pd
 
 router = APIRouter(prefix="/trabalhista/servicos", tags=["Trabalhista - Serviços"])
+
+# ==================== HELPERS ====================
+
+def _normalize_col_name(value: str) -> str:
+    normalized = (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace("ç", "c")
+        .replace("ã", "a")
+        .replace("á", "a")
+        .replace("à", "a")
+        .replace("â", "a")
+        .replace("é", "e")
+        .replace("ê", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ô", "o")
+        .replace("õ", "o")
+        .replace("ú", "u")
+    )
+    return normalized
+
+
+def _pick_col(columns: List[str], candidates: List[str]) -> Optional[str]:
+    for col in columns:
+        for candidate in candidates:
+            if candidate in col:
+                return col
+    return None
+
 
 # ==================== MODELS ====================
 
@@ -458,6 +491,124 @@ async def homologar_demissao(
     )
     
     return {"message": "Demissão homologada com sucesso"}
+
+# ==================== IMPORTACAO ====================
+
+@router.post("/import-funcionarios")
+async def import_funcionarios_planilha(
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Importa funcionarios a partir de planilha CSV/XLSX e retorna dados + relatorio de validacao."""
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".csv", ".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Formato invalido. Envie CSV, XLSX ou XLS.")
+
+    try:
+        content = await file.read()
+        if filename.endswith(".csv"):
+            try:
+                df = pd.read_csv(io.BytesIO(content), sep=";")
+            except Exception:
+                df = pd.read_csv(io.BytesIO(content), sep=",")
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Falha ao ler planilha: {str(exc)}")
+
+    if df.empty:
+        return {
+            "items": [],
+            "count": 0,
+            "summary": {"total_linhas": 0, "validas": 0, "invalidas": 0},
+            "report": []
+        }
+
+    df.columns = [_normalize_col_name(col) for col in df.columns]
+    cols = list(df.columns)
+
+    nome_col = _pick_col(cols, ["nome", "funcionario", "colaborador"])
+    cpf_col = _pick_col(cols, ["cpf"])
+    cargo_col = _pick_col(cols, ["cargo", "funcao", "profissao"])
+    salario_col = _pick_col(cols, ["salario", "remuneracao"])
+    admissao_col = _pick_col(cols, ["admissao", "data_admissao", "dt_admissao"])
+
+    if not nome_col:
+        raise HTTPException(status_code=400, detail="Coluna de nome nao encontrada.")
+
+    items = []
+    report = []
+    for index, row in df.iterrows():
+        linha_num = int(index) + 2  # +2 por cabecalho + base 1
+        nome = str(row.get(nome_col, "")).strip()
+        if not nome or nome.lower() == "nan":
+            report.append({"linha": linha_num, "status": "erro", "motivo": "Nome obrigatorio ausente"})
+            continue
+        cpf = str(row.get(cpf_col, "")).strip() if cpf_col else ""
+        cargo = str(row.get(cargo_col, "")).strip() if cargo_col else ""
+
+        salario_raw = row.get(salario_col, 0) if salario_col else 0
+        try:
+            salario = float(str(salario_raw).replace(".", "").replace(",", "."))
+        except Exception:
+            salario = 0.0
+
+        admissao_raw = row.get(admissao_col, None) if admissao_col else None
+        data_admissao = None
+        if pd.notna(admissao_raw):
+            try:
+                data_admissao = pd.to_datetime(admissao_raw).date().isoformat()
+            except Exception:
+                data_admissao = str(admissao_raw).strip()
+
+        erros = []
+        if not cargo or cargo.lower() == "nan":
+            erros.append("Cargo ausente")
+        if salario < 0:
+            erros.append("Salario invalido")
+        if cpf and cpf.lower() != "nan":
+            cpf_digits = "".join(ch for ch in cpf if ch.isdigit())
+            if len(cpf_digits) not in (0, 11):
+                erros.append("CPF com formato invalido")
+        if data_admissao:
+            try:
+                parsed_adm = datetime.fromisoformat(str(data_admissao))
+                if parsed_adm.date() > datetime.utcnow().date():
+                    erros.append("Data de admissao no futuro")
+            except Exception:
+                erros.append("Data de admissao invalida")
+
+        if erros:
+            report.append({"linha": linha_num, "status": "erro", "motivo": "; ".join(erros)})
+            continue
+
+        items.append(
+            {
+                "nome": nome,
+                "cpf": cpf if cpf and cpf.lower() != "nan" else "",
+                "cargo": cargo if cargo and cargo.lower() != "nan" else "",
+                "salario": salario,
+                "data_admissao": data_admissao or datetime.utcnow().date().isoformat(),
+            }
+        )
+        report.append({"linha": linha_num, "status": "ok", "motivo": "Importado"})
+
+    total_linhas = len(report)
+    validas = len([row for row in report if row["status"] == "ok"])
+    invalidas = total_linhas - validas
+
+    return {
+        "items": items,
+        "count": len(items),
+        "imported_by": current_user.name,
+        "summary": {
+            "total_linhas": total_linhas,
+            "validas": validas,
+            "invalidas": invalidas,
+        },
+        "report": report,
+    }
+
 
 # ==================== DASHBOARD E RELATÓRIOS ====================
 

@@ -3,6 +3,13 @@ from datetime import timedelta, datetime
 from models.user import UserLogin, UserResponse, User, UserCreate, UserUpdate
 from auth import authenticate_user, create_access_token, get_password_hash, get_current_user, get_admin_user, ACCESS_TOKEN_EXPIRE_MINUTES
 import os
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).parent.parent
+load_dotenv(ROOT_DIR / '.env')
+logger = logging.getLogger(__name__)
 
 USE_SQL = os.getenv('USE_SQL', 'false').lower() == 'true'
 
@@ -28,22 +35,26 @@ async def login(user_credentials: UserLogin):
     # Buscar permissões do usuário se estiver usando SQL
     permissoes_list = []
     if USE_SQL:
-        from sqlalchemy import select
-        from models_chat_users import UserPermissionSQL
-        from crud_sql import json_loads
-        
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(UserPermissionSQL).where(UserPermissionSQL.user_id == user.id)
-            )
-            permissions = result.scalars().all()
-            permissoes_list = [
-                {
-                    'setor': p.setor,
-                    'visualizacoes': json_loads(p.visualizacoes)
-                }
-                for p in permissions
-            ]
+        try:
+            from sqlalchemy import select
+            from models_chat_users import UserPermissionSQL
+            from crud_sql import json_loads
+
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(UserPermissionSQL).where(UserPermissionSQL.user_id == user.id)
+                )
+                permissions = result.scalars().all()
+                permissoes_list = [
+                    {
+                        'setor': p.setor,
+                        'visualizacoes': json_loads(p.visualizacoes)
+                    }
+                    for p in permissions
+                ]
+        except Exception as error:
+            logger.warning("Falha ao carregar permissoes de %s: %s", user.email, error)
+            permissoes_list = []
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Building2, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import MacedoLogo from '../Brand/MacedoLogo';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -27,40 +28,34 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-login p-4 relative">
-      {/* Dark overlay for better readability */}
-      <div className="absolute inset-0 bg-black bg-opacity-50"></div>
-      
-      {/* Background effects */}
+    <div className="relative flex min-h-screen items-center justify-center bg-login p-4">
+      <div className="absolute inset-0 bg-black/55" />
+
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-red-600 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-red-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+        <div className="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-red-600 opacity-20 blur-xl" />
+        <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-red-500 opacity-20 blur-xl" />
       </div>
 
-      <div className="relative w-full max-w-md z-10">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-red-600 to-red-700 rounded-2xl mb-4 glow-red">
-            <Building2 className="w-8 h-8 text-white" />
+      <div className="relative z-10 w-full max-w-md">
+        <div className="mb-8 text-center">
+          <div className="mb-4 inline-flex">
+            <MacedoLogo size="lg" className="ring-1 ring-white/20 glow-red" />
           </div>
-          <h1 className="text-3xl font-bold neon-text mb-2">Macedo SI</h1>
-          <p className="text-white">Sistema Integrado de Gestão</p>
+          <h1 className="mb-2 text-3xl font-bold text-white">Macedo SI</h1>
+          <p className="text-gray-200">Sistema Integrado de Gestão</p>
         </div>
 
-        {/* Login Form */}
         <div className="glass rounded-3xl p-8 shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Email
-              </label>
+              <label className="mb-2 block text-sm font-medium text-gray-200">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-300" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input-futuristic w-full pl-10 pr-4 py-3 rounded-xl text-white placeholder-gray-400 focus:outline-none"
+                  className="input-futuristic w-full rounded-xl py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none"
                   placeholder="seu@email.com"
                   required
                 />
@@ -68,25 +63,23 @@ const Login = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Senha
-              </label>
+              <label className="mb-2 block text-sm font-medium text-gray-200">Senha</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-300" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input-futuristic w-full pl-10 pr-12 py-3 rounded-xl text-white placeholder-gray-400 focus:outline-none"
+                  className="input-futuristic w-full rounded-xl py-3 pl-10 pr-12 text-white placeholder-gray-400 focus:outline-none"
                   placeholder="••••••••"
                   required
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
             </div>
@@ -94,11 +87,11 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="btn-futuristic w-full py-3 rounded-xl text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-futuristic w-full rounded-xl py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <div className="flex items-center justify-center space-x-2">
-                  <div className="spinner w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                  <div className="spinner h-5 w-5 rounded-full border-2 border-white border-t-transparent" />
                   <span>Entrando...</span>
                 </div>
               ) : (
@@ -107,19 +100,18 @@ const Login = () => {
             </button>
           </form>
 
-          {/* Quick Login Options */}
-          <div className="mt-8 pt-6 border-t border-gray-700">
-            <p className="text-xs text-gray-400 text-center mb-4">Acesso rápido para teste:</p>
+          <div className="mt-8 border-t border-gray-700 pt-6">
+            <p className="mb-4 text-center text-xs text-gray-400">Acesso rápido para teste:</p>
             <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => quickLogin('admin@macedosi.com', 'admin123')}
-                className="text-xs text-gray-300 hover:text-red-400 p-2 rounded-lg hover:bg-black/50 transition-colors"
+                className="rounded-lg p-2 text-xs text-gray-300 transition-colors hover:bg-black/50 hover:text-red-300"
               >
                 👑 Admin: admin@macedosi.com
               </button>
               <button
                 onClick={() => quickLogin('colaborador@macedosi.com', 'teste123')}
-                className="text-xs text-gray-300 hover:text-red-400 p-2 rounded-lg hover:bg-black/50 transition-colors"
+                className="rounded-lg p-2 text-xs text-gray-300 transition-colors hover:bg-black/50 hover:text-red-300"
               >
                 👤 Colaborador: colaborador@macedosi.com
               </button>
@@ -127,17 +119,10 @@ const Login = () => {
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-8">
-          <p className="text-xs text-gray-400">
-            © 2025 Macedo SI - Sistema Offline Ready
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            Sistema Desenvolvido por Isaias Macedo
-          </p>
-          <p className="text-xs text-gray-500">
-            Macedo Business Solutions
-          </p>
+        <div className="mt-8 text-center">
+          <p className="text-xs text-gray-400">© 2026 Macedo SI - Sistema Offline Ready</p>
+          <p className="mt-1 text-xs text-gray-500">Sistema Desenvolvido por Isaias Macedo</p>
+          <p className="text-xs text-gray-500">Macedo Business Solutions</p>
         </div>
       </div>
     </div>

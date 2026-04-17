@@ -1,37 +1,152 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Building2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ALL_INTERNAL_MODULE_KEYS, deriveAllowedModules, getEmailFromName, INTERNAL_MODULES } from '../../config/modules';
+
+const MOCK_USERS_KEY = 'mock_users_management_v1';
+const MODULE_OVERRIDES_KEY = 'mock_user_modules_overrides_v1';
+const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
+
+const DEFAULT_CONFIG = {
+  cidades: ['Todas', 'Jacobina', 'Ourolândia', 'Umburanas', 'Uberlândia'],
+  setores: {
+    Todos: ['Todos'],
+    financeiro: ['Contas a pagar', 'Contas a receber', 'Fluxo de caixa'],
+    fiscal: ['Guias', 'Apurações', 'Obrigações acessórias'],
+    trabalhista: ['Folha', 'Admissões', 'Rescisões'],
+    comercial: ['Leads', 'Propostas', 'Pipeline'],
+    atendimento: ['Chamados', 'Agendamentos'],
+    contadores: ['Serviços Sara', 'Serviços Florivaldo', 'Agendamentos Sara', 'Agendamentos Florivaldo'],
+  },
+};
+
+const MODULE_TO_SETOR = {
+  financeiro: 'financeiro',
+  fiscal: 'fiscal',
+  trabalhista: 'trabalhista',
+  comercial: 'comercial',
+  atendimento: 'atendimento',
+  contadores: 'contadores',
+};
+
+const getFirstName = (fullName = '') => {
+  const cleaned = String(fullName || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  return cleaned.split(' ')[0];
+};
+
+const resolveExplicitModules = (user = {}) => {
+  const source = Array.isArray(user.allowed_modules)
+    ? user.allowed_modules
+    : Array.isArray(user.modules_liberados)
+      ? user.modules_liberados
+      : [];
+
+  const normalized = [...new Set(source.filter(Boolean))];
+  return normalized.includes('dashboard') ? normalized : ['dashboard', ...normalized];
+};
 
 const Users = () => {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
-  const [config, setConfig] = useState({ cidades: [], setores: {} });
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [activeTab, setActiveTab] = useState('internos');
+  const [clientUsers, setClientUsers] = useState([]);
+  const [showClientForm, setShowClientForm] = useState(false);
+  const [editingClientUser, setEditingClientUser] = useState(null);
+  const [showClientPassword, setShowClientPassword] = useState(false);
+  const [clientFormData, setClientFormData] = useState({
+    nome: '',
+    email: '',
+    senha: '',
+    clientRefId: '',
+    clienteId: '',
+  });
   const [formData, setFormData] = useState({
     name: '',
     password: '',
     role: 'colaborador',
     allowed_cities: [],
-    permissoes: []
+    permissoes: [],
+    allowed_modules: ['dashboard'],
   });
 
   const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
+  const moduleOptions = useMemo(
+    () => INTERNAL_MODULES.filter((module) => module.key !== 'dashboard'),
+    [],
+  );
+
   useEffect(() => {
     loadUsers();
     loadConfig();
+    loadClientUsers();
   }, []);
+
+  const safeParse = (value, fallback) => {
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return fallback;
+    }
+  };
+
+  const getModuleOverrides = () => safeParse(localStorage.getItem(MODULE_OVERRIDES_KEY) || '{}', {});
+
+  const saveModuleOverride = (email, role, modules) => {
+    if (!email) return;
+    const current = getModuleOverrides();
+    if (role === 'admin') {
+      delete current[email];
+    } else {
+      current[email] = [...new Set(modules)];
+    }
+    localStorage.setItem(MODULE_OVERRIDES_KEY, JSON.stringify(current));
+  };
+
+  const applyModuleOverrideToUsers = (list) => {
+    const overrides = getModuleOverrides();
+    return list.map((user) => {
+      const override = user.email ? overrides[user.email] : null;
+      const source = Array.isArray(override)
+        ? { ...user, allowed_modules: override }
+        : user;
+      const explicitModules = source.role === 'admin'
+        ? [...ALL_INTERNAL_MODULE_KEYS]
+        : resolveExplicitModules(source);
+
+      return {
+        ...source,
+        display_allowed_modules: explicitModules,
+        allowed_modules: deriveAllowedModules({
+          ...source,
+          allowed_modules: explicitModules,
+        }),
+      };
+    });
+  };
 
   const loadConfig = async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/users-management/config`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (!response.ok) throw new Error('Config indisponível');
       const data = await response.json();
       setConfig(data);
     } catch (error) {
-      console.error('Erro ao carregar configurações:', error);
+      console.warn('Usando configuração mockada de usuários.');
+      setConfig(DEFAULT_CONFIG);
     }
   };
 
@@ -40,83 +155,23 @@ const Users = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/users-management/`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (!response.ok) throw new Error('Lista de usuários indisponível');
       const data = await response.json();
-      setUsers(data);
+      setUsers(applyModuleOverrideToUsers(data));
     } catch (error) {
-      console.error('Erro ao carregar usuários:', error);
+      const mockUsers = safeParse(localStorage.getItem(MOCK_USERS_KEY) || '[]', []);
+      setUsers(applyModuleOverrideToUsers(mockUsers));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    try {
-      const token = localStorage.getItem('token');
-      const url = editingUser 
-        ? `${API_URL}/api/users-management/${editingUser.id}`
-        : `${API_URL}/api/users-management/`;
-      
-      const method = editingUser ? 'PUT' : 'POST';
-      
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (response.ok) {
-        await loadUsers();
-        resetForm();
-        alert(editingUser ? 'Usuário atualizado!' : 'Usuário criado!');
-      } else {
-        const error = await response.json();
-        alert(error.detail || 'Erro ao salvar usuário');
-      }
-    } catch (error) {
-      console.error('Erro ao salvar usuário:', error);
-      alert('Erro ao salvar usuário');
-    }
-  };
-
-  const handleDelete = async (userId) => {
-    if (!window.confirm('Tem certeza que deseja deletar este usuário?')) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/users-management/${userId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        await loadUsers();
-        alert('Usuário deletado com sucesso!');
-      } else {
-        const error = await response.json();
-        alert(error.detail || 'Erro ao deletar usuário');
-      }
-    } catch (error) {
-      console.error('Erro ao deletar usuário:', error);
-    }
-  };
-
-  const handleEdit = (user) => {
-    setEditingUser(user);
-    setFormData({
-      name: user.name,
-      password: '',
-      role: user.role,
-      allowed_cities: user.allowed_cities,
-      permissoes: user.permissoes || []
-    });
-    setShowForm(true);
+  const loadClientUsers = () => {
+    const parsed = safeParse(localStorage.getItem(CLIENT_PORTAL_USERS_KEY) || '[]', []);
+    setClientUsers(Array.isArray(parsed) ? parsed : []);
   };
 
   const resetForm = () => {
@@ -125,158 +180,521 @@ const Users = () => {
       password: '',
       role: 'colaborador',
       allowed_cities: [],
-      permissoes: []
+      permissoes: [],
+      allowed_modules: ['dashboard'],
     });
     setEditingUser(null);
+    setShowPassword(false);
+    setShowCurrentPassword(false);
+    setIsEditingName(false);
+    setIsChangingPassword(false);
     setShowForm(false);
+  };
+
+  const resetClientForm = () => {
+    setClientFormData({
+      nome: '',
+      email: '',
+      senha: '',
+      clientRefId: '',
+      clienteId: '',
+    });
+    setEditingClientUser(null);
+    setShowClientPassword(false);
+    setShowClientForm(false);
   };
 
   const toggleCity = (city) => {
     if (city === 'Todas') {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        allowed_cities: prev.allowed_cities.includes('Todas') ? [] : ['Todas']
+        allowed_cities: prev.allowed_cities.includes('Todas') ? [] : ['Todas'],
       }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        allowed_cities: prev.allowed_cities.includes(city)
-          ? prev.allowed_cities.filter(c => c !== city)
-          : [...prev.allowed_cities.filter(c => c !== 'Todas'), city]
-      }));
+      return;
     }
+
+    setFormData((prev) => ({
+      ...prev,
+      allowed_cities: prev.allowed_cities.includes(city)
+        ? prev.allowed_cities.filter((c) => c !== city)
+        : [...prev.allowed_cities.filter((c) => c !== 'Todas'), city],
+    }));
   };
 
+  const upsertPermissaoComVisualizacoes = (permissoes, setor, visualizacoes = []) => {
+    const normalizedVisualizacoes = [...new Set(visualizacoes)];
+    const exists = permissoes.find((item) => item.setor === setor);
+    if (exists) {
+      return permissoes.map((item) =>
+        item.setor === setor ? { ...item, visualizacoes: normalizedVisualizacoes } : item,
+      );
+    }
+    return [...permissoes, { setor, visualizacoes: normalizedVisualizacoes }];
+  };
+
+  const removePermissaoBySetor = (permissoes, setor) =>
+    permissoes.filter((item) => item.setor !== setor);
+
   const toggleSetor = (setor) => {
-    setFormData(prev => {
-      const exists = prev.permissoes.find(p => p.setor === setor);
+    setFormData((prev) => {
+      if (setor === 'Todos') {
+        const hasTodos = prev.permissoes.some((p) => p.setor === 'Todos');
+        return {
+          ...prev,
+          permissoes: hasTodos ? [] : [{ setor: 'Todos', visualizacoes: ['Todos'] }],
+        };
+      }
+
+      const exists = prev.permissoes.find((p) => p.setor === setor);
       if (exists) {
         return {
           ...prev,
-          permissoes: prev.permissoes.filter(p => p.setor !== setor)
-        };
-      } else {
-        return {
-          ...prev,
-          permissoes: [...prev.permissoes, { setor, visualizacoes: [] }]
+          permissoes: removePermissaoBySetor(prev.permissoes, setor),
         };
       }
+      return {
+        ...prev,
+        permissoes: [
+          ...prev.permissoes.filter((p) => p.setor !== 'Todos'),
+          { setor, visualizacoes: [] },
+        ],
+      };
     });
   };
 
   const toggleVisualizacao = (setor, vis) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      permissoes: prev.permissoes.map(p => {
-        if (p.setor === setor) {
-          const hasVis = p.visualizacoes.includes(vis);
-          return {
-            ...p,
-            visualizacoes: hasVis
-              ? p.visualizacoes.filter(v => v !== vis)
-              : [...p.visualizacoes, vis]
-          };
-        }
-        return p;
-      })
+      permissoes: prev.permissoes.map((perm) => {
+        if (perm.setor !== setor) return perm;
+        const exists = perm.visualizacoes.includes(vis);
+        return {
+          ...perm,
+          visualizacoes: exists
+            ? perm.visualizacoes.filter((item) => item !== vis)
+            : [...perm.visualizacoes, vis],
+        };
+      }),
     }));
+  };
+
+  const toggleModule = (moduleKey) => {
+    setFormData((prev) => {
+      const exists = prev.allowed_modules.includes(moduleKey);
+      const updated = exists
+        ? prev.allowed_modules.filter((item) => item !== moduleKey)
+        : [...prev.allowed_modules, moduleKey];
+      const mappedSetor = MODULE_TO_SETOR[moduleKey];
+      let nextPermissoes = [...prev.permissoes];
+
+      if (mappedSetor) {
+        if (exists) {
+          nextPermissoes = removePermissaoBySetor(nextPermissoes, mappedSetor);
+        } else {
+          nextPermissoes = removePermissaoBySetor(nextPermissoes, 'Todos');
+          nextPermissoes = upsertPermissaoComVisualizacoes(
+            nextPermissoes,
+            mappedSetor,
+            config.setores?.[mappedSetor] || [],
+          );
+        }
+      }
+
+      return {
+        ...prev,
+        allowed_modules: ['dashboard', ...updated.filter((item) => item !== 'dashboard')],
+        permissoes: nextPermissoes,
+      };
+    });
+  };
+
+  const saveMockUser = (payload, currentEditingUser, emailOverride) => {
+    const currentUsers = safeParse(localStorage.getItem(MOCK_USERS_KEY) || '[]', []);
+    const email = currentEditingUser?.email || emailOverride || getEmailFromName(payload.name);
+    const userRecord = {
+      ...(currentEditingUser || {}),
+      ...payload,
+      email,
+      id: currentEditingUser?.id || `mock-user-${Date.now()}`,
+      is_active: true,
+      is_online: false,
+    };
+
+    const nextUsers = currentEditingUser
+      ? currentUsers.map((item) => (item.id === currentEditingUser.id ? userRecord : item))
+      : [userRecord, ...currentUsers];
+
+    localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(nextUsers));
+    saveModuleOverride(email, payload.role, payload.allowed_modules || []);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const normalizedName = editingUser
+      ? formData.name
+      : getFirstName(formData.name);
+
+    const normalizedPassword = String(formData.password || '').trim();
+    const emailFromForm = getEmailFromName(formData.name);
+
+    const payload = {
+      ...formData,
+      name: normalizedName,
+      allowed_modules: formData.role === 'admin'
+        ? [...ALL_INTERNAL_MODULE_KEYS]
+        : ['dashboard', ...formData.allowed_modules.filter((item) => item !== 'dashboard')],
+      password: editingUser
+        ? (isChangingPassword && normalizedPassword ? normalizedPassword : undefined)
+        : normalizedPassword,
+    };
+
+    try {
+      const token = localStorage.getItem('token');
+      const url = editingUser
+        ? `${API_URL}/api/users-management/${editingUser.id}`
+        : `${API_URL}/api/users-management/`;
+      const method = editingUser ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) throw new Error('Falha no backend');
+
+      const userEmail = editingUser?.email || emailFromForm;
+      saveModuleOverride(userEmail, payload.role, payload.allowed_modules);
+      await loadUsers();
+      resetForm();
+      alert(editingUser ? 'Usuário atualizado!' : 'Usuário criado!');
+    } catch (error) {
+      saveMockUser(payload, editingUser, emailFromForm);
+      await loadUsers();
+      resetForm();
+      alert(editingUser ? 'Usuário atualizado (modo mock)!' : 'Usuário criado (modo mock)!');
+    }
+  };
+
+  const handleDelete = async (userId) => {
+    if (!window.confirm('Tem certeza que deseja deletar este usuário?')) return;
+
+    const target = users.find((user) => user.id === userId);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/users-management/${userId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) throw new Error('Falha ao deletar');
+      if (target?.email) saveModuleOverride(target.email, 'admin', []);
+      await loadUsers();
+      alert('Usuário deletado com sucesso!');
+    } catch (error) {
+      const currentUsers = safeParse(localStorage.getItem(MOCK_USERS_KEY) || '[]', []);
+      const nextUsers = currentUsers.filter((item) => item.id !== userId);
+      localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(nextUsers));
+      if (target?.email) saveModuleOverride(target.email, 'admin', []);
+      await loadUsers();
+      alert('Usuário deletado com sucesso (modo mock)!');
+    }
+  };
+
+  const handleEdit = (user) => {
+    const editableModules = user.role === 'admin'
+      ? [...ALL_INTERNAL_MODULE_KEYS]
+      : (user.display_allowed_modules || resolveExplicitModules(user));
+
+    setEditingUser(user);
+    setFormData({
+      name: user.name,
+      password: '',
+      role: user.role,
+      allowed_cities: user.allowed_cities || [],
+      permissoes: user.permissoes || [],
+      allowed_modules: editableModules,
+    });
+    setShowPassword(false);
+    setShowCurrentPassword(false);
+    setIsEditingName(false);
+    setIsChangingPassword(false);
+    setShowForm(true);
+  };
+
+  const handleEditClientUser = (clientUser) => {
+    setEditingClientUser(clientUser);
+    setClientFormData({
+      nome: clientUser.nome || '',
+      email: clientUser.email || '',
+      senha: clientUser.senha || '',
+      clientRefId: clientUser.clientRefId || '',
+      clienteId: clientUser.clienteId || '',
+    });
+    setShowClientPassword(false);
+    setShowClientForm(true);
+  };
+
+  const handleDeleteClientUser = (clientUserId) => {
+    if (!window.confirm('Tem certeza que deseja remover este usuario cliente?')) return;
+    const next = clientUsers.filter((item) => item.id !== clientUserId);
+    localStorage.setItem(CLIENT_PORTAL_USERS_KEY, JSON.stringify(next));
+    setClientUsers(next);
+  };
+
+  const handleSubmitClientUser = (event) => {
+    event.preventDefault();
+    const nome = String(clientFormData.nome || '').trim();
+    const email = String(clientFormData.email || '').trim().toLowerCase();
+    const senha = String(clientFormData.senha || '').trim();
+
+    if (!nome || !email || !senha) return;
+
+    const record = {
+      id: editingClientUser?.id || `portal-user-${Date.now()}`,
+      nome,
+      email,
+      senha,
+      clientRefId: String(clientFormData.clientRefId || '').trim(),
+      clienteId: String(clientFormData.clienteId || '').trim(),
+      updatedAt: new Date().toISOString(),
+      createdAt: editingClientUser?.createdAt || new Date().toISOString(),
+    };
+
+    const next = editingClientUser
+      ? clientUsers.map((item) => (item.id === editingClientUser.id ? record : item))
+      : [record, ...clientUsers.filter((item) => item.email !== record.email)];
+
+    localStorage.setItem(CLIENT_PORTAL_USERS_KEY, JSON.stringify(next));
+    setClientUsers(next);
+    resetClientForm();
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex h-64 items-center justify-center">
         <div className="text-gray-400">Carregando...</div>
       </div>
     );
   }
 
+  const hasTodasCidades = formData.allowed_cities.includes('Todas');
+  const hasTodosSetores = formData.permissoes.some((perm) => perm.setor === 'Todos');
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Gerenciar Usuários</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Gerencie usuários, permissões e acessos do sistema
-          </p>
+          <p className="mt-1 text-sm text-gray-400">Gerencie usuários, permissões e módulos liberados do sistema</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+          type="button"
+          onClick={() => navigate('/configuracoes')}
+          className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-white/10"
+        >
+          Voltar
+        </button>
+        <button
+          onClick={() => {
+            if (activeTab === 'internos') {
+              setEditingUser(null);
+              setShowPassword(false);
+              setShowCurrentPassword(false);
+              setIsEditingName(false);
+              setIsChangingPassword(false);
+              setFormData({
+                name: '',
+                password: '',
+                role: 'colaborador',
+                allowed_cities: [],
+                permissoes: [],
+                allowed_modules: ['dashboard'],
+              });
+              setShowForm(true);
+              return;
+            }
+
+            setEditingClientUser(null);
+            setClientFormData({
+              nome: '',
+              email: '',
+              senha: '',
+              clientRefId: '',
+              clienteId: '',
+            });
+            setShowClientPassword(false);
+            setShowClientForm(true);
+          }}
+          className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
         >
           <Plus size={20} />
-          Novo Usuário
+          {activeTab === 'internos' ? 'Novo Usuario Interno' : 'Novo Usuario Cliente'}
         </button>
       </div>
 
-      {/* Form Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-white">
-                {editingUser ? 'Editar Usuário' : 'Novo Usuário'}
-              </h2>
+      <div className="glass rounded-xl border border-white/10 p-3">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('internos')}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'internos'
+                ? 'bg-red-600 text-white'
+                : 'bg-white/5 text-gray-200 hover:bg-white/10'
+            }`}
+          >
+            Usuarios da dash interna
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('clientes')}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'clientes'
+                ? 'bg-red-600 text-white'
+                : 'bg-white/5 text-gray-200 hover:bg-white/10'
+            }`}
+          >
+            Usuarios de clientes
+          </button>
+        </div>
+      </div>
+
+      {showForm && activeTab === 'internos' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-gray-800 p-6">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</h2>
               <button onClick={resetForm} className="text-gray-400 hover:text-white">
                 <X size={24} />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Nome */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Nome Completo
-                </label>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Nome Completo</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:ring-2 focus:ring-red-500 outline-none"
+                  className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
                   required
+                  disabled={!!editingUser && !isEditingName}
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  Email será: {formData.name ? formData.name.toLowerCase().replace(/\s+/g, '.') + '@macedosi.com' : 'nome.completo@macedosi.com'}
+                {editingUser ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName((prev) => !prev)}
+                    className="mt-2 rounded-lg bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-600"
+                  >
+                    {isEditingName ? 'Bloquear nome' : 'Editar nome'}
+                  </button>
+                ) : null}
+                {!editingUser ? (
+                  <p className="mt-1 text-xs text-gray-400">
+                    No cadastro, sera salvo apenas o primeiro nome: {formData.name ? getFirstName(formData.name) : 'nome'}.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-gray-400">Nome não editável por padrão. Use o botão "Editar nome".</p>
+                )}
+                <p className="mt-1 text-xs text-gray-400">
+                  Email será: {formData.name ? getEmailFromName(formData.name) : 'nome.completo@macedosi.com'}
                 </p>
               </div>
 
-              {/* Senha */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="mb-2 block text-sm font-medium text-gray-300">
                   Senha {editingUser && '(deixe em branco para não alterar)'}
                 </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg focus:ring-2 focus:ring-red-500 outline-none"
-                  required={!editingUser}
-                  minLength={6}
-                />
+                {editingUser ? (
+                  <div className="mb-3">
+                    <p className="mb-1 text-xs text-gray-400">Senha atual</p>
+                    <div className="relative">
+                      <input
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        value={showCurrentPassword ? String(editingUser?.password || 'Senha nao disponivel') : '********'}
+                        readOnly
+                        className="w-full rounded-lg bg-gray-700 px-4 py-2 pr-11 text-white outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                        aria-label={showCurrentPassword ? 'Ocultar senha atual' : 'Mostrar senha atual'}
+                      >
+                        {showCurrentPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsChangingPassword((prev) => !prev)}
+                      className="mt-2 rounded-lg bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700"
+                    >
+                      {isChangingPassword ? 'Cancelar alteração de senha' : 'Alterar senha'}
+                    </button>
+                  </div>
+                ) : null}
+                {(!editingUser || isChangingPassword) ? (
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full rounded-lg bg-gray-700 px-4 py-2 pr-11 text-white outline-none focus:ring-2 focus:ring-red-500"
+                    required={!editingUser || isChangingPassword}
+                    minLength={6}
+                    placeholder={editingUser ? 'Digite a nova senha' : ''}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                ) : null}
               </div>
 
-              {/* Tipo de Usuário */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Tipo de Usuário
-                </label>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Tipo de Usuário</label>
                 <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="radio"
                       value="admin"
                       checked={formData.role === 'admin'}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          role: e.target.value,
+                          allowed_modules: [...ALL_INTERNAL_MODULE_KEYS],
+                        })
+                      }
                       className="text-red-600 focus:ring-red-500"
                     />
                     <span className="text-white">Administrador</span>
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="radio"
                       value="colaborador"
                       checked={formData.role === 'colaborador'}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          role: e.target.value,
+                          allowed_modules: formData.allowed_modules.length
+                            ? formData.allowed_modules
+                            : ['dashboard'],
+                        })
+                      }
                       className="text-red-600 focus:ring-red-500"
                     />
                     <span className="text-white">Colaborador</span>
@@ -284,74 +702,115 @@ const Users = () => {
                 </div>
               </div>
 
-              {/* Cidades */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Cidades de Visualização
-                </label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {config.cidades.map(city => (
-                    <label key={city} className="flex items-center gap-2 cursor-pointer bg-gray-700 p-2 rounded">
+                <label className="mb-2 block text-sm font-medium text-gray-300">Módulos liberados</label>
+                {formData.role === 'admin' ? (
+                  <div className="rounded-lg border border-green-600/40 bg-green-900/20 p-3 text-sm text-green-200">
+                    Administrador possui acesso automático a todos os módulos.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                    {moduleOptions.map((module) => {
+                      const checked = formData.allowed_modules.includes(module.key);
+                      return (
+                        <label
+                          key={module.key}
+                          className="flex cursor-pointer items-center gap-2 rounded border border-gray-600 bg-gray-700 p-2"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleModule(module.key)}
+                            className="text-red-600 focus:ring-red-500"
+                          />
+                          <span className="text-sm text-white">{module.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Cidades de Visualização</label>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  {config.cidades.map((city) => (
+                    <label
+                      key={city}
+                      className={`flex items-center gap-2 rounded p-2 transition-all ${
+                        hasTodasCidades && city !== 'Todas'
+                          ? 'cursor-not-allowed bg-gray-800/80 opacity-45'
+                          : 'cursor-pointer bg-gray-700'
+                      }`}
+                    >
                       <input
                         type="checkbox"
                         checked={formData.allowed_cities.includes(city)}
+                        disabled={hasTodasCidades && city !== 'Todas'}
                         onChange={() => toggleCity(city)}
                         className="text-red-600 focus:ring-red-500"
                       />
-                      <span className="text-white text-sm">{city}</span>
+                      <span className="text-sm text-white">{city}</span>
                     </label>
                   ))}
                 </div>
               </div>
 
-              {/* Setores e Visualizações */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Setores e Visualizações
-                </label>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Setores e Visualizações</label>
                 <div className="space-y-4">
-                  {Object.keys(config.setores).map(setor => {
-                    const permissao = formData.permissoes.find(p => p.setor === setor);
-                    const isSetorSelected = !!permissao;
+                  {Object.keys(config.setores).map((setor) => {
+                    const permissao = formData.permissoes.find((perm) => perm.setor === setor);
+                    const isSelected = !!permissao;
+                    const setorDisabled = hasTodosSetores && setor !== 'Todos';
 
                     return (
-                      <div key={setor} className="bg-gray-700 p-4 rounded-lg">
-                        <label className="flex items-center gap-2 cursor-pointer mb-3">
+                      <div
+                        key={setor}
+                        className={`rounded-lg p-4 transition-all ${
+                          setorDisabled ? 'bg-gray-800/80 opacity-50' : 'bg-gray-700'
+                        }`}
+                      >
+                        <label className={`mb-3 flex items-center gap-2 ${setorDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                           <input
                             type="checkbox"
-                            checked={isSetorSelected}
+                            checked={isSelected}
+                            disabled={setorDisabled}
                             onChange={() => toggleSetor(setor)}
                             className="text-red-600 focus:ring-red-500"
                           />
-                          <span className="text-white font-medium">{setor}</span>
+                          <span className="font-medium text-white">{setor}</span>
                         </label>
-                        
-                        {isSetorSelected && (
+
+                        {isSelected ? (
                           <div className="ml-6 grid grid-cols-2 gap-2">
-                            {config.setores[setor].map(vis => (
-                              <label key={vis} className="flex items-center gap-2 cursor-pointer">
+                            {config.setores[setor].map((vis) => (
+                              <label
+                                key={vis}
+                                className={`flex items-center gap-2 ${setorDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                              >
                                 <input
                                   type="checkbox"
                                   checked={permissao.visualizacoes.includes(vis)}
+                                  disabled={setorDisabled}
                                   onChange={() => toggleVisualizacao(setor, vis)}
                                   className="text-red-600 focus:ring-red-500"
                                 />
-                                <span className="text-gray-300 text-sm">{vis}</span>
+                                <span className="text-sm text-gray-300">{vis}</span>
                               </label>
                             ))}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Buttons */}
               <div className="flex gap-3">
                 <button
                   type="submit"
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-white transition-colors hover:bg-red-700"
                 >
                   <Save size={20} />
                   {editingUser ? 'Atualizar' : 'Criar'} Usuário
@@ -359,7 +818,7 @@ const Users = () => {
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="px-6 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors"
+                  className="rounded-lg bg-gray-600 px-6 py-2 text-white transition-colors hover:bg-gray-700"
                 >
                   Cancelar
                 </button>
@@ -369,73 +828,158 @@ const Users = () => {
         </div>
       )}
 
-      {/* Users List */}
-      <div className="bg-gray-800 rounded-lg overflow-hidden">
+      {showClientForm && activeTab === 'clientes' ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-gray-800 p-6">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">{editingClientUser ? 'Editar Usuario Cliente' : 'Novo Usuario Cliente'}</h2>
+              <button type="button" onClick={resetClientForm} className="text-gray-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitClientUser} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Nome</label>
+                <input
+                  type="text"
+                  value={clientFormData.nome}
+                  onChange={(e) => setClientFormData((prev) => ({ ...prev, nome: e.target.value }))}
+                  className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Email</label>
+                <input
+                  type="email"
+                  value={clientFormData.email}
+                  onChange={(e) => setClientFormData((prev) => ({ ...prev, email: e.target.value }))}
+                  className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Senha</label>
+                <div className="relative">
+                  <input
+                    type={showClientPassword ? 'text' : 'password'}
+                    value={clientFormData.senha}
+                    onChange={(e) => setClientFormData((prev) => ({ ...prev, senha: e.target.value }))}
+                    className="w-full rounded-lg bg-gray-700 px-4 py-2 pr-11 text-white outline-none focus:ring-2 focus:ring-red-500"
+                    minLength={6}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowClientPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  >
+                    {showClientPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">Client Ref ID</label>
+                  <input
+                    type="text"
+                    value={clientFormData.clientRefId}
+                    onChange={(e) => setClientFormData((prev) => ({ ...prev, clientRefId: e.target.value }))}
+                    className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="id interno da empresa"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">Cliente ID (rota)</label>
+                  <input
+                    type="text"
+                    value={clientFormData.clienteId}
+                    onChange={(e) => setClientFormData((prev) => ({ ...prev, clienteId: e.target.value }))}
+                    className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="ex.: c8f3d"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="submit" className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-white hover:bg-red-700">
+                  <Save size={18} />
+                  {editingClientUser ? 'Atualizar' : 'Criar'} usuario cliente
+                </button>
+                <button type="button" onClick={resetClientForm} className="rounded-lg bg-gray-600 px-6 py-2 text-white hover:bg-gray-700">
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'internos' ? (
+      <div className="overflow-hidden rounded-lg bg-gray-800">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Nome</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Tipo</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Cidades</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Setores</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase">Ações</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Nome</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Tipo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Módulos liberados</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Cidades</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Setores</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-medium uppercase text-gray-300">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {users.map(user => (
+              {users.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-700/50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${user.is_online ? 'bg-green-500' : 'bg-gray-500'}`} />
+                      <div className={`h-2 w-2 rounded-full ${user.is_online ? 'bg-green-500' : 'bg-gray-500'}`} />
                       <span className="text-white">{user.name}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-300">{user.email}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded ${
-                      user.role === 'admin' 
-                        ? 'bg-red-900/50 text-red-300' 
-                        : 'bg-blue-900/50 text-blue-300'
-                    }`}>
+                  <td className="whitespace-nowrap px-6 py-4 text-gray-300">{user.email}</td>
+                  <td className="whitespace-nowrap px-6 py-4">
+                    <span
+                      className={`rounded px-2 py-1 text-xs ${
+                        user.role === 'admin' ? 'bg-red-900/50 text-red-300' : 'bg-blue-900/50 text-blue-300'
+                      }`}
+                    >
                       {user.role === 'admin' ? 'Admin' : 'Colaborador'}
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-300">
-                      {user.allowed_cities.join(', ')}
+                      {user.role === 'admin'
+                        ? 'Todos'
+                        : INTERNAL_MODULES
+                            .filter((module) => (user.display_allowed_modules || []).includes(module.key))
+                            .filter((module) => module.key !== 'dashboard')
+                            .map((module) => module.label)
+                            .join(', ') || 'Nenhum'}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-300">
-                      {user.permissoes?.map(p => p.setor).join(', ') || 'Nenhum'}
-                    </div>
+                  <td className="px-6 py-4 text-sm text-gray-300">{(user.allowed_cities || []).join(', ')}</td>
+                  <td className="px-6 py-4 text-sm text-gray-300">
+                    {(user.permissoes || []).map((perm) => perm.setor).join(', ') || 'Nenhum'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded ${
-                      user.is_active 
-                        ? 'bg-green-900/50 text-green-300' 
-                        : 'bg-gray-900/50 text-gray-300'
-                    }`}>
+                  <td className="whitespace-nowrap px-6 py-4">
+                    <span
+                      className={`rounded px-2 py-1 text-xs ${
+                        user.is_active ? 'bg-green-900/50 text-green-300' : 'bg-gray-900/50 text-gray-300'
+                      }`}
+                    >
                       {user.is_active ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <td className="whitespace-nowrap px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="text-blue-400 hover:text-blue-300"
-                        title="Editar"
-                      >
+                      <button onClick={() => handleEdit(user)} className="text-blue-400 hover:text-blue-300" title="Editar">
                         <Edit2 size={18} />
                       </button>
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        className="text-red-400 hover:text-red-300"
-                        title="Deletar"
-                      >
+                      <button onClick={() => handleDelete(user.id)} className="text-red-400 hover:text-red-300" title="Deletar">
                         <Trash2 size={18} />
                       </button>
                     </div>
@@ -446,6 +990,46 @@ const Users = () => {
           </table>
         </div>
       </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-gray-300">
+            Usuarios de clientes configurados para acesso ao portal.
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            {clientUsers.map((clientUser) => (
+              <div key={clientUser.id} className="rounded-xl border border-white/10 bg-gray-800 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg border border-white/10 bg-black/30 p-2">
+                      <Building2 className="h-4 w-4 text-cyan-300" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-white">{clientUser.nome}</p>
+                      <p className="text-sm text-gray-300">{clientUser.email}</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Cliente ID: {clientUser.clienteId || '-'} | Client Ref: {clientUser.clientRefId || '-'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleEditClientUser(clientUser)} className="text-blue-400 hover:text-blue-300" title="Editar">
+                      <Edit2 size={18} />
+                    </button>
+                    <button onClick={() => handleDeleteClientUser(clientUser.id)} className="text-red-400 hover:text-red-300" title="Deletar">
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!clientUsers.length ? (
+              <div className="rounded-xl border border-dashed border-white/15 bg-black/20 p-5 text-sm text-gray-400">
+                Nenhum usuario cliente cadastrado ainda.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -17,6 +17,45 @@ const ProtectedRoute = ({ children }) => {
   }
 
   return isAuthenticated ? children : <Navigate to="/login" replace />;
+};
+
+export const ModuleGuard = ({ moduleKey, children }) => {
+  const { user, hasModuleAccess } = useAuth();
+  const location = useLocation();
+
+  if (!user || user.role === 'admin' || !moduleKey) {
+    return children;
+  }
+
+  if (!hasModuleAccess(moduleKey)) {
+    return <Navigate to="/admin" replace state={{ from: location }} />;
+  }
+
+  return children;
+};
+
+export const AdminGuard = ({ children }) => {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'admin') {
+    return <Navigate to="/admin" replace state={{ from: location }} />;
+  }
+  return children;
+};
+
+export const ColaboradorGuard = ({ children }) => {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'admin') {
+    return <Navigate to="/admin" replace state={{ from: location }} />;
+  }
+  return children;
 };
 
 export default ProtectedRoute;

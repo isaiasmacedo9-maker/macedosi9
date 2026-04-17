@@ -5,6 +5,8 @@ from starlette.responses import Response
 from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Import database connection - Using adapter for SQL/MongoDB
 from database_adapter import startup_database, shutdown_database
@@ -44,6 +46,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
@@ -54,16 +59,32 @@ class HTTPSRedirectFixMiddleware(BaseHTTPMiddleware):
         if response.status_code in (301, 302, 307, 308):
             location = response.headers.get("location", "")
             forwarded_proto = request.headers.get("x-forwarded-proto", "")
-            if location.startswith("http://") and (forwarded_proto == "https" or "preview.emergentagent.com" in request.url.host):
+            if location.startswith("http://") and forwarded_proto == "https":
                 response.headers["location"] = location.replace("http://", "https://", 1)
         return response
 
 app.add_middleware(HTTPSRedirectFixMiddleware)
 
 # Add CORS middleware
+default_local_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+cors_origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+allowed_origins = (
+    [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    if cors_origins_env
+    else default_local_origins
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

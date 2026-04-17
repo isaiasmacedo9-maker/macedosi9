@@ -4,7 +4,7 @@ Rotas para chat com grupos públicos/privados
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, delete, and_, or_, func
 from sqlalchemy.orm import selectinload
 from database_sql import AsyncSessionLocal
@@ -19,6 +19,7 @@ from models.user import UserResponse
 import json
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+ONLINE_WINDOW_SECONDS = 90
 
 # ==================== MODELS ====================
 
@@ -94,6 +95,121 @@ async def update_user_activity(session, user_id: str):
     
     await session.flush()
 
+def resolve_presence(online_status: Optional[UserOnlineStatusSQL]):
+    """Define presença com base na última atividade."""
+    if not online_status:
+        return {"is_online": False, "last_seen": None, "last_activity": None}
+
+    now = datetime.utcnow()
+    last_activity = online_status.last_activity or online_status.last_seen
+    is_recent = bool(last_activity and (now - last_activity) <= timedelta(seconds=ONLINE_WINDOW_SECONDS))
+    is_online = bool(online_status.is_online and is_recent)
+
+    return {
+        "is_online": is_online,
+        "last_seen": online_status.last_seen,
+        "last_activity": last_activity,
+    }
+
+async def build_conversation_payload(session, target_user_id: str):
+    """Monta payload de conversas para um usuário alvo."""
+    result = await session.execute(
+        select(ConversationSQL, ConversationMemberSQL)
+        .join(ConversationMemberSQL)
+        .where(
+            and_(
+                ConversationMemberSQL.user_id == target_user_id,
+                ConversationMemberSQL.is_active == True
+            )
+        )
+        .order_by(ConversationSQL.last_message_at.desc().nullslast())
+    )
+
+    conversations = []
+    for conv, my_membership in result.all():
+        direct_user = None
+
+        members_result = await session.execute(
+            select(func.count(ConversationMemberSQL.id))
+            .where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conv.id,
+                    ConversationMemberSQL.is_active == True
+                )
+            )
+        )
+        members_count = members_result.scalar()
+
+        last_msg_result = await session.execute(
+            select(ChatMessageSQL, UserSQL)
+            .join(UserSQL, ChatMessageSQL.sender_id == UserSQL.id)
+            .where(
+                and_(
+                    ChatMessageSQL.conversation_id == conv.id,
+                    ChatMessageSQL.is_deleted == False
+                )
+            )
+            .order_by(ChatMessageSQL.created_at.desc())
+            .limit(1)
+        )
+        last_msg_row = last_msg_result.first()
+        last_msg = None
+        if last_msg_row:
+            msg, sender = last_msg_row
+            last_msg = {
+                "id": msg.id,
+                "message": msg.message[:100],
+                "sender_name": sender.name,
+                "created_at": msg.created_at.isoformat()
+            }
+
+        if conv.tipo == "direct":
+            other_result = await session.execute(
+                select(UserSQL, UserOnlineStatusSQL)
+                .join(
+                    ConversationMemberSQL,
+                    and_(
+                        ConversationMemberSQL.user_id == UserSQL.id,
+                        ConversationMemberSQL.conversation_id == conv.id,
+                        ConversationMemberSQL.is_active == True
+                    )
+                )
+                .outerjoin(UserOnlineStatusSQL, UserOnlineStatusSQL.user_id == UserSQL.id)
+                .where(UserSQL.id != target_user_id)
+                .limit(1)
+            )
+            other_row = other_result.first()
+            if other_row:
+                other_user, other_status = other_row
+                presence = resolve_presence(other_status)
+                direct_user = {
+                    "id": other_user.id,
+                    "name": other_user.name,
+                    "email": other_user.email,
+                    "is_online": presence["is_online"],
+                    "last_seen": presence["last_seen"],
+                }
+
+        conversations.append({
+            "id": conv.id,
+            "tipo": conv.tipo,
+            "nome": conv.nome,
+            "descricao": conv.descricao,
+            "tipo_grupo": conv.tipo_grupo,
+            "avatar": conv.avatar,
+            "created_by": conv.created_by,
+            "created_at": conv.created_at,
+            "last_message_at": conv.last_message_at,
+            "unread_count": my_membership.unread_count,
+            "members_count": members_count,
+            "last_message": last_msg,
+            "my_role": my_membership.role,
+            "is_active": my_membership.is_active,
+            "direct_user": direct_user,
+        })
+
+    return conversations
+
 async def get_or_create_direct_chat(session, user1_id: str, user2_id: str):
     """Busca ou cria chat direto entre dois usuários"""
     # Buscar chat existente
@@ -112,6 +228,19 @@ async def get_or_create_direct_chat(session, user1_id: str, user2_id: str):
     
     existing_conv = result.scalar_one_or_none()
     if existing_conv:
+        memberships_result = await session.execute(
+            select(ConversationMemberSQL).where(
+                and_(
+                    ConversationMemberSQL.conversation_id == existing_conv.id,
+                    ConversationMemberSQL.user_id.in_([user1_id, user2_id]),
+                )
+            )
+        )
+        for membership in memberships_result.scalars().all():
+            if not membership.is_active:
+                membership.is_active = True
+                membership.joined_at = datetime.utcnow()
+                membership.left_at = None
         return existing_conv
     
     # Criar novo chat
@@ -144,80 +273,36 @@ async def heartbeat(current_user: UserResponse = Depends(get_current_user)):
         await session.commit()
         return {"status": "ok"}
 
+@router.post("/offline")
+async def mark_offline(current_user: UserResponse = Depends(get_current_user)):
+    """Marca usuário como offline no logout."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(UserOnlineStatusSQL).where(UserOnlineStatusSQL.user_id == current_user.id)
+        )
+        status_obj = result.scalar_one_or_none()
+        if status_obj:
+            status_obj.is_online = False
+            status_obj.last_seen = datetime.utcnow()
+            status_obj.last_activity = datetime.utcnow()
+        else:
+            session.add(
+                UserOnlineStatusSQL(
+                    user_id=current_user.id,
+                    is_online=False,
+                    last_seen=datetime.utcnow(),
+                    last_activity=datetime.utcnow(),
+                )
+            )
+        await session.commit()
+        return {"status": "offline"}
+
 @router.get("/conversations")
 async def list_conversations(current_user: UserResponse = Depends(get_current_user)):
     """Lista todas as conversas do usuário"""
     async with AsyncSessionLocal() as session:
         await update_user_activity(session, current_user.id)
-        
-        # Buscar conversas onde usuário é membro
-        result = await session.execute(
-            select(ConversationSQL, ConversationMemberSQL)
-            .join(ConversationMemberSQL)
-            .where(
-                and_(
-                    ConversationMemberSQL.user_id == current_user.id,
-                    ConversationMemberSQL.is_active == True
-                )
-            )
-            .order_by(ConversationSQL.last_message_at.desc().nullslast())
-        )
-        
-        conversations = []
-        for conv, my_membership in result.all():
-            # Contar membros
-            members_result = await session.execute(
-                select(func.count(ConversationMemberSQL.id))
-                .where(
-                    and_(
-                        ConversationMemberSQL.conversation_id == conv.id,
-                        ConversationMemberSQL.is_active == True
-                    )
-                )
-            )
-            members_count = members_result.scalar()
-            
-            # Buscar última mensagem
-            last_msg_result = await session.execute(
-                select(ChatMessageSQL, UserSQL)
-                .join(UserSQL, ChatMessageSQL.sender_id == UserSQL.id)
-                .where(
-                    and_(
-                        ChatMessageSQL.conversation_id == conv.id,
-                        ChatMessageSQL.is_deleted == False
-                    )
-                )
-                .order_by(ChatMessageSQL.created_at.desc())
-                .limit(1)
-            )
-            last_msg_row = last_msg_result.first()
-            last_msg = None
-            if last_msg_row:
-                msg, sender = last_msg_row
-                last_msg = {
-                    "id": msg.id,
-                    "message": msg.message[:100],
-                    "sender_name": sender.name,
-                    "created_at": msg.created_at.isoformat()
-                }
-            
-            conversations.append({
-                "id": conv.id,
-                "tipo": conv.tipo,
-                "nome": conv.nome,
-                "descricao": conv.descricao,
-                "tipo_grupo": conv.tipo_grupo,
-                "avatar": conv.avatar,
-                "created_by": conv.created_by,
-                "created_at": conv.created_at,
-                "last_message_at": conv.last_message_at,
-                "unread_count": my_membership.unread_count,
-                "members_count": members_count,
-                "last_message": last_msg,
-                "my_role": my_membership.role,
-                "is_active": my_membership.is_active
-            })
-        
+        conversations = await build_conversation_payload(session, current_user.id)
         await session.commit()
         return conversations
 
@@ -274,6 +359,135 @@ async def list_public_groups(current_user: UserResponse = Depends(get_current_us
             })
         
         return groups_response
+
+@router.get("/admin/{target_user_id}/conversations")
+async def admin_list_user_conversations(
+    target_user_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Acesso especial: admin visualiza as conversas visíveis para um colaborador."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+
+    async with AsyncSessionLocal() as session:
+        user_result = await session.execute(select(UserSQL).where(UserSQL.id == target_user_id))
+        target_user = user_result.scalar_one_or_none()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Usuário alvo não encontrado")
+
+        conversations = await build_conversation_payload(session, target_user_id)
+        await session.commit()
+        return conversations
+
+@router.get("/admin/{target_user_id}/conversations/{conversation_id}/messages")
+async def admin_list_user_conversation_messages(
+    target_user_id: str,
+    conversation_id: str,
+    limit: int = 50,
+    before: Optional[str] = None,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Acesso especial: admin visualiza mensagens de conversa pertencente ao escopo do colaborador."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+
+    async with AsyncSessionLocal() as session:
+        # Verificar se colaborador participa da conversa
+        membership_result = await session.execute(
+            select(ConversationMemberSQL).where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conversation_id,
+                    ConversationMemberSQL.user_id == target_user_id,
+                    ConversationMemberSQL.is_active == True,
+                )
+            )
+        )
+        if not membership_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Conversa fora do escopo do colaborador selecionado")
+
+        query = select(ChatMessageSQL, UserSQL).join(
+            UserSQL, ChatMessageSQL.sender_id == UserSQL.id
+        ).where(
+            and_(
+                ChatMessageSQL.conversation_id == conversation_id,
+                ChatMessageSQL.is_deleted == False
+            )
+        )
+
+        if before:
+            query = query.where(ChatMessageSQL.id < before)
+
+        query = query.order_by(ChatMessageSQL.created_at.desc()).limit(limit)
+        result = await session.execute(query)
+        messages = []
+        for msg, sender in result.all():
+            messages.append({
+                "id": msg.id,
+                "conversation_id": msg.conversation_id,
+                "sender": {
+                    "id": sender.id,
+                    "name": sender.name,
+                    "email": sender.email
+                },
+                "message": msg.message,
+                "tipo": msg.tipo,
+                "is_edited": msg.is_edited,
+                "is_deleted": msg.is_deleted,
+                "created_at": msg.created_at,
+                "reply_to_id": msg.reply_to_id
+            })
+
+        return list(reversed(messages))
+
+@router.get("/admin/{target_user_id}/conversations/{conversation_id}/members")
+async def admin_list_user_conversation_members(
+    target_user_id: str,
+    conversation_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Acesso especial: admin visualiza membros de conversa do escopo do colaborador."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
+
+    async with AsyncSessionLocal() as session:
+        membership_result = await session.execute(
+            select(ConversationMemberSQL).where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conversation_id,
+                    ConversationMemberSQL.user_id == target_user_id,
+                    ConversationMemberSQL.is_active == True,
+                )
+            )
+        )
+        if not membership_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Conversa fora do escopo do colaborador selecionado")
+
+        result = await session.execute(
+            select(ConversationMemberSQL, UserSQL, UserOnlineStatusSQL)
+            .join(UserSQL, ConversationMemberSQL.user_id == UserSQL.id)
+            .outerjoin(UserOnlineStatusSQL, UserSQL.id == UserOnlineStatusSQL.user_id)
+            .where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conversation_id,
+                    ConversationMemberSQL.is_active == True
+                )
+            )
+        )
+
+        members = []
+        for membership, user, online_status in result.all():
+            presence = resolve_presence(online_status)
+            members.append({
+                "user_id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": membership.role,
+                "joined_at": membership.joined_at,
+                "is_online": presence["is_online"],
+                "last_seen": presence["last_seen"],
+            })
+
+        return members
 
 @router.post("/direct")
 async def create_direct_chat(
@@ -565,13 +779,15 @@ async def get_conversation_members(
         
         members = []
         for membership, user, online_status in result.all():
+            presence = resolve_presence(online_status)
             members.append({
                 "user_id": user.id,
                 "name": user.name,
                 "email": user.email,
                 "role": membership.role,
                 "joined_at": membership.joined_at,
-                "is_online": online_status.is_online if online_status else False
+                "is_online": presence["is_online"],
+                "last_seen": presence["last_seen"],
             })
         
         return members
@@ -605,7 +821,7 @@ async def add_members_to_group(
         if conversation.tipo != "group":
             raise HTTPException(status_code=400, detail="Apenas grupos podem adicionar membros")
         
-        if conversation.tipo_grupo == "private" and membership.role != "admin":
+        if membership.role != "admin":
             raise HTTPException(status_code=403, detail="Apenas administradores podem adicionar membros")
         
         # Adicionar membros
@@ -640,6 +856,58 @@ async def add_members_to_group(
         
         await session.commit()
         return {"message": "Membros adicionados com sucesso"}
+
+@router.delete("/{conversation_id}/members/{user_id}")
+async def remove_member_from_group(
+    conversation_id: str,
+    user_id: str,
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """Remove membro de um grupo (apenas admins do grupo)."""
+    async with AsyncSessionLocal() as session:
+        # Verificar se solicitante é admin ativo do grupo
+        result = await session.execute(
+            select(ConversationMemberSQL, ConversationSQL)
+            .join(ConversationSQL)
+            .where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conversation_id,
+                    ConversationMemberSQL.user_id == current_user.id,
+                    ConversationMemberSQL.role == "admin",
+                    ConversationMemberSQL.is_active == True,
+                )
+            )
+        )
+        row = result.first()
+        if not row:
+            raise HTTPException(status_code=403, detail="Apenas administradores podem remover membros")
+
+        _, conversation = row
+        if conversation.tipo != "group":
+            raise HTTPException(status_code=400, detail="Ação permitida apenas para grupos")
+
+        # Não permitir remover o criador do grupo
+        if user_id == conversation.created_by:
+            raise HTTPException(status_code=400, detail="Não é possível remover o criador do grupo")
+
+        # Buscar alvo
+        result = await session.execute(
+            select(ConversationMemberSQL).where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conversation_id,
+                    ConversationMemberSQL.user_id == user_id,
+                    ConversationMemberSQL.is_active == True,
+                )
+            )
+        )
+        target_member = result.scalar_one_or_none()
+        if not target_member:
+            raise HTTPException(status_code=404, detail="Membro não encontrado")
+
+        target_member.is_active = False
+        target_member.left_at = datetime.utcnow()
+        await session.commit()
+        return {"message": "Membro removido com sucesso"}
 
 @router.put("/{conversation_id}/members/role")
 async def update_member_role(

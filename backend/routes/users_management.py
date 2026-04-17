@@ -4,7 +4,7 @@ Rotas para gerenciamento de usuários com permissões granulares
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, delete, and_
 from database_sql import AsyncSessionLocal
 from models_sql import UserSQL
@@ -14,10 +14,12 @@ from crud_sql import convert_to_dict, json_dumps, json_loads
 import json
 
 router = APIRouter(prefix="/users-management", tags=["User Management"])
+ONLINE_WINDOW_SECONDS = 90
 
 # Constantes
-CIDADES_DISPONIVEIS = ["Jacobina", "Ourolândia", "Umburanas", "Uberlândia", "Todas"]
+CIDADES_DISPONIVEIS = ["Todas", "Jacobina", "Ourolândia", "Umburanas", "Uberlândia"]
 SETORES_DISPONIVEIS = {
+    "Todos": ["Todos"],
     "Atendimento": ["Tickets", "Base de Conhecimento", "Relatórios"],
     "Contadores": ["Solicitações", "Relatórios", "Dashboard"],
     "Comercial": ["Clientes", "Propostas", "Relatórios"],
@@ -136,12 +138,18 @@ async def list_users_basic(current_user = Depends(get_current_user)):
                 select(UserOnlineStatusSQL).where(UserOnlineStatusSQL.user_id == user.id)
             )
             online_status = result.scalar_one_or_none()
+            now = datetime.utcnow()
+            last_activity = online_status.last_activity if online_status else None
+            last_seen = online_status.last_seen if online_status else None
+            is_recent = bool(last_activity and (now - last_activity) <= timedelta(seconds=ONLINE_WINDOW_SECONDS))
+            is_online = bool(online_status and online_status.is_online and is_recent)
             
             users_response.append({
                 'id': user.id,
                 'name': user.name,
                 'email': user.email,
-                'is_online': online_status.is_online if online_status else False
+                'is_online': is_online,
+                'last_seen': last_seen
             })
         
         return users_response

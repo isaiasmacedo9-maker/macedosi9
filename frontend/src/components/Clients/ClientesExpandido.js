@@ -1,947 +1,1875 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Building2, Eye, Search, Settings, SlidersHorizontal, UploadCloud } from 'lucide-react';
 import api from '../../config/api';
-import { 
-  Building2, Plus, Search, Filter, Edit, Trash2, Eye, 
-  Phone, Mail, MapPin, FileText, Download, Upload,
-  X, CheckCircle, AlertCircle, User, Briefcase
-} from 'lucide-react';
+import { mockClients } from '../../dev/mockData';
+import { getMockInternalServices } from '../../dev/clientPortalData';
 import { toast } from 'sonner';
+import { useAuth } from '../../contexts/AuthContext';
+
+const CLIENT_SETUP_STORAGE_KEY = 'mock_admin_client_setup_center_v2';
+const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
+const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
+const FINANCIAL_CLIENTS_KEY = 'mock_financial_clients_v2';
+const WORKFORCE_STORAGE_KEY = 'mock_trabalhista_workforce_v1';
+const FISCAL_CLIENT_SETUP_KEY = 'mock_fiscal_client_setup_v1';
+const CITY_ORDER = ['Jacobina', 'Ourolandia', 'Umburanas', 'Uberlandia'];
+
+const normalizeText = (value = '') =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const formatCityLabel = (city = '') => {
+  const normalized = normalizeText(city);
+  if (normalized === 'ourolandia') return 'Ourolandia';
+  if (normalized === 'uberlandia') return 'Uberlandia';
+  if (normalized === 'jacobina') return 'Jacobina';
+  if (normalized === 'umburanas') return 'Umburanas';
+  return city;
+};
+
+const mergeClientsUnique = (...lists) => {
+  const map = new Map();
+  lists.flat().forEach((client) => {
+    if (!client) return;
+    const key = client.id || client.cnpj || `${client.nome_empresa}-${client.nome_fantasia}`;
+    if (!map.has(key)) map.set(key, client);
+  });
+  return Array.from(map.values());
+};
+
+const sectionTabs = [
+  { id: 'setup_empresa', label: 'Setup Empresa' },
+  { id: 'setup_config', label: 'Setup Config' },
+  { id: 'acesso_cliente', label: 'Login Cliente' },
+  { id: 'dados_empresa', label: 'Dados da empresa' },
+  { id: 'modulos_liberados', label: 'Modulos' },
+  { id: 'servicos_vinculados', label: 'Servicos vinculados' },
+  { id: 'documentos', label: 'Documentos' },
+  { id: 'financeiro', label: 'Financeiro' },
+];
+
+const modulosBase = [
+  'Financeiro',
+  'Fiscal',
+  'Impostos',
+  'Serviços',
+  'Documentos',
+  'Trabalhista',
+  'Atendimento',
+  'Relatórios',
+  'Macedogram',
+  'Clube de Benefícios',
+  'Chat',
+];
+
+const regimeOptions = [
+  { value: 'mei', label: 'MEI' },
+  { value: 'simples_nacional', label: 'Simples Nacional' },
+  { value: 'lucro_presumido', label: 'Lucro Presumido' },
+  { value: 'lucro_real', label: 'Lucro Real' },
+];
+
+const tipoEmpresaOptions = [
+  'MEI',
+  'Microempresa',
+  'Empresa de pequeno porte',
+  'Empresa de medio porte',
+  'Empresa de grande porte',
+];
+
+const naturezaJuridicaOptions = [
+  'SLU',
+  'LTDA',
+  'EI',
+  'SA',
+  'EIRELI',
+  'Sociedade Simples',
+];
+
+const canalOptions = [
+  { value: 'email', label: 'Email' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'portal', label: 'Portal' },
+];
+
+const monitoramentoOptions = ['basico', 'padrao', 'premium'];
+const configTypeOptions = ['simples', 'intermediario', 'completo', 'personalizado'];
+const segmentoPrincipalOptions = [
+  { value: 'comercio', label: 'Comercio' },
+  { value: 'servico', label: 'Servico' },
+  { value: 'misto', label: 'Misto (Comercio e Servico)' },
+  { value: 'industria', label: 'Industria' },
+];
+const socioFuncaoOptions = ['Socio Administrador', 'Socio'];
+const setupTipoServicoOptions = ['Contabil', 'Fiscal', 'Trabalhista', 'Financeiro', 'Societario', 'Consultoria'];
+const setupRegistrarEntradasOptions = ['Manual', 'Importacao por planilha', 'Integracao automatica', 'Misto'];
+const setupFluxoServicoOptions = ['Padrao', 'Por etapa', 'Kanban', 'SLA rigido'];
+const setupPagamentosRecebimentosOptions = ['Basico', 'Intermediario', 'Avancado'];
+const setupTipoVendaOptions = ['Produto', 'Servico', 'Misto', 'Assinatura'];
+const setupSlaInternoOptions = ['24h', '48h', '72h', '5 dias uteis'];
+const estadoOptions = [
+  { sigla: 'AC', nome: 'Acre' },
+  { sigla: 'AL', nome: 'Alagoas' },
+  { sigla: 'AP', nome: 'Amapa' },
+  { sigla: 'AM', nome: 'Amazonas' },
+  { sigla: 'BA', nome: 'Bahia' },
+  { sigla: 'CE', nome: 'Ceara' },
+  { sigla: 'DF', nome: 'Distrito Federal' },
+  { sigla: 'ES', nome: 'Espirito Santo' },
+  { sigla: 'GO', nome: 'Goias' },
+  { sigla: 'MA', nome: 'Maranhao' },
+  { sigla: 'MT', nome: 'Mato Grosso' },
+  { sigla: 'MS', nome: 'Mato Grosso do Sul' },
+  { sigla: 'MG', nome: 'Minas Gerais' },
+  { sigla: 'PA', nome: 'Para' },
+  { sigla: 'PB', nome: 'Paraiba' },
+  { sigla: 'PR', nome: 'Parana' },
+  { sigla: 'PE', nome: 'Pernambuco' },
+  { sigla: 'PI', nome: 'Piaui' },
+  { sigla: 'RJ', nome: 'Rio de Janeiro' },
+  { sigla: 'RN', nome: 'Rio Grande do Norte' },
+  { sigla: 'RS', nome: 'Rio Grande do Sul' },
+  { sigla: 'RO', nome: 'Rondonia' },
+  { sigla: 'RR', nome: 'Roraima' },
+  { sigla: 'SC', nome: 'Santa Catarina' },
+  { sigla: 'SP', nome: 'Sao Paulo' },
+  { sigla: 'SE', nome: 'Sergipe' },
+  { sigla: 'TO', nome: 'Tocantins' },
+];
+
+const formatCep = (value = '') => {
+  const digits = String(value).replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}-${digits.slice(5)}`;
+};
+
+const formatRegimeLabel = (value = '') =>
+  String(value || '')
+    .split('_')
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : ''))
+    .join(' ');
+
+const readPortalUsers = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CLIENT_PORTAL_USERS_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const savePortalUsers = (list) => {
+  localStorage.setItem(CLIENT_PORTAL_USERS_KEY, JSON.stringify(list));
+};
+
+const enforceSocioAdminRule = (socios = []) => {
+  if (!Array.isArray(socios) || socios.length === 0) return [];
+  if (socios.length === 1) {
+    return socios.map((socio) => ({ ...socio, funcao: 'Socio Administrador' }));
+  }
+  let adminFound = false;
+  const normalized = socios.map((socio) => {
+    const isAdmin = socio?.funcao === 'Socio Administrador';
+    if (isAdmin && !adminFound) {
+      adminFound = true;
+      return { ...socio, funcao: 'Socio Administrador' };
+    }
+    return { ...socio, funcao: 'Socio' };
+  });
+  if (!adminFound) normalized[0] = { ...normalized[0], funcao: 'Socio Administrador' };
+  return normalized;
+};
+const customToggleFields = [
+  { key: 'mostrarPix', label: 'Mostrar PIX' },
+  { key: 'mostrarContasBancarias', label: 'Mostrar contas bancárias' },
+  { key: 'mostrarCategorias', label: 'Mostrar categorias' },
+  { key: 'mostrarFechamentos', label: 'Mostrar fechamentos' },
+  { key: 'mostrarValidadeSaldo', label: 'Mostrar validade de saldo' },
+  { key: 'mostrarOrcamento', label: 'Mostrar orçamento' },
+  { key: 'mostrarAssinatura', label: 'Mostrar assinatura' },
+  { key: 'mostrarControle', label: 'Mostrar controle' },
+  { key: 'mostrarCustoFixo', label: 'Mostrar custo fixo' },
+  { key: 'mostrarMetas', label: 'Mostrar metas' },
+  { key: 'mostrarResumoSemanal', label: 'Mostrar resumo semanal' },
+  { key: 'permitirCriarContas', label: 'Permitir criar contas' },
+  { key: 'permitirRegistrarPagamentos', label: 'Permitir registrar pagamentos' },
+  { key: 'permitirRegistrarRecebimentos', label: 'Permitir registrar recebimentos' },
+  { key: 'permitirSaidas', label: 'Permitir saídas' },
+  { key: 'alertaVencimento', label: 'Alerta de vencimento' },
+  { key: 'avisoAoRegistrar', label: 'Aviso ao registrar' },
+  { key: 'travarEdicaoAposPago', label: 'Travar edição após pago' },
+  { key: 'ativarModoVendaAVenda', label: 'Ativar modo venda a venda' },
+  { key: 'ativarModoCpf', label: 'Ativar modo CPF' },
+];
+
+const suggestedModulesByConfigType = {
+  simples: ['Impostos', 'Financeiro', 'Documentos'],
+  intermediario: ['Impostos', 'Financeiro', 'Fiscal', 'Serviços', 'Documentos', 'Relatórios'],
+  completo: ['Financeiro', 'Fiscal', 'Impostos', 'Serviços', 'Documentos', 'Atendimento', 'Relatórios', 'Chat'],
+  personalizado: modulosBase,
+};
 
 const ClientesExpandido = () => {
   const { user } = useAuth();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [modalType, setModalType] = useState('create'); // create, edit
+  const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
-  const [showFilters, setShowFilters] = useState(false);
-  
-  const [filters, setFilters] = useState({
-    search: '',
-    cidade: '',
-    setor: '',
-    status: ''
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [activeSection, setActiveSection] = useState('setup_empresa');
+  const [clientSetupMap, setClientSetupMap] = useState({});
+  const [novoSocio, setNovoSocio] = useState({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
+  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [selectedCityFilter, setSelectedCityFilter] = useState('Todas as Cidades');
+  const [categoryChecks, setCategoryChecks] = useState({
+    isentos: true,
+    permuta: true,
+    semMovimento: true,
+    semFuncionarios: true,
   });
-
-  const [formData, setFormData] = useState({
+  const [newClientForm, setNewClientForm] = useState({
     nome_empresa: '',
     nome_fantasia: '',
     cnpj: '',
-    inscricao_estadual: '',
-    inscricao_municipal: '',
-    email: '',
-    telefone: '',
-    celular: '',
-    cep: '',
-    logradouro: '',
-    numero: '',
-    complemento: '',
-    bairro: '',
-    cidade: '',
-    estado: '',
-    setor: 'contabilidade',
+    tipo_regime: 'simples_nacional',
     status: 'ativo',
-    responsavel: '',
-    data_inicio_contrato: '',
-    observacoes: ''
+    cidade: 'Jacobina',
   });
-
-  const [setores] = useState([
-    'contabilidade',
-    'fiscal',
-    'trabalhista',
-    'financeiro',
-    'societario',
-    'consultoria'
-  ]);
-
-  const [cidades] = useState([
-    'São Paulo',
-    'Rio de Janeiro',
-    'Belo Horizonte',
-    'Brasília',
-    'Salvador',
-    'Fortaleza',
-    'Curitiba',
-    'Recife',
-    'Porto Alegre',
-    'Manaus'
-  ]);
+  const [showPortalPassword, setShowPortalPassword] = useState(false);
 
   useEffect(() => {
     loadClients();
+    loadSetupMap();
   }, []);
 
   const loadClients = async () => {
+    let localMockClients = [];
+    try {
+      const localRaw = localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY);
+      const parsed = localRaw ? JSON.parse(localRaw) : [];
+      localMockClients = Array.isArray(parsed) ? parsed : [];
+    } catch {}
+
     try {
       setLoading(true);
       const response = await api.get('/clients?limit=1000');
-      setClients(response.data.clients || []);
+      const apiClients = response.data?.clients || response.data || [];
+      const baseClients = Array.isArray(apiClients) && apiClients.length ? apiClients : mockClients;
+      setClients(mergeClientsUnique(baseClients, localMockClients));
     } catch (error) {
-      console.error('Error loading clients:', error);
-      toast.error('Erro ao carregar clientes');
-      setClients([]);
+      console.error('Erro ao carregar clientes:', error);
+      setClients(mergeClientsUnique(mockClients, localMockClients));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateClient = async (e) => {
-    e.preventDefault();
+  const loadSetupMap = () => {
     try {
-      await api.post('/clients', formData);
-      toast.success('Cliente criado com sucesso!');
-      
-      // Notificar sobre envio automático para financeiro
-      if (formData.cidade) {
-        toast.info(`📨 Notificação automática enviada para o setor Financeiro de ${formData.cidade}`, {
-          duration: 5000
-        });
+      const raw = localStorage.getItem(CLIENT_SETUP_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        setClientSetupMap(parsed);
       }
-      
-      setShowModal(false);
-      resetForm();
-      loadClients();
     } catch (error) {
-      toast.error('Erro ao criar cliente: ' + (error.response?.data?.detail || 'Erro desconhecido'));
+      console.error('Erro ao carregar setup map:', error);
     }
   };
 
-  const handleUpdateClient = async (e) => {
-    e.preventDefault();
-    try {
-      await api.put(`/clients/${selectedClient.id}`, formData);
-      toast.success('Cliente atualizado com sucesso!');
-      setShowModal(false);
-      resetForm();
-      loadClients();
-    } catch (error) {
-      toast.error('Erro ao atualizar cliente: ' + (error.response?.data?.detail || 'Erro desconhecido'));
-    }
+  const saveSetupMap = (nextValueOrFn) => {
+    setClientSetupMap((current) => {
+      const next = typeof nextValueOrFn === 'function' ? nextValueOrFn(current) : nextValueOrFn;
+      localStorage.setItem(CLIENT_SETUP_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
-  const handleDeleteClient = async (id, nome) => {
-    if (!window.confirm(`Tem certeza que deseja excluir o cliente "${nome}"?`)) return;
-    
-    try {
-      await api.delete(`/clients/${id}`);
-      toast.success('Cliente excluído com sucesso!');
-      loadClients();
-    } catch (error) {
-      toast.error('Erro ao excluir cliente');
-    }
-  };
+  const getClientRegime = (client) => client?.tipo_regime || client?.regime || 'nao_definido';
 
-  const handleBuscarCEP = async () => {
-    if (formData.cep.length < 8) return;
-    
+  const financialMap = useMemo(() => {
     try {
-      const cep = formData.cep.replace(/\D/g, '');
-      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      const data = await response.json();
-      
-      if (data.erro) {
-        toast.error('CEP não encontrado');
-        return;
+      const list = JSON.parse(localStorage.getItem(FINANCIAL_CLIENTS_KEY) || '[]');
+      const map = new Map();
+      if (Array.isArray(list)) {
+        list.forEach((item) => map.set(String(item.client_id), item));
       }
-      
-      setFormData({
-        ...formData,
-        logradouro: data.logradouro,
-        bairro: data.bairro,
-        cidade: data.localidade,
-        estado: data.uf
-      });
-      
-      toast.success('Endereço preenchido automaticamente');
-    } catch (error) {
-      toast.error('Erro ao buscar CEP');
+      return map;
+    } catch {
+      return new Map();
     }
+  }, [showConfigModal, clients.length]);
+
+  const workforceMap = useMemo(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(WORKFORCE_STORAGE_KEY) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }, [showConfigModal, clients.length]);
+
+  const fiscalSetupMap = useMemo(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(FISCAL_CLIENT_SETUP_KEY) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }, [showConfigModal, clients.length]);
+
+  const allowedCitiesSet = useMemo(() => {
+    if (user?.role === 'admin') return null;
+    const cities = Array.isArray(user?.allowed_cities) ? user.allowed_cities : [];
+    const normalized = cities.map(normalizeText);
+    if (!normalized.length || normalized.includes('todas')) return null;
+    return new Set(normalized);
+  }, [user]);
+
+  const clientsBaseFiltered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    let base = [...clients];
+
+    if (allowedCitiesSet) {
+      base = base.filter((client) => allowedCitiesSet.has(normalizeText(client.cidade || '')));
+    }
+
+    base = base.filter((client) => {
+      const fin = financialMap.get(String(client.id));
+      const workforce = workforceMap[String(client.id)];
+      const fiscal = fiscalSetupMap[String(client.id)] || {};
+
+      if (!categoryChecks.isentos && fin?.tipo_pagamento_especial === 'isento') return false;
+      if (!categoryChecks.permuta && fin?.tipo_pagamento_especial === 'permuta') return false;
+      const statusFiscal = fiscal.statusFiscal || (fiscal.temMovimento ? 'com_movimento' : 'sem_movimento');
+      if (!categoryChecks.semMovimento && statusFiscal === 'sem_movimento') return false;
+      const qtdFuncionarios = Array.isArray(workforce?.funcionarios)
+        ? workforce.funcionarios.length
+        : Number(fin?.quantidade_funcionarios || 0);
+      if (!categoryChecks.semFuncionarios && qtdFuncionarios === 0) return false;
+      return true;
+    });
+
+    if (!term) return base;
+    return base.filter((client) => (
+      client.nome_empresa?.toLowerCase().includes(term) ||
+      client.nome_fantasia?.toLowerCase().includes(term) ||
+      client.cnpj?.toLowerCase().includes(term)
+    ));
+  }, [clients, search, categoryChecks, allowedCitiesSet, financialMap, workforceMap, fiscalSetupMap]);
+
+  const filteredClients = useMemo(() => {
+    if (selectedCityFilter === 'Todas as Cidades') return clientsBaseFiltered;
+    return clientsBaseFiltered.filter((client) => normalizeText(client.cidade || '') === normalizeText(selectedCityFilter));
+  }, [clientsBaseFiltered, selectedCityFilter]);
+
+  const cityCounts = useMemo(() => {
+    const countMap = new Map();
+    clientsBaseFiltered.forEach((client) => {
+      const city = client.cidade || '';
+      if (!city) return;
+      countMap.set(city, (countMap.get(city) || 0) + 1);
+    });
+    const citiesOrdered = Array.from(countMap.keys()).sort((a, b) => {
+      const ai = CITY_ORDER.findIndex((x) => normalizeText(x) === normalizeText(a));
+      const bi = CITY_ORDER.findIndex((x) => normalizeText(x) === normalizeText(b));
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b, 'pt-BR');
+    });
+    return citiesOrdered.map((city) => ({ city, count: countMap.get(city) || 0 }));
+  }, [clientsBaseFiltered]);
+
+  const selectedSetup = useMemo(() => {
+    if (!selectedClient) return null;
+    const base = clientSetupMap[selectedClient.id] || createDefaultClientSetup(selectedClient);
+    const portalUser = readPortalUsers().find((item) => String(item.clientRefId) === String(selectedClient.id));
+    return {
+      ...base,
+      acessoCliente: {
+        ...(base.acessoCliente || {}),
+        nome: base.acessoCliente?.nome || portalUser?.nome || selectedClient.nome_fantasia || '',
+        email: base.acessoCliente?.email || portalUser?.email || '',
+        senha: base.acessoCliente?.senha || portalUser?.senha || '',
+        clienteId: base.acessoCliente?.clienteId || portalUser?.clienteId || selectedClient.id,
+        salvo: Boolean(base.acessoCliente?.salvo || portalUser),
+        atualizadoEm: base.acessoCliente?.atualizadoEm || portalUser?.updatedAt || '',
+      },
+    };
+  }, [clientSetupMap, selectedClient]);
+
+  const selectedFinancialData = useMemo(() => {
+    if (!selectedClient) return null;
+    try {
+      const list = JSON.parse(localStorage.getItem(FINANCIAL_CLIENTS_KEY) || '[]');
+      if (!Array.isArray(list)) return null;
+      return list.find((item) => String(item.client_id) === String(selectedClient.id)) || null;
+    } catch {
+      return null;
+    }
+  }, [selectedClient]);
+
+  const cityOptions = useMemo(() => {
+    const base = new Set(['Jacobina', 'Ourolandia', 'Umburanas', 'Uberlandia']);
+    clients.forEach((client) => {
+      if (client?.cidade) base.add(client.cidade);
+    });
+    Object.values(clientSetupMap || {}).forEach((cfg) => {
+      const city = cfg?.setupEmpresa?.enderecoCidade;
+      if (city) base.add(city);
+    });
+    return Array.from(base).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [clients, clientSetupMap]);
+
+  const setupTypeLabel = (client) => {
+    const cfg = clientSetupMap[client.id] || createDefaultClientSetup(client);
+    if (cfg.setupEmpresaSalvo && cfg.setupConfigSalvo) return 'Configurado';
+    if (cfg.setupEmpresaSalvo) return 'Parcial';
+    return 'Inicial';
   };
 
-  const resetForm = () => {
-    setFormData({
+  const setupTypeClass = (label) => {
+    if (label === 'Configurado') return 'bg-emerald-600/20 text-emerald-300 border border-emerald-600/30';
+    if (label === 'Parcial') return 'bg-amber-600/20 text-amber-300 border border-amber-600/30';
+    return 'bg-zinc-600/20 text-zinc-300 border border-zinc-600/30';
+  };
+
+  const ensureClientSetup = (client) => {
+    saveSetupMap((current) => {
+      if (current[client.id]) return current;
+      return { ...current, [client.id]: createDefaultClientSetup(client) };
+    });
+  };
+
+  const openConfig = (client) => {
+    setSelectedClient(client);
+    ensureClientSetup(client);
+    setNovoSocio({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
+    setActiveSection('setup_empresa');
+    setShowConfigModal(true);
+  };
+
+  const openClientData = (client) => {
+    setSelectedClient(client);
+    ensureClientSetup(client);
+    setNovoSocio({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
+    setActiveSection('dados_empresa');
+    setShowConfigModal(true);
+  };
+
+  const updateSetupEmpresa = (field, value) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupEmpresa: { ...base.setupEmpresa, [field]: value },
+        },
+      };
+    });
+  };
+
+  const toggleSetupEmpresaBoolean = (field, clearField) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      const nextBoolean = !Boolean(base.setupEmpresa[field]);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupEmpresa: {
+            ...base.setupEmpresa,
+            [field]: nextBoolean,
+            ...(clearField && !nextBoolean ? { [clearField]: '' } : {}),
+          },
+        },
+      };
+    });
+  };
+
+  const getSociosArray = () => {
+    const socios = selectedSetup?.setupEmpresa?.socios;
+    if (Array.isArray(socios)) return enforceSocioAdminRule(socios);
+    if (typeof socios === 'string' && socios.trim()) {
+      return [{ nome: socios.trim(), participacao: '', cpf: '', funcao: 'Socio Administrador' }];
+    }
+    return [];
+  };
+
+  const adicionarSocio = () => {
+    if (!selectedClient) return;
+    if (!novoSocio.nome.trim()) {
+      toast.error('Informe ao menos o nome do socio para adicionar.');
+      return;
+    }
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      const sociosAtuais = Array.isArray(base.setupEmpresa.socios)
+        ? base.setupEmpresa.socios
+        : (typeof base.setupEmpresa.socios === 'string' && base.setupEmpresa.socios.trim()
+          ? [{ nome: base.setupEmpresa.socios.trim(), participacao: '', cpf: '', funcao: '' }]
+          : []);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupEmpresa: {
+            ...base.setupEmpresa,
+            socios: enforceSocioAdminRule([
+              ...sociosAtuais,
+              {
+                nome: novoSocio.nome.trim(),
+                participacao: novoSocio.participacao.trim(),
+                cpf: novoSocio.cpf.trim(),
+                funcao: novoSocio.funcao.trim() || 'Socio',
+              },
+            ]),
+          },
+        },
+      };
+    });
+    setNovoSocio({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
+  };
+
+  const removerSocio = (index) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      const sociosAtuais = Array.isArray(base.setupEmpresa.socios) ? base.setupEmpresa.socios : [];
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupEmpresa: {
+            ...base.setupEmpresa,
+            socios: enforceSocioAdminRule(sociosAtuais.filter((_, idx) => idx !== index)),
+          },
+        },
+      };
+    });
+  };
+
+  const definirSocioAdministrador = (indexAdministrador) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      const sociosAtuais = Array.isArray(base.setupEmpresa.socios) ? base.setupEmpresa.socios : [];
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupEmpresa: {
+            ...base.setupEmpresa,
+            socios: enforceSocioAdminRule(
+              sociosAtuais.map((socio, index) => ({
+                ...socio,
+                funcao: index === indexAdministrador ? 'Socio Administrador' : 'Socio',
+              })),
+            ),
+          },
+        },
+      };
+    });
+  };
+
+  const saveSetupEmpresa = () => {
+    if (!selectedClient) return;
+    const setup = selectedSetup?.setupEmpresa;
+    if (!setup?.razaoSocial || !setup?.cnpj || !setup?.regimeTributario) {
+      toast.error('Preencha os campos obrigatorios: razao social, CNPJ e regime tributario.');
+      return;
+    }
+    if (setup?.informarInscricaoEstadual && !setup?.inscricaoEstadual) {
+      toast.error('Marcou inscricao estadual. Preencha o campo antes de salvar.');
+      return;
+    }
+    if (setup?.informarInscricaoMunicipal && !setup?.inscricaoMunicipal) {
+      toast.error('Marcou inscricao municipal. Preencha o campo antes de salvar.');
+      return;
+    }
+    if (setup?.informarNaturezaJuridica && !setup?.naturezaJuridica) {
+      toast.error('Marcou natureza juridica. Selecione uma opcao antes de salvar.');
+      return;
+    }
+
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupEmpresaSalvo: true,
+          setupEmpresa: { ...base.setupEmpresa },
+          setupConfig: {
+            ...base.setupConfig,
+            regime: base.setupEmpresa.regimeTributario,
+          },
+        },
+      };
+    });
+    toast.success('Setup Empresa salvo. Setup Config liberado.');
+  };
+
+  const updateSetupConfig = (field, value) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupConfig: { ...base.setupConfig, [field]: value },
+        },
+      };
+    });
+  };
+
+  const saveSetupConfig = () => {
+    if (!selectedClient) return;
+    if (!selectedSetup?.setupEmpresaSalvo) {
+      toast.error('Salve primeiro o Setup Empresa.');
+      return;
+    }
+    if (!selectedSetup?.setupConfig?.tipoConfiguracao) {
+      toast.error('Selecione o tipo de configuracao.');
+      return;
+    }
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupConfigSalvo: true,
+          setupConfig: {
+            ...base.setupConfig,
+            regime: base.setupEmpresa.regimeTributario,
+          },
+        },
+      };
+    });
+    toast.success('Setup Config salvo.');
+  };
+
+  const updateCustomToggle = (field) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          setupConfig: {
+            ...base.setupConfig,
+            [field]: !base.setupConfig[field],
+          },
+        },
+      };
+    });
+  };
+
+  const toggleModulo = (modulo) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      const exists = base.modulosLiberados.includes(modulo);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          modulosLiberados: exists
+            ? base.modulosLiberados.filter((item) => item !== modulo)
+            : [...base.modulosLiberados, modulo],
+        },
+      };
+    });
+  };
+
+  const applySuggestedModules = () => {
+    if (!selectedClient || !selectedSetup) return;
+    const type = selectedSetup.setupConfig.tipoConfiguracao || 'simples';
+    const suggested = suggestedModulesByConfigType[type] || suggestedModulesByConfigType.simples;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          modulosLiberados: [...suggested],
+        },
+      };
+    });
+    toast.success('Módulos sugeridos aplicados.');
+  };
+
+  const updateSetupAcessoCliente = (field, value) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          acessoCliente: {
+            ...base.acessoCliente,
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const saveClientPortalLogin = () => {
+    if (!selectedClient || !selectedSetup) return;
+
+    const nome = String(selectedSetup.acessoCliente?.nome || '').trim();
+    const email = String(selectedSetup.acessoCliente?.email || '').trim().toLowerCase();
+    const senha = String(selectedSetup.acessoCliente?.senha || '').trim();
+
+    if (!nome || !email || !senha) {
+      toast.error('Preencha nome, email e senha do login do cliente.');
+      return;
+    }
+
+    const currentPortalUsers = readPortalUsers();
+    const existingByClient = currentPortalUsers.find((item) => String(item.clientRefId) === String(selectedClient.id));
+    const existingByEmail = currentPortalUsers.find((item) => String(item.email).toLowerCase() === email);
+
+    const nextUser = {
+      id: existingByClient?.id || existingByEmail?.id || `portal-user-${Date.now()}`,
+      clientRefId: selectedClient.id,
+      clienteId: selectedSetup.acessoCliente?.clienteId || selectedClient.id,
+      nome,
+      email,
+      senha,
+      createdAt: existingByClient?.createdAt || existingByEmail?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const filtered = currentPortalUsers.filter(
+      (item) =>
+        String(item.clientRefId) !== String(selectedClient.id) &&
+        String(item.email).toLowerCase() !== email,
+    );
+    savePortalUsers([nextUser, ...filtered]);
+
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          acessoCliente: {
+            ...base.acessoCliente,
+            nome,
+            email,
+            senha,
+            salvo: true,
+            atualizadoEm: new Date().toISOString(),
+            clienteId: nextUser.clienteId,
+          },
+        },
+      };
+    });
+
+    toast.success('Login do cliente salvo para o portal.');
+  };
+
+  const handleTabClick = (tabId) => {
+    if (tabId === 'setup_config' && !selectedSetup?.setupEmpresaSalvo) {
+      toast.error('Setup Config bloqueado. Salve primeiro o Setup Empresa.');
+      return;
+    }
+    setActiveSection(tabId);
+  };
+
+  const handleCreateClientMock = () => {
+    if (!newClientForm.nome_empresa || !newClientForm.cnpj) {
+      toast.error('Informe ao menos nome da empresa e CNPJ.');
+      return;
+    }
+    const item = {
+      id: `mock-client-${Date.now()}`,
+      nome_empresa: newClientForm.nome_empresa,
+      nome_fantasia: newClientForm.nome_fantasia || newClientForm.nome_empresa,
+      cnpj: newClientForm.cnpj,
+      tipo_regime: newClientForm.tipo_regime,
+      status: newClientForm.status,
+      cidade: newClientForm.cidade,
+      created_at: new Date().toISOString(),
+    };
+    setClients((prev) => {
+      const next = mergeClientsUnique([item], prev);
+      localStorage.setItem(MOCK_ADMIN_CLIENTS_KEY, JSON.stringify(next));
+      return next;
+    });
+    setShowNewClientModal(false);
+    setNewClientForm({
       nome_empresa: '',
       nome_fantasia: '',
       cnpj: '',
-      inscricao_estadual: '',
-      inscricao_municipal: '',
-      email: '',
-      telefone: '',
-      celular: '',
-      cep: '',
-      logradouro: '',
-      numero: '',
-      complemento: '',
-      bairro: '',
-      cidade: '',
-      estado: '',
-      setor: 'contabilidade',
+      tipo_regime: 'simples_nacional',
       status: 'ativo',
-      responsavel: '',
-      data_inicio_contrato: '',
-      observacoes: ''
+      cidade: 'Jacobina',
     });
-    setSelectedClient(null);
-  };
-
-  const openCreateModal = () => {
-    setModalType('create');
-    resetForm();
-    setShowModal(true);
-  };
-
-  const openEditModal = (client) => {
-    setModalType('edit');
-    setSelectedClient(client);
-    setFormData({
-      nome_empresa: client.nome_empresa || '',
-      nome_fantasia: client.nome_fantasia || '',
-      cnpj: client.cnpj || '',
-      inscricao_estadual: client.inscricao_estadual || '',
-      inscricao_municipal: client.inscricao_municipal || '',
-      email: client.email || '',
-      telefone: client.telefone || '',
-      celular: client.celular || '',
-      cep: client.cep || '',
-      logradouro: client.logradouro || '',
-      numero: client.numero || '',
-      complemento: client.complemento || '',
-      bairro: client.bairro || '',
-      cidade: client.cidade || '',
-      estado: client.estado || '',
-      setor: client.setor || 'contabilidade',
-      status: client.status || 'ativo',
-      responsavel: client.responsavel || '',
-      data_inicio_contrato: client.data_inicio_contrato || '',
-      observacoes: client.observacoes || ''
-    });
-    setShowModal(true);
-  };
-
-  const openDetailsModal = (client) => {
-    setSelectedClient(client);
-    setShowDetailsModal(true);
-  };
-
-  const exportData = async (formato) => {
-    try {
-      const response = await api.get(`/clients/export?formato=${formato}`);
-      
-      if (formato === 'csv') {
-        const blob = new Blob([response.data], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `clientes_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-      }
-      
-      toast.success(`Dados exportados em ${formato.toUpperCase()}`);
-    } catch (error) {
-      toast.error('Erro ao exportar dados');
-    }
-  };
-
-  const filteredClients = clients.filter(client => {
-    if (filters.search) {
-      const search = filters.search.toLowerCase();
-      const matchSearch = 
-        client.nome_empresa?.toLowerCase().includes(search) ||
-        client.nome_fantasia?.toLowerCase().includes(search) ||
-        client.cnpj?.includes(search) ||
-        client.email?.toLowerCase().includes(search);
-      if (!matchSearch) return false;
-    }
-    
-    if (filters.cidade && client.cidade !== filters.cidade) return false;
-    if (filters.setor && client.setor !== filters.setor) return false;
-    if (filters.status && client.status !== filters.status) return false;
-    
-    return true;
-  });
-
-  const getStatusColor = (status) => {
-    const colors = {
-      'ativo': 'bg-green-600/20 text-green-400 border-green-600/30',
-      'inativo': 'bg-gray-600/20 text-gray-400 border-gray-600/30',
-      'suspenso': 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30',
-      'inadimplente': 'bg-red-600/20 text-red-400 border-red-600/30'
-    };
-    return colors[status] || colors['ativo'];
-  };
-
-  const formatCNPJ = (cnpj) => {
-    if (!cnpj) return '-';
-    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
-  };
-
-  const formatPhone = (phone) => {
-    if (!phone) return '-';
-    return phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+    toast.success('Cliente mock adicionado.');
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold neon-text-white flex items-center">
-            <span className="mr-3">🏢</span>
+          <h1 className="text-3xl font-bold neon-text-white flex items-center gap-2">
+            <Building2 className="w-8 h-8 text-red-400" />
             Clientes
           </h1>
-          <p className="text-gray-400 mt-2">Base única de clientes - usada por todos os setores</p>
+          <p className="text-gray-400 mt-2">Centro de configuracao do cliente no sistema.</p>
         </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={() => exportData('csv')}
-            className="btn-secondary px-4 py-2 rounded-xl flex items-center space-x-2"
-          >
-            <Download className="w-4 h-4" />
-            <span>Exportar</span>
-          </button>
-          <button
-            onClick={openCreateModal}
-            className="btn-futuristic px-6 py-2 rounded-xl text-white font-semibold flex items-center space-x-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Novo Cliente</span>
-          </button>
+        <button
+          type="button"
+          onClick={() => setShowNewClientModal(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-200 hover:bg-red-600/30"
+        >
+          <UploadCloud className="w-4 h-4" />
+          Novo Cliente
+        </button>
+      </div>
+
+      <div className="glass rounded-xl p-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-black/30 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-white"
+            placeholder="Buscar por empresa, fantasia ou CNPJ..."
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-200">
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={categoryChecks.isentos} onChange={(e) => setCategoryChecks((p) => ({ ...p, isentos: e.target.checked }))} />
+            Clientes Isentos
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={categoryChecks.permuta} onChange={(e) => setCategoryChecks((p) => ({ ...p, permuta: e.target.checked }))} />
+            Clientes Permuta
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={categoryChecks.semMovimento} onChange={(e) => setCategoryChecks((p) => ({ ...p, semMovimento: e.target.checked }))} />
+            Clientes Sem Movimento
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input type="checkbox" checked={categoryChecks.semFuncionarios} onChange={(e) => setCategoryChecks((p) => ({ ...p, semFuncionarios: e.target.checked }))} />
+            Clientes Sem Funcionarios
+          </label>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="glass p-4 rounded-xl border border-blue-600/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm">Total Clientes</p>
-              <p className="text-2xl font-bold text-blue-400">{clients.length}</p>
-            </div>
-            <Building2 className="w-8 h-8 text-blue-400 opacity-60" />
-          </div>
-        </div>
-
-        <div className="glass p-4 rounded-xl border border-green-600/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm">Ativos</p>
-              <p className="text-2xl font-bold text-green-400">
-                {clients.filter(c => c.status === 'ativo').length}
-              </p>
-            </div>
-            <CheckCircle className="w-8 h-8 text-green-400 opacity-60" />
-          </div>
-        </div>
-
-        <div className="glass p-4 rounded-xl border border-yellow-600/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm">Inativos</p>
-              <p className="text-2xl font-bold text-yellow-400">
-                {clients.filter(c => c.status === 'inativo').length}
-              </p>
-            </div>
-            <AlertCircle className="w-8 h-8 text-yellow-400 opacity-60" />
-          </div>
-        </div>
-
-        <div className="glass p-4 rounded-xl border border-purple-600/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm">Setores</p>
-              <p className="text-2xl font-bold text-purple-400">{setores.length}</p>
-            </div>
-            <Briefcase className="w-8 h-8 text-purple-400 opacity-60" />
-          </div>
-        </div>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="glass rounded-xl p-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <div className="md:col-span-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => setFilters({...filters, search: e.target.value})}
-                className="w-full bg-black/30 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-white"
-                placeholder="Buscar por nome, fantasia, CNPJ ou email..."
-              />
-            </div>
-          </div>
-
-          <div>
-            <select
-              value={filters.cidade}
-              onChange={(e) => setFilters({...filters, cidade: e.target.value})}
-              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-4">
+        <aside className="glass rounded-2xl p-4 h-fit">
+          <h3 className="text-sm font-semibold text-white mb-3">Cidades</h3>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCityFilter('Todas as Cidades')}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
+                selectedCityFilter === 'Todas as Cidades'
+                  ? 'bg-red-500/15 border border-red-500/35 text-red-100'
+                  : 'bg-black/20 border border-gray-700 text-gray-200 hover:bg-black/35'
+              }`}
             >
-              <option value="">Todas as Cidades</option>
-              {cidades.map(cidade => (
-                <option key={cidade} value={cidade}>{cidade}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <select
-              value={filters.setor}
-              onChange={(e) => setFilters({...filters, setor: e.target.value})}
-              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            >
-              <option value="">Todos os Setores</option>
-              {setores.map(setor => (
-                <option key={setor} value={setor} className="capitalize">{setor}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters({...filters, status: e.target.value})}
-              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-            >
-              <option value="">Todos os Status</option>
-              <option value="ativo">Ativo</option>
-              <option value="inativo">Inativo</option>
-              <option value="suspenso">Suspenso</option>
-              <option value="inadimplente">Inadimplente</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Clients Table */}
-      <div className="glass rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="table-futuristic w-full">
-            <thead>
-              <tr className="border-b border-red-600/30">
-                <th className="text-left p-4 text-gray-300 font-semibold">Empresa</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Contato</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Cidade</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Setor</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Status</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="7" className="text-center p-8">
-                    <div className="flex items-center justify-center space-x-2">
-                      <div className="spinner w-6 h-6 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-gray-400">Carregando clientes...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredClients.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="text-center p-8">
-                    <div className="text-gray-400">
-                      <Building2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p>Nenhum cliente encontrado</p>
-                      <button
-                        onClick={openCreateModal}
-                        className="btn-futuristic px-4 py-2 rounded-lg mt-3"
-                      >
-                        Adicionar primeiro cliente
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredClients.map((client) => (
-                  <tr key={client.id} className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors">
-                    <td className="p-4">
-                      <div>
-                        <p className="text-white font-bold">{client.nome_empresa}</p>
-                        {client.nome_fantasia && (
-                          <p className="text-xs text-gray-400">{client.nome_fantasia}</p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-4 text-gray-300 font-mono text-sm">
-                      {formatCNPJ(client.cnpj)}
-                    </td>
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        {client.email && (
-                          <div className="flex items-center space-x-1 text-xs text-gray-300">
-                            <Mail className="w-3 h-3" />
-                            <span>{client.email}</span>
-                          </div>
-                        )}
-                        {client.telefone && (
-                          <div className="flex items-center space-x-1 text-xs text-gray-300">
-                            <Phone className="w-3 h-3" />
-                            <span>{formatPhone(client.telefone)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-4 text-gray-300">
-                      {client.cidade && (
-                        <div className="flex items-center space-x-1">
-                          <MapPin className="w-4 h-4 text-blue-400" />
-                          <span>{client.cidade}/{client.estado}</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-400 border border-blue-600/30 capitalize">
-                        {client.setor}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(client.status)} capitalize`}>
-                        {client.status}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => openDetailsModal(client)}
-                          className="p-2 hover:bg-blue-600/20 rounded-lg transition-colors"
-                          title="Ver Detalhes"
-                        >
-                          <Eye className="w-4 h-4 text-blue-400" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(client)}
-                          className="p-2 hover:bg-green-600/20 rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit className="w-4 h-4 text-green-400" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClient(client.id, client.nome_empresa)}
-                          className="p-2 hover:bg-red-600/20 rounded-lg transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Modal Criar/Editar Cliente */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="glass rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white flex items-center">
-                <Building2 className="w-6 h-6 mr-2 text-red-400" />
-                {modalType === 'create' ? 'Novo Cliente' : 'Editar Cliente'}
-              </h2>
+              Todas as Cidades ({clientsBaseFiltered.length})
+            </button>
+            {cityCounts.map((item) => (
               <button
-                onClick={() => setShowModal(false)}
-                className="p-2 hover:bg-red-600/20 rounded-lg transition-colors"
+                key={item.city}
+                type="button"
+                onClick={() => setSelectedCityFilter(item.city)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
+                  normalizeText(selectedCityFilter) === normalizeText(item.city)
+                    ? 'bg-red-500/15 border border-red-500/35 text-red-100'
+                    : 'bg-black/20 border border-gray-700 text-gray-200 hover:bg-black/35'
+                }`}
               >
-                <X className="w-6 h-6 text-gray-400" />
+                {formatCityLabel(item.city)} ({item.count})
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table-futuristic w-full">
+              <thead>
+                <tr className="border-b border-red-600/30">
+                  <th className="text-left p-4 text-gray-300 font-semibold">Nome da empresa</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Cidade</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Regime</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Status</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Tipo de configuracao</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan="7" className="text-center p-8 text-gray-400">Carregando clientes...</td>
+                  </tr>
+                ) : filteredClients.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="text-center p-8 text-gray-400">Nenhum cliente encontrado.</td>
+                  </tr>
+                ) : (
+                  filteredClients.map((client) => {
+                    const setupLabel = setupTypeLabel(client);
+                    return (
+                      <tr
+                        key={client.id}
+                        onClick={() => openClientData(client)}
+                        className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors cursor-pointer"
+                      >
+                        <td className="p-4">
+                          <p className="text-white font-semibold">{client.nome_empresa}</p>
+                          {client.nome_fantasia ? <p className="text-xs text-gray-400">{client.nome_fantasia}</p> : null}
+                        </td>
+                        <td className="p-4 text-gray-300 font-mono text-sm">{client.cnpj || '-'}</td>
+                        <td className="p-4 text-gray-200 text-sm">{client.cidade ? formatCityLabel(client.cidade) : '-'}</td>
+                        <td className="p-4">
+                          <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-300 border border-blue-600/30 capitalize">
+                            {getClientRegime(client).replaceAll('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className="px-3 py-1 rounded-full text-xs font-medium bg-zinc-600/20 text-zinc-300 border border-zinc-600/30 capitalize">
+                            {client.status || 'ativo'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${setupTypeClass(setupLabel)}`}>
+                            {setupLabel}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openConfig(client);
+                            }}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-200 hover:bg-red-600/30"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Configurar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {showConfigModal && selectedClient && selectedSetup ? (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="glass rounded-2xl p-6 w-full max-w-6xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-2xl font-bold text-white">{selectedClient.nome_fantasia || selectedClient.nome_empresa}</h2>
+                <p className="text-sm text-gray-400">Centro de configuracao do cliente</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfigModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
+              >
+                Fechar
               </button>
             </div>
 
-            <form onSubmit={modalType === 'create' ? handleCreateClient : handleUpdateClient}>
-              <div className="space-y-6">
-                {/* Dados da Empresa */}
-                <div>
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center">
-                    <Building2 className="w-5 h-5 mr-2 text-red-400" />
-                    Dados da Empresa
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Razão Social *</label>
-                      <input
-                        required
-                        type="text"
-                        value={formData.nome_empresa}
-                        onChange={(e) => setFormData({...formData, nome_empresa: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6">
+              {sectionTabs
+                .filter((tab) => {
+                  if (tab.id === 'setup_config' && !selectedSetup.setupEmpresaSalvo) return false;
+                  if (tab.id === 'financeiro') {
+                    const userCanSee = user?.role === 'admin' || (user?.allowed_modules || []).includes('financeiro');
+                    if (!userCanSee) return false;
+                    if (!selectedSetup.modulosLiberados.includes('Financeiro')) return false;
+                  }
+                  return true;
+                })
+                .map((tab) => {
+                const blocked = tab.id === 'setup_config' && !selectedSetup.setupEmpresaSalvo;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleTabClick(tab.id)}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                      activeSection === tab.id
+                        ? 'border-red-500/40 bg-red-500/15 text-red-200'
+                        : blocked
+                          ? 'border-gray-800 bg-black/20 text-gray-500 cursor-not-allowed'
+                          : 'border-gray-700 bg-black/30 text-gray-300 hover:bg-black/50'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Nome Fantasia</label>
-                      <input
-                        type="text"
-                        value={formData.nome_fantasia}
-                        onChange={(e) => setFormData({...formData, nome_fantasia: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
+            {activeSection === 'setup_empresa' ? (
+              <SectionCard title="Setup Empresa (Etapa 1)" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                <p className="text-sm text-gray-400 mb-4">Preencha e salve esta etapa para liberar o Setup Config.</p>
+                {(() => {
+                  const isMei = selectedSetup.setupEmpresa.regimeTributario === 'mei' || selectedSetup.setupEmpresa.tipoEmpresa === 'MEI';
+                  const socios = getSociosArray();
+                  return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <InputField label="Razao social *" value={selectedSetup.setupEmpresa.razaoSocial} onChange={(v) => updateSetupEmpresa('razaoSocial', v)} />
+                  <InputField label="Nome fantasia" value={selectedSetup.setupEmpresa.nomeFantasia} onChange={(v) => updateSetupEmpresa('nomeFantasia', v)} />
+                  <InputField label="CNPJ *" value={selectedSetup.setupEmpresa.cnpj} onChange={(v) => updateSetupEmpresa('cnpj', v)} />
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">CNPJ *</label>
+                  <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-3 rounded-lg border border-gray-700 bg-black/20 p-3">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-300">
                       <input
-                        required
-                        type="text"
-                        value={formData.cnpj}
-                        onChange={(e) => setFormData({...formData, cnpj: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white font-mono"
-                        placeholder="00.000.000/0000-00"
+                        type="checkbox"
+                        checked={Boolean(selectedSetup.setupEmpresa.informarInscricaoEstadual)}
+                        onChange={() => toggleSetupEmpresaBoolean('informarInscricaoEstadual', 'inscricaoEstadual')}
                       />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Inscrição Estadual</label>
+                      Informar inscricao estadual
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-300">
                       <input
-                        type="text"
-                        value={formData.inscricao_estadual}
-                        onChange={(e) => setFormData({...formData, inscricao_estadual: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                        type="checkbox"
+                        checked={Boolean(selectedSetup.setupEmpresa.informarInscricaoMunicipal)}
+                        onChange={() => toggleSetupEmpresaBoolean('informarInscricaoMunicipal', 'inscricaoMunicipal')}
                       />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Inscrição Municipal</label>
+                      Informar inscricao municipal
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-300">
                       <input
-                        type="text"
-                        value={formData.inscricao_municipal}
-                        onChange={(e) => setFormData({...formData, inscricao_municipal: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                        type="checkbox"
+                        checked={Boolean(selectedSetup.setupEmpresa.informarNaturezaJuridica)}
+                        onChange={() => toggleSetupEmpresaBoolean('informarNaturezaJuridica', 'naturezaJuridica')}
                       />
-                    </div>
+                      Informar natureza juridica
+                    </label>
                   </div>
-                </div>
 
-                {/* Contato */}
-                <div>
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center">
-                    <Phone className="w-5 h-5 mr-2 text-red-400" />
-                    Contato
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">E-mail *</label>
-                      <input
-                        required
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Telefone</label>
-                      <input
-                        type="tel"
-                        value={formData.telefone}
-                        onChange={(e) => setFormData({...formData, telefone: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                        placeholder="(00) 0000-0000"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Celular</label>
-                      <input
-                        type="tel"
-                        value={formData.celular}
-                        onChange={(e) => setFormData({...formData, celular: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                        placeholder="(00) 00000-0000"
-                      />
-                    </div>
+                  {selectedSetup.setupEmpresa.informarInscricaoEstadual ? (
+                    <InputField
+                      label="Inscricao estadual"
+                      value={selectedSetup.setupEmpresa.inscricaoEstadual}
+                      onChange={(v) => updateSetupEmpresa('inscricaoEstadual', v)}
+                    />
+                  ) : <div />}
+                  {selectedSetup.setupEmpresa.informarInscricaoMunicipal ? (
+                    <InputField
+                      label="Inscricao municipal"
+                      value={selectedSetup.setupEmpresa.inscricaoMunicipal}
+                      onChange={(v) => updateSetupEmpresa('inscricaoMunicipal', v)}
+                    />
+                  ) : <div />}
+                  <div />
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Regime tributario *</label>
+                    <select
+                      value={selectedSetup.setupEmpresa.regimeTributario}
+                      onChange={(e) => {
+                        updateSetupEmpresa('regimeTributario', e.target.value);
+                        if (e.target.value === 'mei') {
+                          updateSetupEmpresa('tipoEmpresa', 'MEI');
+                          updateSetupEmpresa('socios', []);
+                        }
+                      }}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                    >
+                      {regimeOptions.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
                   </div>
-                </div>
 
-                {/* Endereço */}
-                <div>
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center">
-                    <MapPin className="w-5 h-5 mr-2 text-red-400" />
-                    Endereço
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">CEP</label>
-                      <div className="flex space-x-2">
-                        <input
-                          type="text"
-                          value={formData.cep}
-                          onChange={(e) => setFormData({...formData, cep: e.target.value})}
-                          className="flex-1 bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                          placeholder="00000-000"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleBuscarCEP}
-                          className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 rounded-lg text-blue-400 transition-colors"
-                        >
-                          <Search className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Logradouro</label>
-                      <input
-                        type="text"
-                        value={formData.logradouro}
-                        onChange={(e) => setFormData({...formData, logradouro: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Número</label>
-                      <input
-                        type="text"
-                        value={formData.numero}
-                        onChange={(e) => setFormData({...formData, numero: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Complemento</label>
-                      <input
-                        type="text"
-                        value={formData.complemento}
-                        onChange={(e) => setFormData({...formData, complemento: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Bairro</label>
-                      <input
-                        type="text"
-                        value={formData.bairro}
-                        onChange={(e) => setFormData({...formData, bairro: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Cidade</label>
-                      <input
-                        type="text"
-                        value={formData.cidade}
-                        onChange={(e) => setFormData({...formData, cidade: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Estado</label>
-                      <input
-                        type="text"
-                        value={formData.estado}
-                        onChange={(e) => setFormData({...formData, estado: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                        maxLength="2"
-                        placeholder="UF"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Tipo de empresa</label>
+                    <select
+                      value={selectedSetup.setupEmpresa.tipoEmpresa}
+                      onChange={(e) => updateSetupEmpresa('tipoEmpresa', e.target.value)}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                    >
+                      {tipoEmpresaOptions.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
                   </div>
-                </div>
-
-                {/* Informações Adicionais */}
-                <div>
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center">
-                    <FileText className="w-5 h-5 mr-2 text-red-400" />
-                    Informações Adicionais
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {selectedSetup.setupEmpresa.informarNaturezaJuridica ? (
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Setor *</label>
+                      <label className="block text-sm text-gray-300 mb-2">Natureza juridica</label>
                       <select
-                        required
-                        value={formData.setor}
-                        onChange={(e) => setFormData({...formData, setor: e.target.value})}
+                        value={selectedSetup.setupEmpresa.naturezaJuridica}
+                        onChange={(e) => updateSetupEmpresa('naturezaJuridica', e.target.value)}
                         className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
                       >
-                        {setores.map(setor => (
-                          <option key={setor} value={setor} className="capitalize">{setor}</option>
+                        <option value="">Selecione...</option>
+                        {naturezaJuridicaOptions.map((item) => (
+                          <option key={item} value={item}>{item}</option>
                         ))}
                       </select>
                     </div>
+                  ) : <div />}
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Segmento principal</label>
+                    <select
+                      value={selectedSetup.setupEmpresa.segmentoPrincipal}
+                      onChange={(e) => updateSetupEmpresa('segmentoPrincipal', e.target.value)}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                    >
+                      <option value="">Selecione...</option>
+                      {segmentoPrincipalOptions.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Status *</label>
-                      <select
-                        required
-                        value={formData.status}
-                        onChange={(e) => setFormData({...formData, status: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                      >
-                        <option value="ativo">Ativo</option>
-                        <option value="inativo">Inativo</option>
-                        <option value="suspenso">Suspenso</option>
-                        <option value="inadimplente">Inadimplente</option>
-                      </select>
+                  {!isMei ? (
+                    <div className="md:col-span-3 rounded-lg border border-gray-700 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <p className="text-sm text-gray-200 font-medium">Socios</p>
+                        <button
+                          type="button"
+                          onClick={adicionarSocio}
+                          className="rounded-lg border border-red-500/35 bg-red-500/15 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/25"
+                        >
+                          {socios.length ? 'Adicionar socio' : 'Adicionar primeiro socio'}
+                        </button>
+                      </div>
+                      {socios.length > 0 ? (
+                        <div className="space-y-2 mb-3">
+                          {socios.map((socio, index) => (
+                            <div key={`${socio.nome}-${index}`} className="rounded-lg border border-gray-700 bg-black/30 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                              <div>
+                                <p className="text-white text-sm font-medium">{socio.nome || '-'}</p>
+                                <p className="text-xs text-gray-400">
+                                  {socio.participacao ? `${socio.participacao}%` : 'Sem participacao'} {socio.cpf ? `• CPF ${socio.cpf}` : ''} {socio.funcao ? `• ${socio.funcao}` : ''}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {socios.length > 1 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => definirSocioAdministrador(index)}
+                                    className="rounded-lg border border-blue-500/35 bg-blue-500/15 px-3 py-1.5 text-xs text-blue-100 hover:bg-blue-500/25"
+                                  >
+                                    Definir administrador
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => removerSocio(index)}
+                                  className="rounded-lg border border-gray-600 bg-gray-700/40 px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-600/40"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <InputField
+                          label="Nome do socio"
+                          value={novoSocio.nome}
+                          onChange={(v) => setNovoSocio((prev) => ({ ...prev, nome: v }))}
+                        />
+                        <InputField
+                          label="Participacao (%)"
+                          value={novoSocio.participacao}
+                          onChange={(v) => setNovoSocio((prev) => ({ ...prev, participacao: v }))}
+                        />
+                        <InputField
+                          label="CPF"
+                          value={novoSocio.cpf}
+                          onChange={(v) => setNovoSocio((prev) => ({ ...prev, cpf: v }))}
+                        />
+                        <div>
+                          <label className="block text-sm text-gray-300 mb-2">Funcao</label>
+                          <select
+                            value={novoSocio.funcao || 'Socio'}
+                            onChange={(e) => setNovoSocio((prev) => ({ ...prev, funcao: e.target.value }))}
+                            className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                          >
+                            {socioFuncaoOptions.map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                     </div>
+                  ) : null}
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Responsável</label>
+                  <InputField label="CEP" value={selectedSetup.setupEmpresa.enderecoCep} onChange={(v) => updateSetupEmpresa('enderecoCep', formatCep(v))} />
+                  <InputField label="Logradouro" value={selectedSetup.setupEmpresa.enderecoLogradouro} onChange={(v) => updateSetupEmpresa('enderecoLogradouro', v)} />
+                  <InputField label="Numero" value={selectedSetup.setupEmpresa.enderecoNumero} onChange={(v) => updateSetupEmpresa('enderecoNumero', v)} />
+
+                  <InputField label="Complemento" value={selectedSetup.setupEmpresa.enderecoComplemento} onChange={(v) => updateSetupEmpresa('enderecoComplemento', v)} />
+                  <InputField label="Bairro" value={selectedSetup.setupEmpresa.enderecoBairro} onChange={(v) => updateSetupEmpresa('enderecoBairro', v)} />
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Cidade</label>
+                    <select
+                      value={selectedSetup.setupEmpresa.enderecoCidade}
+                      onChange={(e) => updateSetupEmpresa('enderecoCidade', e.target.value)}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                    >
+                      <option value="">Selecione...</option>
+                      {cityOptions.map((city) => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Estado (UF)</label>
+                    <select
+                      value={selectedSetup.setupEmpresa.enderecoEstado}
+                      onChange={(e) => updateSetupEmpresa('enderecoEstado', e.target.value)}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                    >
+                      <option value="">Selecione...</option>
+                      {estadoOptions.map((estado) => (
+                        <option key={estado.sigla} value={estado.sigla}>
+                          {estado.nome} ({estado.sigla})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <InputField label="Email de contato" value={selectedSetup.setupEmpresa.contatoEmail} onChange={(v) => updateSetupEmpresa('contatoEmail', v)} />
+                  <InputField label="Telefone" value={selectedSetup.setupEmpresa.contatoTelefone} onChange={(v) => updateSetupEmpresa('contatoTelefone', v)} />
+
+                  <InputField label="WhatsApp" value={selectedSetup.setupEmpresa.contatoWhatsapp} onChange={(v) => updateSetupEmpresa('contatoWhatsapp', v)} />
+                  <InputField label="URL da logo" value={selectedSetup.setupEmpresa.logoUrl} onChange={(v) => updateSetupEmpresa('logoUrl', v)} />
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Logo da empresa (mock)</label>
+                    <label className="w-full inline-flex items-center gap-2 justify-center bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white cursor-pointer hover:bg-black/40">
+                      <UploadCloud className="w-4 h-4" />
+                      {selectedSetup.setupEmpresa.logoFileName || 'Selecionar arquivo'}
                       <input
-                        type="text"
-                        value={formData.responsavel}
-                        onChange={(e) => setFormData({...formData, responsavel: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          updateSetupEmpresa('logoFileName', file ? file.name : '');
+                        }}
                       />
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Observações</label>
-                      <textarea
-                        value={formData.observacoes}
-                        onChange={(e) => setFormData({...formData, observacoes: e.target.value})}
-                        className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
-                        rows="3"
-                      />
-                    </div>
+                    </label>
                   </div>
                 </div>
-              </div>
+                  );
+                })()}
+                <div className="mt-5 flex items-center gap-3">
+                  <button type="button" onClick={saveSetupEmpresa} className="btn-futuristic px-5 py-2 rounded-lg text-white font-medium">
+                    Salvar Setup Empresa
+                  </button>
+                  <span className={`text-xs px-3 py-1 rounded-full border ${
+                    selectedSetup.setupEmpresaSalvo
+                      ? 'border-emerald-600/30 bg-emerald-600/20 text-emerald-300'
+                      : 'border-zinc-600/30 bg-zinc-600/20 text-zinc-300'
+                  }`}>
+                    {selectedSetup.setupEmpresaSalvo ? 'Setup Empresa salvo' : 'Setup Empresa pendente'}
+                  </span>
+                </div>
+              </SectionCard>
+            ) : null}
 
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 btn-futuristic rounded-lg text-white font-medium"
-                >
-                  {modalType === 'create' ? 'Criar Cliente' : 'Atualizar Cliente'}
-                </button>
-              </div>
-            </form>
+            {activeSection === 'setup_config' ? (
+              <SectionCard title="Setup Config" icon={<SlidersHorizontal className="w-5 h-5 text-red-300" />}>
+                {!selectedSetup.setupEmpresaSalvo ? (
+                  <div className="rounded-lg border border-amber-600/30 bg-amber-600/10 p-4 text-amber-300">
+                    Setup Config bloqueado. Salve primeiro o Setup Empresa.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <InputField label="Regime (herdado do Setup Empresa)" value={formatRegimeLabel(selectedSetup.setupConfig.regime)} readOnly />
+                      <div>
+                        <label className="block text-sm text-gray-300 mb-2">Tipo de configuracao *</label>
+                        <select
+                          value={selectedSetup.setupConfig.tipoConfiguracao}
+                          onChange={(e) => updateSetupConfig('tipoConfiguracao', e.target.value)}
+                          className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                        >
+                          {configTypeOptions.map((item) => (
+                            <option key={item} value={item}>{item.charAt(0).toUpperCase() + item.slice(1)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {selectedSetup.setupConfig.tipoConfiguracao === 'simples' ? (
+                      <div className="mt-4 rounded-lg border border-gray-700 bg-black/20 p-4">
+                        <p className="text-sm text-gray-300 mb-3">Modo simples: foco em usabilidade básica e visual enxuto.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Tipo de serviço padrão</label>
+                            <select
+                              value={selectedSetup.setupConfig.simplesTipoServico}
+                              onChange={(e) => updateSetupConfig('simplesTipoServico', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              {setupTipoServicoOptions.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Canal padrão</label>
+                            <select
+                              value={selectedSetup.setupConfig.canalEnvio}
+                              onChange={(e) => updateSetupConfig('canalEnvio', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              {canalOptions.map((item) => (
+                                <option key={item.value} value={item.value}>{item.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {selectedSetup.setupConfig.tipoConfiguracao === 'intermediario' ? (
+                      <div className="mt-4 rounded-lg border border-gray-700 bg-black/20 p-4">
+                        <p className="text-sm text-gray-300 mb-3">Modo intermediário: controles operacionais essenciais.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Tipo de serviço</label>
+                            <select
+                              value={selectedSetup.setupConfig.intermediarioTipoServico}
+                              onChange={(e) => updateSetupConfig('intermediarioTipoServico', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              <option value="">Selecione...</option>
+                              {setupTipoServicoOptions.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Forma de registrar entradas</label>
+                            <select
+                              value={selectedSetup.setupConfig.intermediarioRegistrarEntradas}
+                              onChange={(e) => updateSetupConfig('intermediarioRegistrarEntradas', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              <option value="">Selecione...</option>
+                              {setupRegistrarEntradasOptions.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Fluxo do serviço</label>
+                            <select
+                              value={selectedSetup.setupConfig.intermediarioFluxoServico}
+                              onChange={(e) => updateSetupConfig('intermediarioFluxoServico', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              <option value="">Selecione...</option>
+                              {setupFluxoServicoOptions.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <label className="flex items-center gap-2 rounded-lg border border-gray-700 bg-black/30 px-4 py-2 text-sm text-white">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selectedSetup.setupConfig.intermediarioExibicao)}
+                              onChange={(e) => updateSetupConfig('intermediarioExibicao', e.target.checked)}
+                            />
+                            Opções básicas de exibição
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {selectedSetup.setupConfig.tipoConfiguracao === 'completo' ? (
+                      <div className="mt-4 rounded-lg border border-gray-700 bg-black/20 p-4">
+                        <p className="text-sm text-gray-300 mb-3">Modo completo: maior controle financeiro e comercial.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Pagamentos e recebimentos</label>
+                            <select
+                              value={selectedSetup.setupConfig.completoPagamentosRecebimentos}
+                              onChange={(e) => updateSetupConfig('completoPagamentosRecebimentos', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              <option value="">Selecione...</option>
+                              {setupPagamentosRecebimentosOptions.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Tipo de venda</label>
+                            <select
+                              value={selectedSetup.setupConfig.completoTipoVenda}
+                              onChange={(e) => updateSetupConfig('completoTipoVenda', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              <option value="">Selecione...</option>
+                              {setupTipoVendaOptions.map((item) => (
+                                <option key={item} value={item}>{item}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-300 mb-2">Modo CPF</label>
+                            <select
+                              value={selectedSetup.setupConfig.completoModoCpf}
+                              onChange={(e) => updateSetupConfig('completoModoCpf', e.target.value)}
+                              className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                            >
+                              <option value="desativado">Desativado</option>
+                              <option value="opcional">Opcional</option>
+                              <option value="obrigatorio">Obrigatório</option>
+                            </select>
+                          </div>
+                          <label className="flex items-center gap-2 rounded-lg border border-gray-700 bg-black/30 px-4 py-2 text-sm text-white">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selectedSetup.setupConfig.completoConfiguracoesDetalhadas)}
+                              onChange={(e) => updateSetupConfig('completoConfiguracoesDetalhadas', e.target.checked)}
+                            />
+                            Configurações detalhadas
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {selectedSetup.setupConfig.tipoConfiguracao === 'personalizado' ? (
+                      <div className="mt-4 rounded-lg border border-gray-700 bg-black/20 p-4">
+                        <p className="text-sm text-gray-300 mb-3">Modo personalizado: opções avançadas e comportamento sob medida.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {customToggleFields.map((item) => (
+                            <label key={item.key} className="flex items-center gap-3 rounded-lg border border-gray-700 bg-black/30 p-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectedSetup.setupConfig[item.key])}
+                                onChange={() => updateCustomToggle(item.key)}
+                              />
+                              <span className="text-white text-sm">{item.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="mt-4">
+                          <label className="block text-sm text-gray-300 mb-2">Observações da configuração</label>
+                          <textarea
+                            value={selectedSetup.setupConfig.observacoesConfiguracao}
+                            onChange={(e) => updateSetupConfig('observacoesConfiguracao', e.target.value)}
+                            rows={3}
+                            className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 rounded-lg border border-gray-700 bg-black/20 p-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm text-gray-300 mb-2">Canal padrão</label>
+                          <select
+                            value={selectedSetup.setupConfig.canalEnvio}
+                            onChange={(e) => updateSetupConfig('canalEnvio', e.target.value)}
+                            className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                          >
+                            {canalOptions.map((item) => (
+                              <option key={item.value} value={item.value}>{item.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-300 mb-2">Nível de monitoramento</label>
+                          <select
+                            value={selectedSetup.setupConfig.nivelMonitoramento}
+                            onChange={(e) => updateSetupConfig('nivelMonitoramento', e.target.value)}
+                            className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                          >
+                            {monitoramentoOptions.map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-300 mb-2">SLA interno</label>
+                          <select
+                            value={selectedSetup.setupConfig.slaInterno}
+                            onChange={(e) => updateSetupConfig('slaInterno', e.target.value)}
+                            className="w-full bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white"
+                          >
+                            {setupSlaInternoOptions.map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <button type="button" onClick={saveSetupConfig} className="btn-futuristic px-5 py-2 rounded-lg text-white font-medium">
+                        Salvar Setup Config
+                      </button>
+                    </div>
+                  </>
+                )}
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'acesso_cliente' ? (
+              <SectionCard title="Login do Cliente (Portal)" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                <p className="text-sm text-gray-400 mb-4">
+                  Cadastre os dados de acesso do cliente para a view do portal ({`/cliente/:clienteId`}).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <InputField
+                    label="Nome do usuario"
+                    value={selectedSetup?.acessoCliente?.nome || ''}
+                    onChange={(v) => updateSetupAcessoCliente('nome', v)}
+                  />
+                  <InputField
+                    label="Email de acesso"
+                    value={selectedSetup?.acessoCliente?.email || ''}
+                    onChange={(v) => updateSetupAcessoCliente('email', v)}
+                  />
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Senha de acesso</label>
+                    <div className="flex gap-2">
+                      <input
+                        type={showPortalPassword ? 'text' : 'password'}
+                        value={selectedSetup?.acessoCliente?.senha || ''}
+                        onChange={(e) => updateSetupAcessoCliente('senha', e.target.value)}
+                        className="w-full border border-gray-700 rounded-lg px-4 py-2 bg-black/30 text-white"
+                        placeholder="Digite a senha do cliente"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPortalPassword((prev) => !prev)}
+                        className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
+                      >
+                        {showPortalPassword ? 'Ocultar' : 'Mostrar'}
+                      </button>
+                    </div>
+                  </div>
+                  <InputField
+                    label="Cliente ID para rota"
+                    value={selectedSetup?.acessoCliente?.clienteId || selectedClient?.id || ''}
+                    onChange={(v) => updateSetupAcessoCliente('clienteId', v)}
+                    placeholder="Ex.: c8f3d"
+                  />
+                </div>
+
+                <div className="mt-4 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={saveClientPortalLogin}
+                    className="btn-futuristic px-5 py-2 rounded-lg text-white font-medium"
+                  >
+                    Salvar login do cliente
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    {selectedSetup?.acessoCliente?.salvo
+                      ? `Ultima atualizacao: ${new Date(selectedSetup.acessoCliente.atualizadoEm || Date.now()).toLocaleString('pt-BR')}`
+                      : 'Login ainda nao salvo.'}
+                  </span>
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'dados_empresa' ? (
+              <SectionCard title="Dados da empresa" icon={<Building2 className="w-5 h-5 text-red-300" />}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <InfoField label="Razao social" value={selectedClient.nome_empresa} />
+                  <InfoField label="Nome fantasia" value={selectedClient.nome_fantasia || '-'} />
+                  <InfoField label="CNPJ" value={selectedClient.cnpj || '-'} mono />
+                  <InfoField label="Regime" value={getClientRegime(selectedClient).replaceAll('_', ' ')} />
+                  <InfoField label="Status" value={selectedClient.status || 'ativo'} />
+                  <InfoField label="Cidade" value={selectedClient.cidade || '-'} />
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'financeiro' ? (
+              <SectionCard title="Financeiro" icon={<SlidersHorizontal className="w-5 h-5 text-red-300" />}>
+                {!selectedFinancialData ? (
+                  <p className="text-gray-400">Este cliente ainda nao possui cadastro em Clientes Financeiro.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <InfoField label="Valor boleto" value={Number(selectedFinancialData.valor_boleto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                    <InfoField label="Valor desconto" value={Number(selectedFinancialData.valor_desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                    <InfoField label="Valor com desconto" value={Number(selectedFinancialData.valor_com_desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                    <InfoField label="Data de vencimento" value={selectedFinancialData.data_vencimento || '-'} />
+                    <InfoField label="Qtd. funcionarios" value={selectedFinancialData.quantidade_funcionarios ?? 0} />
+                    <InfoField label="Status fiscal" value={selectedFinancialData.status_fiscal === 'com_movimento' ? 'Com movimento' : 'Sem movimento'} />
+                    <InfoField label="Capacidade de pagamento" value={
+                      selectedFinancialData.capacidade_pagamento === 'paga_em_dia'
+                        ? 'Paga em Dia'
+                        : selectedFinancialData.capacidade_pagamento === 'paga_no_mes'
+                          ? 'Paga Dentro do Mes'
+                          : selectedFinancialData.capacidade_pagamento === 'atraso_recorrente'
+                            ? 'Atraso Recorrente'
+                            : '-'
+                    } />
+                    <InfoField label="Responsavel financeiro" value={selectedFinancialData.responsavel_financeiro || '-'} />
+                    <InfoField label="Tipo honorario" value={selectedFinancialData.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'} />
+                    <InfoField label="Pagamento especial" value={selectedFinancialData.forma_pagamento_especial ? (selectedFinancialData.tipo_pagamento_especial || 'Especial') : 'Padrao'} />
+                  </div>
+                )}
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'modulos_liberados' ? (
+              <SectionCard title="Módulos" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                <div className="mb-4 rounded-lg border border-gray-700 bg-black/20 p-3">
+                  <p className="text-sm text-gray-300">
+                    Tipo no Setup Config: <span className="font-semibold text-white capitalize">{selectedSetup.setupConfig.tipoConfiguracao}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Sugestão automática: {(suggestedModulesByConfigType[selectedSetup.setupConfig.tipoConfiguracao] || []).join(', ') || '-'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={applySuggestedModules}
+                    className="mt-3 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-gray-200 hover:bg-white/10"
+                  >
+                    Aplicar módulos sugeridos
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {modulosBase.map((modulo) => (
+                    <label key={modulo} className="flex items-center gap-3 rounded-lg border border-gray-700 bg-black/30 p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedSetup.modulosLiberados.includes(modulo)}
+                        onChange={() => toggleModulo(modulo)}
+                      />
+                      <span className="text-white">{modulo}</span>
+                    </label>
+                  ))}
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'servicos_vinculados' ? (
+              <SectionCard title="Servicos vinculados" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                {(() => {
+                  const services = getMockInternalServices().filter((item) => item.empresa_id === selectedClient.id);
+                  if (!services.length) return <p className="text-gray-400">Nenhum servico vinculado no mock.</p>;
+                  return (
+                    <div className="space-y-2">
+                      {services.map((service) => (
+                        <div key={service.id} className="rounded-lg border border-gray-700 bg-black/30 p-3">
+                          <p className="text-white font-medium">{service.titulo}</p>
+                          <p className="text-sm text-gray-400">{service.tipo_servico} • {service.status}</p>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'documentos' ? (
+              <SectionCard title="Documentos" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                <div className="space-y-2">
+                  {[
+                    { id: 'd1', nome: 'Contrato social', status: 'Atualizado' },
+                    { id: 'd2', nome: 'Cartao CNPJ', status: 'Atualizado' },
+                    { id: 'd3', nome: 'Certificado digital', status: 'Pendente revisao' },
+                  ].map((doc) => (
+                    <div key={doc.id} className="rounded-lg border border-gray-700 bg-black/30 p-3 flex items-center justify-between">
+                      <span className="text-white">{doc.nome}</span>
+                      <span className="text-sm text-gray-300">{doc.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Modal Detalhes */}
-      {showDetailsModal && selectedClient && (
+      {showNewClientModal ? (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="glass rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-white">Detalhes do Cliente</h2>
-              <button
-                onClick={() => setShowDetailsModal(false)}
-                className="p-2 hover:bg-red-600/20 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-400" />
+          <div className="glass rounded-2xl p-6 w-full max-w-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">Novo Cliente (mock)</h2>
+              <button type="button" onClick={() => setShowNewClientModal(false)} className="px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">Fechar</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <InputField label="Nome da empresa *" value={newClientForm.nome_empresa} onChange={(v) => setNewClientForm((p) => ({ ...p, nome_empresa: v }))} />
+              <InputField label="Nome fantasia" value={newClientForm.nome_fantasia} onChange={(v) => setNewClientForm((p) => ({ ...p, nome_fantasia: v }))} />
+              <InputField label="CNPJ *" value={newClientForm.cnpj} onChange={(v) => setNewClientForm((p) => ({ ...p, cnpj: v }))} />
+              <InputField label="Cidade" value={newClientForm.cidade} onChange={(v) => setNewClientForm((p) => ({ ...p, cidade: v }))} />
+              <div>
+                <label className="block text-sm text-gray-300 mb-2">Regime</label>
+                <select value={newClientForm.tipo_regime} onChange={(e) => setNewClientForm((p) => ({ ...p, tipo_regime: e.target.value }))} className="w-full rounded-lg border border-gray-700 bg-black/30 px-3 py-2 text-white">
+                  {regimeOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-2">Status</label>
+                <select value={newClientForm.status} onChange={(e) => setNewClientForm((p) => ({ ...p, status: e.target.value }))} className="w-full rounded-lg border border-gray-700 bg-black/30 px-3 py-2 text-white">
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button type="button" onClick={handleCreateClientMock} className="btn-futuristic px-5 py-2 rounded-lg text-white font-medium">
+                Salvar cliente
               </button>
             </div>
-
-            <div className="space-y-6">
-              {/* Empresa */}
-              <div>
-                <h3 className="text-lg font-bold text-white mb-3">Dados da Empresa</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-400">Razão Social</p>
-                    <p className="text-white font-bold">{selectedClient.nome_empresa}</p>
-                  </div>
-                  {selectedClient.nome_fantasia && (
-                    <div>
-                      <p className="text-sm text-gray-400">Nome Fantasia</p>
-                      <p className="text-white">{selectedClient.nome_fantasia}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-gray-400">CNPJ</p>
-                    <p className="text-white font-mono">{formatCNPJ(selectedClient.cnpj)}</p>
-                  </div>
-                  {selectedClient.inscricao_estadual && (
-                    <div>
-                      <p className="text-sm text-gray-400">Inscrição Estadual</p>
-                      <p className="text-white">{selectedClient.inscricao_estadual}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Contato */}
-              <div>
-                <h3 className="text-lg font-bold text-white mb-3">Contato</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-400">E-mail</p>
-                    <p className="text-white">{selectedClient.email}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-400">Telefone</p>
-                    <p className="text-white">{formatPhone(selectedClient.telefone)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Endereço */}
-              {selectedClient.logradouro && (
-                <div>
-                  <h3 className="text-lg font-bold text-white mb-3">Endereço</h3>
-                  <p className="text-white">
-                    {selectedClient.logradouro}, {selectedClient.numero}
-                    {selectedClient.complemento && ` - ${selectedClient.complemento}`}
-                  </p>
-                  <p className="text-white">
-                    {selectedClient.bairro} - {selectedClient.cidade}/{selectedClient.estado}
-                  </p>
-                  {selectedClient.cep && (
-                    <p className="text-gray-400 text-sm">CEP: {selectedClient.cep}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Informações Adicionais */}
-              <div>
-                <h3 className="text-lg font-bold text-white mb-3">Informações Adicionais</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-400">Setor</p>
-                    <p className="text-white capitalize">{selectedClient.setor}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-400">Status</p>
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(selectedClient.status)} capitalize`}>
-                      {selectedClient.status}
-                    </span>
-                  </div>
-                  {selectedClient.responsavel && (
-                    <div>
-                      <p className="text-sm text-gray-400">Responsável</p>
-                      <p className="text-white">{selectedClient.responsavel}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedClient.observacoes && (
-                <div>
-                  <h3 className="text-lg font-bold text-white mb-3">Observações</h3>
-                  <div className="bg-black/30 rounded-lg p-4">
-                    <p className="text-white">{selectedClient.observacoes}</p>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
+
+const SectionCard = ({ title, icon, children }) => (
+  <div className="rounded-xl border border-gray-700 bg-black/20 p-4">
+    <div className="flex items-center gap-2 mb-4">
+      {icon}
+      <h3 className="text-lg font-semibold text-white">{title}</h3>
+    </div>
+    {children}
+  </div>
+);
+
+const InfoField = ({ label, value, mono = false }) => (
+  <div className="rounded-lg border border-gray-700 bg-black/30 p-3">
+    <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
+    <p className={`mt-1 text-white ${mono ? 'font-mono text-sm' : 'text-sm'}`}>{value || '-'}</p>
+  </div>
+);
+
+const InputField = ({ label, value, onChange, readOnly = false, placeholder = '' }) => (
+  <div>
+    <label className="block text-sm text-gray-300 mb-2">{label}</label>
+    <input
+      value={value || ''}
+      readOnly={readOnly}
+      onChange={(e) => onChange?.(e.target.value)}
+      placeholder={placeholder}
+      className={`w-full border border-gray-700 rounded-lg px-4 py-2 ${
+        readOnly ? 'bg-black/20 text-gray-300' : 'bg-black/30 text-white'
+      }`}
+    />
+  </div>
+);
+
+function createDefaultClientSetup(client) {
+  const regime = client?.tipo_regime || 'simples_nacional';
+  const tipoEmpresa = regime === 'mei' ? 'MEI' : 'Microempresa';
+  return {
+    setupEmpresaSalvo: false,
+    setupConfigSalvo: false,
+    setupEmpresa: {
+      razaoSocial: client?.nome_empresa || '',
+      nomeFantasia: client?.nome_fantasia || '',
+      cnpj: client?.cnpj || '',
+      informarInscricaoEstadual: Boolean(client?.inscricao_estadual),
+      informarInscricaoMunicipal: Boolean(client?.inscricao_municipal),
+      informarNaturezaJuridica: true,
+      inscricaoEstadual: client?.inscricao_estadual || '',
+      inscricaoMunicipal: client?.inscricao_municipal || '',
+      regimeTributario: regime,
+      tipoEmpresa,
+      naturezaJuridica: regime === 'mei' ? 'EI' : 'LTDA',
+      segmentoPrincipal: '',
+      enderecoCep: client?.cep || '',
+      enderecoLogradouro: client?.logradouro || '',
+      enderecoNumero: client?.numero || '',
+      enderecoComplemento: client?.complemento || '',
+      enderecoBairro: client?.bairro || '',
+      enderecoCidade: client?.cidade || '',
+      enderecoEstado: client?.estado || '',
+      contatoEmail: client?.email || '',
+      contatoTelefone: client?.telefone || '',
+      contatoWhatsapp: client?.whatsapp || '',
+      socios: [],
+      logoUrl: '',
+      logoFileName: '',
+    },
+    setupConfig: {
+      regime,
+      tipoConfiguracao: 'simples',
+      canalEnvio: client?.forma_envio || 'email',
+      nivelMonitoramento: 'padrao',
+      slaInterno: '48h',
+      simplesTipoServico: 'Contabil',
+      intermediarioTipoServico: '',
+      intermediarioRegistrarEntradas: '',
+      intermediarioFluxoServico: '',
+      intermediarioExibicao: false,
+      completoPagamentosRecebimentos: '',
+      completoTipoVenda: '',
+      completoModoCpf: 'desativado',
+      completoConfiguracoesDetalhadas: false,
+      mostrarPix: true,
+      mostrarContasBancarias: false,
+      mostrarCategorias: false,
+      mostrarFechamentos: false,
+      mostrarValidadeSaldo: false,
+      mostrarOrcamento: false,
+      mostrarAssinatura: false,
+      mostrarControle: false,
+      mostrarCustoFixo: false,
+      mostrarMetas: false,
+      mostrarResumoSemanal: false,
+      permitirCriarContas: false,
+      permitirRegistrarPagamentos: false,
+      permitirRegistrarRecebimentos: false,
+      permitirSaidas: false,
+      alertaVencimento: true,
+      avisoAoRegistrar: false,
+      travarEdicaoAposPago: true,
+      ativarModoVendaAVenda: false,
+      ativarModoCpf: false,
+      observacoesConfiguracao: '',
+    },
+    acessoCliente: {
+      nome: client?.nome_fantasia || client?.nome_empresa || '',
+      email: '',
+      senha: '',
+      clienteId: client?.id || '',
+      salvo: false,
+      atualizadoEm: '',
+    },
+    modulosLiberados: [
+      'Financeiro',
+      'Fiscal',
+      'Impostos',
+      'Serviços',
+      'Documentos',
+      'Trabalhista',
+      'Atendimento',
+      'Relatórios',
+      'Macedogram',
+      'Clube de Benefícios',
+      'Chat',
+    ],
+  };
+}
 
 export default ClientesExpandido;

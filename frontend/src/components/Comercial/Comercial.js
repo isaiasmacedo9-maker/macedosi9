@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Plus, FileText, CheckCircle, Clock, Upload, Calendar, AlertCircle, Download } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
+const OS_MODELS_KEY = 'mock_comercial_os_models_v1';
+const COMMERCIAL_LOCAL_ORDERS_KEY = 'mock_comercial_ordens_servico_v1';
+
 const Comercial = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('servicos');
@@ -12,6 +15,8 @@ const Comercial = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formType, setFormType] = useState('servico');
+  const [showOsModelModal, setShowOsModelModal] = useState(false);
+  const [osModels, setOsModels] = useState([]);
   
   const [clientes, setClientes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -46,11 +51,20 @@ const Comercial = () => {
     clausulas_especiais: ''
   });
 
+  const [osModelForm, setOsModelForm] = useState({
+    nome_modelo: '',
+    nome_cliente: '',
+    valor: '',
+    forma_pagamento: '',
+    detalhes_pagamento: ''
+  });
+
   const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
   useEffect(() => {
     loadClientes();
     loadUsuarios();
+    loadOsModels();
   }, []);
 
   useEffect(() => {
@@ -105,6 +119,15 @@ const Comercial = () => {
   };
 
   const loadOrdens = async () => {
+    const readLocalOrders = () => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(COMMERCIAL_LOCAL_ORDERS_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
@@ -112,9 +135,12 @@ const Comercial = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setOrdens(data);
+      const backendOrders = Array.isArray(data) ? data : [];
+      const localOrders = readLocalOrders();
+      setOrdens([...localOrders, ...backendOrders]);
     } catch (error) {
       console.error('Erro ao carregar ordens:', error);
+      setOrdens(readLocalOrders());
     } finally {
       setLoading(false);
     }
@@ -147,6 +173,45 @@ const Comercial = () => {
     } catch (error) {
       console.error('Erro ao carregar vencimentos:', error);
     }
+  };
+
+  const loadOsModels = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(OS_MODELS_KEY) || '[]');
+      setOsModels(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setOsModels([]);
+    }
+  };
+
+  const handleCreateOsModel = (e) => {
+    e.preventDefault();
+    if (!osModelForm.nome_modelo || !osModelForm.nome_cliente || !osModelForm.valor) {
+      alert('Preencha nome do modelo, nome do cliente e valor.');
+      return;
+    }
+
+    const item = {
+      id: `os-model-${Date.now()}`,
+      nome_modelo: osModelForm.nome_modelo,
+      nome_cliente: osModelForm.nome_cliente,
+      valor: Number(osModelForm.valor) || 0,
+      forma_pagamento: osModelForm.forma_pagamento || '-',
+      detalhes_pagamento: osModelForm.detalhes_pagamento || '-',
+      created_at: new Date().toISOString(),
+    };
+
+    const next = [item, ...osModels];
+    setOsModels(next);
+    localStorage.setItem(OS_MODELS_KEY, JSON.stringify(next));
+    setOsModelForm({
+      nome_modelo: '',
+      nome_cliente: '',
+      valor: '',
+      forma_pagamento: '',
+      detalhes_pagamento: '',
+    });
+    alert('Modelo de O.S. cadastrado com sucesso!');
   };
 
   const handleCreateServico = async (e) => {
@@ -207,6 +272,22 @@ const Comercial = () => {
   };
 
   const handleIniciarOS = async (osId) => {
+    const localOrders = (() => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(COMMERCIAL_LOCAL_ORDERS_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    })();
+    const localOrder = localOrders.find((item) => String(item.id) === String(osId));
+    if (localOrder) {
+      const next = localOrders.map((item) => (String(item.id) === String(osId) ? { ...item, status: 'em_execucao' } : item));
+      localStorage.setItem(COMMERCIAL_LOCAL_ORDERS_KEY, JSON.stringify(next));
+      setOrdens((prev) => prev.map((item) => (String(item.id) === String(osId) ? { ...item, status: 'em_execucao' } : item)));
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/comercial/ordens-servico/${osId}/iniciar`, {
@@ -224,6 +305,22 @@ const Comercial = () => {
   };
 
   const handleConcluirOS = async (osId) => {
+    const localOrders = (() => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(COMMERCIAL_LOCAL_ORDERS_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    })();
+    const localOrder = localOrders.find((item) => String(item.id) === String(osId));
+    if (localOrder) {
+      const next = localOrders.map((item) => (String(item.id) === String(osId) ? { ...item, status: 'concluida' } : item));
+      localStorage.setItem(COMMERCIAL_LOCAL_ORDERS_KEY, JSON.stringify(next));
+      setOrdens((prev) => prev.map((item) => (String(item.id) === String(osId) ? { ...item, status: 'concluida' } : item)));
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/comercial/ordens-servico/${osId}/concluir`, {
@@ -401,13 +498,26 @@ const Comercial = () => {
             {activeTab === 'ordens' && 'Lista de Ordens de Serviço'}
             {activeTab === 'contratos' && 'Lista de Contratos'}
           </h2>
-          <button
-            onClick={() => openForm(activeTab === 'servicos' ? 'servico' : 'contrato')}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <Plus size={18} />
-            Novo {activeTab === 'servicos' ? 'Serviço' : activeTab === 'contratos' ? 'Contrato' : ''}
-          </button>
+          <div className="flex items-center gap-2">
+            {activeTab === 'ordens' && (
+              <button
+                onClick={() => setShowOsModelModal(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <FileText size={18} />
+                Modelos de O.S.
+              </button>
+            )}
+            {activeTab !== 'ordens' && (
+              <button
+                onClick={() => openForm(activeTab === 'servicos' ? 'servico' : 'contrato')}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <Plus size={18} />
+                Novo {activeTab === 'servicos' ? 'Serviço' : activeTab === 'contratos' ? 'Contrato' : ''}
+              </button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -828,6 +938,105 @@ const Comercial = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {showOsModelModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">Modelos de Ordem de Serviço</h2>
+              <button
+                type="button"
+                onClick={() => setShowOsModelModal(false)}
+                className="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateOsModel} className="space-y-4 mb-6 border border-gray-700 rounded-lg p-4 bg-gray-900/40">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Nome do modelo *</label>
+                  <input
+                    type="text"
+                    value={osModelForm.nome_modelo}
+                    onChange={(e) => setOsModelForm((p) => ({ ...p, nome_modelo: e.target.value }))}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Nome do cliente *</label>
+                  <input
+                    type="text"
+                    value={osModelForm.nome_cliente}
+                    onChange={(e) => setOsModelForm((p) => ({ ...p, nome_cliente: e.target.value }))}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Valor *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={osModelForm.valor}
+                    onChange={(e) => setOsModelForm((p) => ({ ...p, valor: e.target.value }))}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">Forma de pagamento</label>
+                  <input
+                    type="text"
+                    value={osModelForm.forma_pagamento}
+                    onChange={(e) => setOsModelForm((p) => ({ ...p, forma_pagamento: e.target.value }))}
+                    className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Pix, boleto, cartão..."
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-300 mb-2">Detalhes do pagamento</label>
+                <textarea
+                  value={osModelForm.detalhes_pagamento}
+                  onChange={(e) => setOsModelForm((p) => ({ ...p, detalhes_pagamento: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Parcelamento, vencimento, observações..."
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button type="submit" className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
+                  Salvar modelo
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-3">
+              {osModels.length === 0 ? (
+                <p className="text-sm text-gray-400">Nenhum modelo cadastrado ainda.</p>
+              ) : (
+                osModels.map((model) => (
+                  <div key={model.id} className="rounded-lg border border-gray-700 bg-gray-900/30 p-4">
+                    <p className="text-white font-semibold">{model.nome_modelo}</p>
+                    <p className="text-sm text-gray-300 mt-1">Cliente: {model.nome_cliente}</p>
+                    <p className="text-sm text-gray-300">Valor: R$ {Number(model.valor || 0).toFixed(2)}</p>
+                    <p className="text-sm text-gray-300">Forma de pagamento: {model.forma_pagamento}</p>
+                    <p className="text-sm text-gray-400 mt-1">{model.detalhes_pagamento}</p>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}

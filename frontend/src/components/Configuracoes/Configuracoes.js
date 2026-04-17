@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
-import { Settings, Save, User, Shield, Users as UsersIcon } from 'lucide-react';
+import { Settings, User, Shield, Users as UsersIcon, UserCircle2 } from 'lucide-react';
 
 const Configuracoes = () => {
   const { user } = useAuth();
@@ -53,6 +53,31 @@ const Configuracoes = () => {
           </div>
         </div>
       )}
+
+      <div className="glass rounded-2xl border border-white/10 p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl border border-white/10 bg-black/25 p-2">
+            <UserCircle2 className="h-5 w-5 text-cyan-300" />
+          </div>
+          <div className="space-y-2">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Nome</div>
+              <div className="text-lg font-semibold text-white">{user?.name || 'Usuário'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Email</div>
+              <div className="text-sm text-gray-300">{user?.email || '-'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Perfil</div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
+                <Shield className="h-3.5 w-3.5" />
+                {user?.role || 'colaborador'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* User Profile */}

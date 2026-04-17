@@ -1,12 +1,196 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../config/api';
+import {
+  mockBasicUsers,
+  mockClients,
+  mockFiscalDashboardStats,
+  mockFiscalNotasFiscais,
+  mockFiscalObrigacoes,
+} from '../../dev/mockData';
 import { 
   Scale, Plus, FileText, Filter, Calendar, TrendingUp, 
   AlertTriangle, CheckCircle, Clock, Upload, Download,
   Search, Edit, Trash2, Eye, X, AlertCircle, FileUp
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const FISCAL_CLIENT_SETUP_KEY = 'mock_fiscal_client_setup_v1';
+const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
+const TAX_RULES_VERSION = '2026.04';
+
+const mergeClientsUnique = (...lists) => {
+  const map = new Map();
+  lists.flat().forEach((client) => {
+    if (!client) return;
+    const key = client.id || client.cnpj || `${client.nome_empresa}-${client.nome_fantasia}`;
+    if (!map.has(key)) map.set(key, client);
+  });
+  return Array.from(map.values());
+};
+
+const TAX_RULES_BY_SEGMENT = [
+  { match: ['farmacia', 'drogaria'], flags: { farmacia: true, substituicaoTributaria: true, tributacaoMonofasica: true, difal: true, aliquotaZero: false, isencao: false, naoIncidencia: false, diferimento: false, antecipacaoTributaria: true } },
+  { match: ['combustivel', 'posto'], flags: { farmacia: false, substituicaoTributaria: false, tributacaoMonofasica: true, difal: true, aliquotaZero: false, isencao: false, naoIncidencia: false, diferimento: false, antecipacaoTributaria: true } },
+  { match: ['atacad', 'varej', 'mercad', 'comerc'], flags: { farmacia: false, substituicaoTributaria: true, tributacaoMonofasica: false, difal: true, aliquotaZero: false, isencao: false, naoIncidencia: false, diferimento: false, antecipacaoTributaria: true } },
+  { match: ['industr', 'fabrica'], flags: { farmacia: false, substituicaoTributaria: true, tributacaoMonofasica: false, difal: true, aliquotaZero: false, isencao: false, naoIncidencia: false, diferimento: true, antecipacaoTributaria: false } },
+  { match: ['clinica', 'medic', 'servic', 'consult'], flags: { farmacia: false, substituicaoTributaria: false, tributacaoMonofasica: false, difal: false, aliquotaZero: false, isencao: true, naoIncidencia: false, diferimento: false, antecipacaoTributaria: false } },
+];
+
+const CNAE_RULES = [
+  { startsWith: ['47'], set: { substituicaoTributaria: true, difal: true, antecipacaoTributaria: true } }, // Comércio varejista
+  { startsWith: ['46'], set: { substituicaoTributaria: true, difal: true, antecipacaoTributaria: true } }, // Comércio atacadista
+  { startsWith: ['21'], set: { tributacaoMonofasica: true, farmacia: true } }, // Farmoquímicos e farmacêuticos
+  { startsWith: ['19'], set: { tributacaoMonofasica: true, difal: true, antecipacaoTributaria: true } }, // Derivados de petróleo
+  { startsWith: ['10', '11'], set: { substituicaoTributaria: true, diferimento: true } }, // Alimentação e bebidas
+  { startsWith: ['29', '30'], set: { substituicaoTributaria: true, difal: true } }, // Autopeças e veículos
+  { startsWith: ['41', '42', '43'], set: { diferimento: true, naoIncidencia: false } }, // Construção
+  { startsWith: ['86'], set: { isencao: true, naoIncidencia: true } }, // Saúde humana
+];
+
+const NCM_RULES = [
+  { startsWith: ['3003', '3004'], set: { tributacaoMonofasica: true, farmacia: true } }, // Medicamentos
+  { startsWith: ['2710'], set: { tributacaoMonofasica: true, antecipacaoTributaria: true } }, // Combustíveis
+  { startsWith: ['2203', '2208'], set: { substituicaoTributaria: true } }, // Bebidas
+  { startsWith: ['8708'], set: { substituicaoTributaria: true } }, // Peças automotivas
+  { startsWith: ['2402'], set: { tributacaoMonofasica: true } }, // Cigarros
+];
+
+const normalizeText = (value = '') =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const inferSegmentByClient = (client) => {
+  const source = normalizeText(`${client?.nome_empresa || ''} ${client?.nome_fantasia || ''}`);
+  if (source.includes('farm') || source.includes('drog')) return 'Farmácia';
+  if (source.includes('posto') || source.includes('combust')) return 'Combustíveis';
+  if (source.includes('mercad') || source.includes('comerc') || source.includes('varej')) return 'Comércio';
+  if (source.includes('constr') || source.includes('industr')) return 'Indústria';
+  if (source.includes('clinica') || source.includes('medic') || source.includes('servic')) return 'Serviços';
+  return 'Comércio';
+};
+
+const inferPorte = (client) => {
+  const regime = normalizeText(client?.tipo_regime || client?.regime || '');
+  if (regime.includes('mei')) return 'MEI';
+  if (regime.includes('simples')) return 'EPP';
+  if (regime.includes('presumido')) return 'Médio porte';
+  if (regime.includes('real')) return 'Grande porte';
+  return 'ME';
+};
+
+const buildTaxFlags = (segmento = '', cnae = '', ncm = '') => {
+  const normalized = normalizeText(segmento);
+  const matchedSegment = TAX_RULES_BY_SEGMENT.find((item) => item.match.some((keyword) => normalized.includes(normalizeText(keyword))));
+  const base = matchedSegment?.flags || {
+    farmacia: false,
+    substituicaoTributaria: false,
+    tributacaoMonofasica: false,
+    diferimento: false,
+    difal: false,
+    aliquotaZero: false,
+    isencao: false,
+    naoIncidencia: false,
+    antecipacaoTributaria: false,
+  };
+
+  const cnaeDigits = String(cnae || '').replace(/\D/g, '');
+  const ncmDigits = String(ncm || '').replace(/\D/g, '');
+  let next = { ...base };
+
+  CNAE_RULES.forEach((rule) => {
+    if (rule.startsWith.some((prefix) => cnaeDigits.startsWith(prefix))) {
+      next = { ...next, ...rule.set };
+    }
+  });
+
+  NCM_RULES.forEach((rule) => {
+    if (rule.startsWith.some((prefix) => ncmDigits.startsWith(prefix))) {
+      next = { ...next, ...rule.set };
+    }
+  });
+
+  return next;
+};
+
+const explainTaxFlags = (segmento = '', cnae = '', ncm = '') => {
+  const reasons = [];
+  const normalizedSegment = normalizeText(segmento);
+  const cnaeDigits = String(cnae || '').replace(/\D/g, '');
+  const ncmDigits = String(ncm || '').replace(/\D/g, '');
+
+  const segmentMatch = TAX_RULES_BY_SEGMENT.find((item) => item.match.some((keyword) => normalizedSegment.includes(normalizeText(keyword))));
+  if (segmentMatch) {
+    reasons.push(`Segmento "${segmento}" acionou regra de segmento`);
+  }
+
+  CNAE_RULES.forEach((rule) => {
+    if (rule.startsWith.some((prefix) => cnaeDigits.startsWith(prefix))) {
+      reasons.push(`CNAE ${cnae || '-'} acionou prefixo ${rule.startsWith.join(', ')}`);
+    }
+  });
+
+  NCM_RULES.forEach((rule) => {
+    if (rule.startsWith.some((prefix) => ncmDigits.startsWith(prefix))) {
+      reasons.push(`NCM ${ncm || '-'} acionou prefixo ${rule.startsWith.join(', ')}`);
+    }
+  });
+
+  return reasons;
+};
+
+const SN_BRACKETS = {
+  'I': [
+    { max: 180000, nominal: 0.04, deducao: 0 },
+    { max: 360000, nominal: 0.073, deducao: 5940 },
+    { max: 720000, nominal: 0.095, deducao: 13860 },
+    { max: 1800000, nominal: 0.107, deducao: 22500 },
+    { max: 3600000, nominal: 0.143, deducao: 87300 },
+    { max: 4800000, nominal: 0.19, deducao: 378000 },
+  ],
+  'II': [
+    { max: 180000, nominal: 0.045, deducao: 0 },
+    { max: 360000, nominal: 0.078, deducao: 5940 },
+    { max: 720000, nominal: 0.10, deducao: 13860 },
+    { max: 1800000, nominal: 0.112, deducao: 22500 },
+    { max: 3600000, nominal: 0.147, deducao: 85500 },
+    { max: 4800000, nominal: 0.30, deducao: 720000 },
+  ],
+  'III': [
+    { max: 180000, nominal: 0.06, deducao: 0 },
+    { max: 360000, nominal: 0.112, deducao: 9360 },
+    { max: 720000, nominal: 0.135, deducao: 17640 },
+    { max: 1800000, nominal: 0.16, deducao: 35640 },
+    { max: 3600000, nominal: 0.21, deducao: 125640 },
+    { max: 4800000, nominal: 0.33, deducao: 648000 },
+  ],
+  'IV': [
+    { max: 180000, nominal: 0.045, deducao: 0 },
+    { max: 360000, nominal: 0.09, deducao: 8100 },
+    { max: 720000, nominal: 0.102, deducao: 12420 },
+    { max: 1800000, nominal: 0.14, deducao: 39780 },
+    { max: 3600000, nominal: 0.22, deducao: 183780 },
+    { max: 4800000, nominal: 0.33, deducao: 828000 },
+  ],
+  'V': [
+    { max: 180000, nominal: 0.155, deducao: 0 },
+    { max: 360000, nominal: 0.18, deducao: 4500 },
+    { max: 720000, nominal: 0.195, deducao: 9900 },
+    { max: 1800000, nominal: 0.205, deducao: 17100 },
+    { max: 3600000, nominal: 0.23, deducao: 62100 },
+    { max: 4800000, nominal: 0.305, deducao: 540000 },
+  ],
+};
+
+const calculateAliquotaEfetiva = (anexo = 'I', rbt12 = 0) => {
+  const faixas = SN_BRACKETS[anexo] || SN_BRACKETS.I;
+  const receita = Number(rbt12 || 0);
+  const faixa = faixas.find((item) => receita <= item.max) || faixas[faixas.length - 1];
+  if (!receita) return 0;
+  return (((receita * faixa.nominal) - faixa.deducao) / receita) * 100;
+};
 
 const FiscalExpandido = () => {
   const { hasAccess, user } = useAuth();
@@ -73,14 +257,26 @@ const FiscalExpandido = () => {
 
   const [clientes, setClientes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [fiscalSetup, setFiscalSetup] = useState({});
 
   useEffect(() => {
     if (hasAccess([], ['fiscal'])) {
       loadDashboardStats();
       loadClientes();
       loadUsuarios();
+      try {
+        const raw = localStorage.getItem(FISCAL_CLIENT_SETUP_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') setFiscalSetup(parsed);
+        }
+      } catch {}
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(FISCAL_CLIENT_SETUP_KEY, JSON.stringify(fiscalSetup));
+  }, [fiscalSetup]);
 
   useEffect(() => {
     if (activeTab === 'obrigacoes') {
@@ -96,6 +292,7 @@ const FiscalExpandido = () => {
       setDashboardStats(response.data);
     } catch (error) {
       console.error('Erro ao carregar dashboard:', error);
+      setDashboardStats(mockFiscalDashboardStats);
     }
   };
 
@@ -113,8 +310,7 @@ const FiscalExpandido = () => {
       setObrigacoes(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar obrigações:', error);
-      toast.error('Erro ao carregar obrigações fiscais');
-      setObrigacoes([]);
+      setObrigacoes(mockFiscalObrigacoes);
     } finally {
       setLoading(false);
     }
@@ -134,19 +330,28 @@ const FiscalExpandido = () => {
       setNotasFiscais(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar notas fiscais:', error);
-      toast.error('Erro ao carregar notas fiscais');
-      setNotasFiscais([]);
+      setNotasFiscais(mockFiscalNotasFiscais);
     } finally {
       setLoading(false);
     }
   };
 
   const loadClientes = async () => {
+    let localMockClients = [];
+    try {
+      const localRaw = localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY);
+      const parsed = localRaw ? JSON.parse(localRaw) : [];
+      localMockClients = Array.isArray(parsed) ? parsed : [];
+    } catch {}
+
     try {
       const response = await api.get('/clients?limit=1000');
-      setClientes(response.data.clients || []);
+      const apiClients = response.data?.clients || response.data || [];
+      const baseClients = Array.isArray(apiClients) && apiClients.length ? apiClients : mockClients;
+      setClientes(mergeClientsUnique(baseClients, localMockClients));
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
+      setClientes(mergeClientsUnique(mockClients, localMockClients));
     }
   };
 
@@ -156,6 +361,7 @@ const FiscalExpandido = () => {
       setUsuarios(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
+      setUsuarios(mockBasicUsers);
     }
   };
 
@@ -326,6 +532,154 @@ const FiscalExpandido = () => {
     }).format(value || 0);
   };
 
+  const fiscalClients = useMemo(() => {
+    return clientes.map((client) => {
+      const setup = fiscalSetup[client.id] || {};
+      const segmento = setup.segmento || inferSegmentByClient(client);
+      const anexo = setup.anexo || 'I';
+      const rbt12 = Number(setup.rbt12 || 360000);
+      const aliquotaEfetiva = Number(setup.aliquotaEfetiva || calculateAliquotaEfetiva(anexo, rbt12));
+      return {
+        id: client.id,
+        nome_empresa: client.nome_empresa,
+        cnpj: client.cnpj,
+        regime: client.tipo_regime || 'simples_nacional',
+        statusFiscal: setup.statusFiscal || (setup.temMovimento ? 'com_movimento' : 'sem_movimento'),
+        porte: setup.porte || inferPorte(client),
+        segmento,
+        cnae: setup.cnae || '',
+        ncm: setup.ncm || '',
+        anexo,
+        rbt12,
+        aliquotaEfetiva,
+        flags: buildTaxFlags(segmento, setup.cnae || '', setup.ncm || ''),
+        flagReasons: explainTaxFlags(segmento, setup.cnae || '', setup.ncm || ''),
+        rulesVersion: TAX_RULES_VERSION,
+      };
+    });
+  }, [clientes, fiscalSetup]);
+
+  const updateFiscalClientSetup = (clientId, field, value) => {
+    setFiscalSetup((current) => {
+      const base = current[clientId] || {};
+      const next = { ...base, [field]: value };
+      if (field === 'anexo' || field === 'rbt12') {
+        const anexo = field === 'anexo' ? value : (next.anexo || 'I');
+        const rbt12 = field === 'rbt12' ? Number(value || 0) : Number(next.rbt12 || 0);
+        next.aliquotaEfetiva = Number(calculateAliquotaEfetiva(anexo, rbt12).toFixed(2));
+      }
+      return { ...current, [clientId]: next };
+    });
+  };
+
+  const fiscalClientsView = (
+    <div className="space-y-4">
+      <div className="glass rounded-xl p-4">
+        <p className="text-sm text-gray-300">
+          Lista otimizada para o setor fiscal. O cadastro da empresa é importado e o colaborador complementa dados como CNAE, Anexo e RBT12.
+        </p>
+      </div>
+      <div className="glass rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table-futuristic w-full min-w-[1420px]">
+            <thead>
+              <tr className="border-b border-red-600/30">
+                <th className="text-left p-4 text-gray-300 font-semibold">Empresa</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Porte</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Status fiscal</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Segmento</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">CNAE</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">NCM base</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Anexo</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">RBT12</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Aliquota efetiva</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Matriz tributaria automatica (v{TAX_RULES_VERSION})</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fiscalClients.map((client) => (
+                <tr key={client.id} className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors">
+                  <td className="p-4 text-white font-medium">{client.nome_empresa}</td>
+                  <td className="p-4 text-gray-300 font-mono text-xs">{client.cnpj || '-'}</td>
+                  <td className="p-4">
+                    <select value={client.porte} onChange={(e) => updateFiscalClientSetup(client.id, 'porte', e.target.value)} className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white">
+                      <option>MEI</option>
+                      <option>ME</option>
+                      <option>EPP</option>
+                      <option>Medio porte</option>
+                      <option>Grande porte</option>
+                    </select>
+                  </td>
+                  <td className="p-4">
+                    <select
+                      value={client.statusFiscal}
+                      onChange={(e) => {
+                        const status = e.target.value;
+                        updateFiscalClientSetup(client.id, 'statusFiscal', status);
+                        updateFiscalClientSetup(client.id, 'temMovimento', status === 'com_movimento');
+                      }}
+                      className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                    >
+                      <option value="sem_movimento">Sem movimento</option>
+                      <option value="com_movimento">Com movimento</option>
+                    </select>
+                  </td>
+                  <td className="p-4">
+                    <input value={client.segmento} onChange={(e) => updateFiscalClientSetup(client.id, 'segmento', e.target.value)} className="w-32 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+                  </td>
+                  <td className="p-4">
+                    <input value={client.cnae} placeholder="0000-0/00" onChange={(e) => updateFiscalClientSetup(client.id, 'cnae', e.target.value)} className="w-28 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+                  </td>
+                  <td className="p-4">
+                    <input value={client.ncm} placeholder="0000.00.00" onChange={(e) => updateFiscalClientSetup(client.id, 'ncm', e.target.value)} className="w-28 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+                  </td>
+                  <td className="p-4">
+                    <select value={client.anexo} onChange={(e) => updateFiscalClientSetup(client.id, 'anexo', e.target.value)} className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white">
+                      <option value="I">I</option>
+                      <option value="II">II</option>
+                      <option value="III">III</option>
+                      <option value="IV">IV</option>
+                      <option value="V">V</option>
+                    </select>
+                  </td>
+                  <td className="p-4">
+                    <input type="number" value={client.rbt12} onChange={(e) => updateFiscalClientSetup(client.id, 'rbt12', Number(e.target.value || 0))} className="w-28 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white" />
+                  </td>
+                  <td className="p-4 text-emerald-300 text-sm font-semibold">{client.aliquotaEfetiva.toFixed(2)}%</td>
+                  <td className="p-4">
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(client.flags).filter(([, enabled]) => enabled).map(([flag]) => (
+                        <span key={flag} className="px-2 py-1 rounded-full text-[10px] bg-blue-600/20 text-blue-200 border border-blue-600/30">
+                          {flag === 'substituicaoTributaria' ? 'ST' :
+                            flag === 'tributacaoMonofasica' ? 'Monofasica' :
+                            flag === 'diferimento' ? 'Diferimento' :
+                            flag === 'difal' ? 'DIFAL' :
+                            flag === 'aliquotaZero' ? 'Aliquota Zero' :
+                            flag === 'isencao' ? 'Isencao' :
+                            flag === 'naoIncidencia' ? 'Nao incidencia' :
+                            flag === 'antecipacaoTributaria' ? 'Antecipacao' : 'Farmacia'}
+                        </span>
+                      ))}
+                      {Object.values(client.flags).every((enabled) => !enabled) ? <span className="text-xs text-gray-500">Sem gatilho automatico</span> : null}
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {client.flagReasons?.length ? client.flagReasons.slice(0, 3).map((reason, idx) => (
+                        <p key={`${client.id}-reason-${idx}`} className="text-[11px] text-gray-400 leading-relaxed">
+                          {reason}
+                        </p>
+                      )) : <p className="text-[11px] text-gray-500">Nenhuma regra adicional acionada.</p>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   if (!hasAccess([], ['fiscal'])) {
     return (
       <div className="glass p-8 rounded-2xl text-center">
@@ -424,10 +778,20 @@ const FiscalExpandido = () => {
         >
           📄 Notas Fiscais
         </button>
+        <button
+          onClick={() => setActiveTab('clientes_fiscais')}
+          className={`px-6 py-3 rounded-lg font-medium transition-all ${
+            activeTab === 'clientes_fiscais'
+              ? 'bg-red-600 text-white shadow-lg'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          🏢 Clientes Fiscais
+        </button>
       </div>
 
       {/* Filtros e Ações */}
-      {activeTab === 'obrigacoes' ? (
+      {activeTab === 'clientes_fiscais' ? fiscalClientsView : activeTab === 'obrigacoes' ? (
         <>
           <div className="glass rounded-xl p-6">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
