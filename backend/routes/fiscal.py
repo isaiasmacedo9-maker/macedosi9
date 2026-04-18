@@ -15,8 +15,31 @@ from datetime import datetime, date, timedelta
 import uuid
 import base64
 import xml.etree.ElementTree as ET
+import json
 
 router = APIRouter(prefix="/fiscal", tags=["Fiscal"])
+
+
+def _normalize_obrigacao_payload(obrigacao_data: dict) -> dict:
+    """Normalize legacy fiscal payloads before Pydantic validation."""
+    data = dict(obrigacao_data or {})
+
+    for list_key in ["historico_entregas", "documentos", "documentos_anexos"]:
+        value = data.get(list_key)
+        if value is None:
+            data[list_key] = []
+            continue
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                data[list_key] = parsed if isinstance(parsed, list) else []
+            except Exception:
+                data[list_key] = []
+            continue
+        if not isinstance(value, list):
+            data[list_key] = []
+
+    return data
 
 def check_fiscal_access(user: UserResponse):
     """Check if user has access to fiscal module"""
@@ -211,6 +234,7 @@ async def get_obrigacoes(
         # Apply additional filters that are harder to do in SQL
         filtered_obrigacoes = []
         for obrigacao_data in obrigacoes_data:
+            obrigacao_data = _normalize_obrigacao_payload(obrigacao_data)
             # Filter by responsavel (case insensitive search)
             if responsavel and responsavel.lower() not in obrigacao_data.get("responsavel", "").lower():
                 continue
@@ -246,7 +270,11 @@ async def get_obrigacoes(
                 obrigacao_data['historico_entregas'] = []
             if obrigacao_data.get('documentos_anexos') is None:
                 obrigacao_data['documentos_anexos'] = []
-            filtered_obrigacoes.append(ObrigacaoFiscal(**obrigacao_data))
+            try:
+                filtered_obrigacoes.append(ObrigacaoFiscal(**obrigacao_data))
+            except Exception:
+                # Ignore malformed legacy row instead of failing whole endpoint.
+                continue
     
     return filtered_obrigacoes
 

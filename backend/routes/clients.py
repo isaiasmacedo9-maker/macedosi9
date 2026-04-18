@@ -6,8 +6,29 @@ from auth import get_current_user
 from database_compat import get_clients_collection, get_users_collection, get_chat_enhanced_collection
 from datetime import datetime
 import uuid
+import copy
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
+
+
+def _normalize_client_payload(client_data: dict) -> dict:
+    """Normalize legacy/incomplete client payloads before Pydantic validation."""
+    data = copy.deepcopy(client_data or {})
+    endereco = data.get("endereco") or {}
+    if not isinstance(endereco, dict):
+        endereco = {}
+    # Keep model compatibility even when legacy rows have null nested address fields.
+    data["endereco"] = {
+        "logradouro": endereco.get("logradouro") or "-",
+        "numero": endereco.get("numero"),
+        "complemento": endereco.get("complemento"),
+        "bairro": endereco.get("bairro") or "-",
+        "distrito": endereco.get("distrito"),
+        "cep": endereco.get("cep") or "00000-000",
+        "cidade": endereco.get("cidade") or (data.get("cidade_atendimento") or "-"),
+        "estado": endereco.get("estado") or "BA",
+    }
+    return data
 
 def check_city_access(user: UserResponse, cidade: str) -> bool:
     """Check if user has access to specific city"""
@@ -177,7 +198,12 @@ async def get_clients(
     clients_data = await clients_collection.find(filter_query, limit=limit, skip=skip)
     clients = []
     for client_data in clients_data:
-        clients.append(Client(**client_data))
+        normalized = _normalize_client_payload(client_data)
+        try:
+            clients.append(Client(**normalized))
+        except Exception:
+            # Fallback for legacy records: avoid HTTP 500 in list endpoint.
+            clients.append(normalized)
     
     total = await clients_collection.count_documents(filter_query)
     
@@ -203,7 +229,8 @@ async def get_client(
             detail="Client not found"
         )
     
-    client = Client(**client_data)
+    normalized_client = _normalize_client_payload(client_data)
+    client = Client(**normalized_client)
     
     if not check_city_access(current_user, client.cidade):
         raise HTTPException(
@@ -230,7 +257,8 @@ async def update_client(
             detail="Client not found"
         )
         
-    client = Client(**existing_client)
+    normalized_existing = _normalize_client_payload(existing_client)
+    client = Client(**normalized_existing)
     
     if not check_city_access(current_user, client.cidade):
         raise HTTPException(
@@ -249,7 +277,7 @@ async def update_client(
     
     # Return updated client
     updated_client_data = await clients_collection.find_one({"id": client_id})
-    return Client(**updated_client_data)
+    return Client(**_normalize_client_payload(updated_client_data))
 
 @router.delete("/{client_id}")
 async def delete_client(
@@ -267,7 +295,7 @@ async def delete_client(
             detail="Client not found"
         )
     
-    client = Client(**existing_client)
+    client = Client(**_normalize_client_payload(existing_client))
     
     if not check_city_access(current_user, client.cidade):
         raise HTTPException(
