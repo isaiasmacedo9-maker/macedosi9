@@ -1,0 +1,56 @@
+.services-dark {
+  background: #2f3747;
+  border-radius: 16px;
+}
+
+.services-dark .glass,
+.services-dark .glass-intense {
+  background: #101827 !important;
+  border-color: #344054 !important;
+}
+
+.services-dark .bg-white\/5 {
+  background-color: rgba(148, 163, 184, 0.08) !important;
+}
+
+.services-dark .bg-white\/10 {
+  background-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+.services-dark .border-white\/10,
+.services-dark .border-white\/15,
+.services-dark .border-white\/20 {
+  border-color: #334155 !important;
+}
+
+.services-dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+.services-dark .text-gray-300 {
+  color: #cbd5e1 !important;
+}
+
+.services-dark .text-gray-200 {
+  color: #e2e8f0 !important;
+}
+
+.services-dark .text-white {
+  color: #f8fafc !important;
+}
+
+.services-dark input,
+.services-dark select,
+.services-dark textarea {
+  background: #0b1220 !important;
+  border-color: #3b475c !important;
+  color: #e2e8f0 !important;
+}
+
+.services-dark table thead {
+  background: rgba(148, 163, 184, 0.12) !important;
+}
+
+.services-dark table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.08) !important;
+}

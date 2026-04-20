@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, FilePlus2, Printer, Users, BarChart3, Plus, Save, Pencil, Trash2, Filter } from 'lucide-react';
+import { ArrowLeft, FilePlus2, Printer, Users, BarChart3, Plus, Save, Pencil, Trash2, Filter, Search } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { mockClients } from '../../dev/mockData';
 
@@ -200,6 +200,7 @@ const ServicosAvulsos = () => {
   const [form, setForm] = useState({
     useExistingClient: true,
     existingClientId: '',
+    existingAvulsoClientId: '',
     newClientName: '',
     newClientCnpj: '',
     templateId: '',
@@ -210,6 +211,27 @@ const ServicosAvulsos = () => {
   });
 
   const clients = useMemo(() => mergeUniqueClients(), [version]);
+  const avulsoClients = useMemo(
+    () =>
+      readJson(AVULSO_CLIENTS_KEY, [])
+        .map((item) => ({
+          id: item.id || `avulso-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+          nome: item.nome_empresa || item.nome_fantasia || item.name || 'Cliente Avulso',
+          cnpj: item.cnpj || item.documento || '',
+          cidade: item.cidade || '',
+          categoria: item.categoria || '',
+        }))
+        .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR')),
+    [version],
+  );
+  const [avulsoSearch, setAvulsoSearch] = useState('');
+  const [showAddAvulso, setShowAddAvulso] = useState(false);
+  const [quickAvulsoForm, setQuickAvulsoForm] = useState({
+    nome: '',
+    cnpj: '',
+    cidade: '',
+    categoria: '',
+  });
   const templates = useMemo(() => buildTemplates(), [version]);
   const orders = useMemo(() => readJson(AVULSO_ORDERS_KEY, []), [version]);
 
@@ -249,6 +271,20 @@ const ServicosAvulsos = () => {
   );
 
   const selectedTemplate = filteredTemplates.find((item) => item.id === form.templateId) || null;
+  const filteredAvulsoClients = useMemo(() => {
+    const term = normalizeText(avulsoSearch);
+    if (!term) return avulsoClients;
+    const startsWith = avulsoClients.filter((item) => normalizeText(item.nome).startsWith(term));
+    const contains = avulsoClients.filter(
+      (item) => !normalizeText(item.nome).startsWith(term) && normalizeText(item.nome).includes(term),
+    );
+    return [...startsWith, ...contains];
+  }, [avulsoClients, avulsoSearch]);
+
+  const selectedAvulsoClient = useMemo(
+    () => avulsoClients.find((item) => String(item.id) === String(form.existingAvulsoClientId)) || null,
+    [avulsoClients, form.existingAvulsoClientId],
+  );
 
   const ensureTemplateForOtherService = (servicePreset) => {
     const existing = templates.find(
@@ -385,16 +421,27 @@ const ServicosAvulsos = () => {
       clientId = selectedClient.id || '';
       clientCnpj = selectedClient.cnpj || '';
     } else {
-      if (!form.newClientName) return;
-      const avulsoClient = {
-        id: `avulso-client-${Date.now()}`,
-        nome_empresa: form.newClientName,
-        cnpj: form.newClientCnpj || '',
-      };
-      writeJson(AVULSO_CLIENTS_KEY, [avulsoClient, ...readJson(AVULSO_CLIENTS_KEY, [])]);
-      clientName = avulsoClient.nome_empresa;
-      clientId = avulsoClient.id;
-      clientCnpj = avulsoClient.cnpj;
+      if (form.existingAvulsoClientId) {
+        const selected = avulsoClients.find((item) => String(item.id) === String(form.existingAvulsoClientId));
+        if (!selected) return;
+        clientName = selected.nome;
+        clientId = selected.id;
+        clientCnpj = selected.cnpj;
+      } else {
+        if (!form.newClientName) return;
+        const avulsoClient = {
+          id: `avulso-client-${Date.now()}`,
+          nome_empresa: form.newClientName,
+          cnpj: form.newClientCnpj || '',
+          categoria: selectedCategory?.label || 'Cliente Avulso',
+          cidade: '',
+        };
+        writeJson(AVULSO_CLIENTS_KEY, [avulsoClient, ...readJson(AVULSO_CLIENTS_KEY, [])]);
+        clientName = avulsoClient.nome_empresa;
+        clientId = avulsoClient.id;
+        clientCnpj = avulsoClient.cnpj;
+        setVersion((v) => v + 1);
+      }
     }
 
     const categoryLabel = CATEGORIES.find((item) => item.key === selectedTemplate.categoria)?.label || 'Outros Servicos';
@@ -424,6 +471,7 @@ const ServicosAvulsos = () => {
     setForm({
       useExistingClient: true,
       existingClientId: '',
+      existingAvulsoClientId: '',
       newClientName: '',
       newClientCnpj: '',
       templateId: '',
@@ -433,6 +481,29 @@ const ServicosAvulsos = () => {
       dadosNecessarios: '',
     });
     setVersion((v) => v + 1);
+  };
+
+  const handleQuickAddAvulso = () => {
+    if (!quickAvulsoForm.nome.trim()) return;
+    const payload = {
+      id: `avulso-client-${Date.now()}`,
+      nome_empresa: quickAvulsoForm.nome.trim(),
+      cnpj: quickAvulsoForm.cnpj.trim(),
+      cidade: quickAvulsoForm.cidade.trim(),
+      categoria: quickAvulsoForm.categoria || selectedCategory?.label || 'Cliente Avulso',
+      origem: 'servicos_avulsos',
+    };
+    writeJson(AVULSO_CLIENTS_KEY, [payload, ...readJson(AVULSO_CLIENTS_KEY, [])]);
+    setVersion((v) => v + 1);
+    setShowAddAvulso(false);
+    setQuickAvulsoForm({ nome: '', cnpj: '', cidade: '', categoria: '' });
+    setForm((prev) => ({
+      ...prev,
+      useExistingClient: false,
+      existingAvulsoClientId: payload.id,
+      newClientName: '',
+      newClientCnpj: '',
+    }));
   };
 
   return (
@@ -719,19 +790,106 @@ const ServicosAvulsos = () => {
                 ) : null}
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <input
-                  value={form.newClientName}
-                  onChange={(e) => setForm((p) => ({ ...p, newClientName: e.target.value }))}
-                  placeholder="Nome do cliente avulso"
-                  className="input-futuristic rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  value={form.newClientCnpj}
-                  onChange={(e) => setForm((p) => ({ ...p, newClientCnpj: e.target.value }))}
-                  placeholder="CNPJ (opcional)"
-                  className="input-futuristic rounded-lg px-3 py-2 text-sm"
-                />
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[220px]">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input
+                      value={avulsoSearch}
+                      onChange={(e) => setAvulsoSearch(e.target.value)}
+                      placeholder="Buscar cliente avulso cadastrado"
+                      className="input-futuristic w-full rounded-lg py-2 pl-9 pr-3 text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAvulso((prev) => !prev)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-100 hover:bg-emerald-500/25"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Adicionar cliente avulso
+                  </button>
+                </div>
+                <select
+                  value={form.existingAvulsoClientId}
+                  onChange={(e) =>
+                    setForm((p) => ({
+                      ...p,
+                      existingAvulsoClientId: e.target.value,
+                      newClientName: '',
+                      newClientCnpj: '',
+                    }))
+                  }
+                  className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Selecione cliente avulso cadastrado</option>
+                  {filteredAvulsoClients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.nome} {client.cnpj ? `- ${client.cnpj}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedAvulsoClient ? (
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-gray-300">
+                    <p><span className="text-gray-400">Cliente:</span> {selectedAvulsoClient.nome}</p>
+                    <p><span className="text-gray-400">Documento:</span> {selectedAvulsoClient.cnpj || '-'}</p>
+                    <p><span className="text-gray-400">Cidade:</span> {selectedAvulsoClient.cidade || '-'}</p>
+                    <p><span className="text-gray-400">Categoria:</span> {selectedAvulsoClient.categoria || '-'}</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <input
+                      value={form.newClientName}
+                      onChange={(e) => setForm((p) => ({ ...p, newClientName: e.target.value }))}
+                      placeholder="Nome do cliente avulso"
+                      className="input-futuristic rounded-lg px-3 py-2 text-sm"
+                    />
+                    <input
+                      value={form.newClientCnpj}
+                      onChange={(e) => setForm((p) => ({ ...p, newClientCnpj: e.target.value }))}
+                      placeholder="CNPJ/CPF (opcional)"
+                      className="input-futuristic rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                )}
+                {showAddAvulso ? (
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <p className="text-xs text-gray-300">Cadastrar cliente avulso rapidamente</p>
+                    <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+                      <input
+                        value={quickAvulsoForm.nome}
+                        onChange={(e) => setQuickAvulsoForm((prev) => ({ ...prev, nome: e.target.value }))}
+                        placeholder="Nome"
+                        className="input-futuristic rounded-lg px-3 py-2 text-xs"
+                      />
+                      <input
+                        value={quickAvulsoForm.cnpj}
+                        onChange={(e) => setQuickAvulsoForm((prev) => ({ ...prev, cnpj: e.target.value }))}
+                        placeholder="CPF/CNPJ"
+                        className="input-futuristic rounded-lg px-3 py-2 text-xs"
+                      />
+                      <input
+                        value={quickAvulsoForm.cidade}
+                        onChange={(e) => setQuickAvulsoForm((prev) => ({ ...prev, cidade: e.target.value }))}
+                        placeholder="Cidade"
+                        className="input-futuristic rounded-lg px-3 py-2 text-xs"
+                      />
+                      <input
+                        value={quickAvulsoForm.categoria}
+                        onChange={(e) => setQuickAvulsoForm((prev) => ({ ...prev, categoria: e.target.value }))}
+                        placeholder="Categoria"
+                        className="input-futuristic rounded-lg px-3 py-2 text-xs"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleQuickAddAvulso}
+                      className="mt-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-500/25"
+                    >
+                      Salvar cliente avulso
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
 

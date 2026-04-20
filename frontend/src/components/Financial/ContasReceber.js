@@ -11,6 +11,71 @@ import { toast } from 'sonner';
 import CreateContaModal from './CreateContaModal';
 import PaymentModal from './PaymentModal';
 
+const LOCAL_CONTAS_RECEBER_KEY = 'mock_financeiro_contas_receber_local_v1';
+const LOCAL_CONTAS_PAGAR_KEY = 'mock_financeiro_contas_pagar_local_v1';
+
+const readJson = (key, fallback) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '');
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeJson = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+const parseCsvRows = (content) => {
+  const lines = String(content || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return [];
+  const separator = lines[0].includes(';') ? ';' : ',';
+  const headers = lines[0].split(separator).map((item) => item.trim().toLowerCase());
+  return lines.slice(1).map((line) => {
+    const cols = line.split(separator);
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = (cols[index] || '').trim();
+    });
+    return row;
+  });
+};
+
+const downloadCsvTemplate = (kind) => {
+  const headersAndRows =
+    kind === 'recebimentos'
+      ? [
+          ['documento', 'empresa', 'valor', 'data_recebimento'],
+          ['BOL-0001', 'Alfa Comercio de Pecas Ltda', '1250.90', '2026-04-17'],
+          ['NF-1209', 'Beta Servicos Medicos', '890.00', '2026-04-17'],
+        ]
+      : [
+          ['descricao', 'valor', 'data', 'categoria', 'status'],
+          ['Tarifa bancaria', '49.90', '2026-04-17', 'bancario', 'pendente'],
+          ['Internet escritorio', '189.00', '2026-04-17', 'infraestrutura', 'pendente'],
+        ];
+
+  const content = headersAndRows.map((row) => row.join(';')).join('\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = kind === 'recebimentos' ? 'template_recebimentos.csv' : 'template_contas_pagar.csv';
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
+
+const addMonthsIso = (dateIso, monthsToAdd) => {
+  const base = new Date(`${dateIso}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return dateIso;
+  base.setMonth(base.getMonth() + monthsToAdd);
+  return base.toISOString().slice(0, 10);
+};
+
 const ContasReceber = () => {
   const { hasAccess, user } = useAuth();
   const [contas, setContas] = useState([]);
@@ -20,6 +85,8 @@ const ContasReceber = () => {
   const [showContactModal, setShowContactModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importType, setImportType] = useState('recebimentos');
+  const [importResult, setImportResult] = useState(null);
   const [selectedConta, setSelectedConta] = useState(null);
   const [dashboardStats, setDashboardStats] = useState(null);
   
@@ -51,11 +118,14 @@ const ContasReceber = () => {
           situacao: filters.situacao.join(',') || undefined
         }
       });
-      setContas(response.data || []);
+      const localExtras = readJson(LOCAL_CONTAS_RECEBER_KEY, []);
+      const backend = Array.isArray(response.data) ? response.data : [];
+      const merged = [...localExtras, ...backend];
+      setContas(merged);
     } catch (error) {
       console.error('Error loading contas:', error);
       toast.error('Erro ao carregar contas a receber');
-      setContas([]);
+      setContas(readJson(LOCAL_CONTAS_RECEBER_KEY, []));
     } finally {
       setLoading(false);
     }
@@ -75,14 +145,46 @@ const ContasReceber = () => {
   };
 
   const handleCreateConta = async (formData) => {
+    const qtdAdicional = Math.max(0, Number(formData.gerar_mais_meses || 0));
+    const repeticoes = Array.from({ length: qtdAdicional + 1 }, (_, index) => index);
     try {
-      await api.post('/financial/contas-receber', formData);
-      toast.success('Conta criada com sucesso!');
+      for (const index of repeticoes) {
+        const payload = {
+          ...formData,
+          data_emissao: addMonthsIso(formData.data_emissao, index),
+          data_vencimento: addMonthsIso(formData.data_vencimento, index),
+          documento: index === 0 ? formData.documento : `${formData.documento}-${String(index + 1).padStart(2, '0')}`,
+          gerar_mais_meses: 0,
+        };
+        await api.post('/financial/contas-receber', payload);
+      }
+      toast.success(qtdAdicional ? `Contas criadas para ${qtdAdicional + 1} meses.` : 'Conta criada com sucesso!');
       setShowCreateModal(false);
       loadContas();
       loadDashboardStats();
     } catch (error) {
-      toast.error('Erro ao criar conta: ' + (error.response?.data?.detail || 'Erro desconhecido'));
+      const localCurrent = readJson(LOCAL_CONTAS_RECEBER_KEY, []);
+      const localGenerated = repeticoes.map((index) => ({
+        id: `local-cr-${Date.now()}-${index}`,
+        empresa_id: formData.empresa_id,
+        empresa: formData.empresa,
+        descricao: formData.descricao,
+        documento: index === 0 ? formData.documento : `${formData.documento}-${String(index + 1).padStart(2, '0')}`,
+        tipo_documento: formData.tipo_documento || 'boleto',
+        valor_original: Number(formData.valor_original || 0),
+        total_liquido: Number(formData.valor_original || 0),
+        data_emissao: addMonthsIso(formData.data_emissao, index),
+        data_vencimento: addMonthsIso(formData.data_vencimento, index),
+        cidade_atendimento: formData.cidade_atendimento,
+        usuario_responsavel: formData.usuario_responsavel,
+        situacao: 'em_aberto',
+        created_at: new Date().toISOString(),
+        local: true,
+      }));
+      writeJson(LOCAL_CONTAS_RECEBER_KEY, [...localGenerated, ...localCurrent]);
+      setContas((prev) => [...localGenerated, ...prev]);
+      setShowCreateModal(false);
+      toast.success(qtdAdicional ? `Contas locais criadas para ${qtdAdicional + 1} meses.` : 'Conta local criada (modo desenvolvimento).');
     }
   };
 
@@ -122,6 +224,67 @@ const ContasReceber = () => {
     } catch (error) {
       toast.error('Erro ao duplicar conta: ' + (error.response?.data?.detail || 'Erro desconhecido'));
     }
+  };
+
+  const importFromCsv = async (file) => {
+    if (!file) return;
+    const text = await file.text();
+    const rows = parseCsvRows(text);
+    if (!rows.length) {
+      toast.error('CSV sem linhas válidas.');
+      return;
+    }
+
+    if (importType === 'recebimentos') {
+      const localCurrent = readJson(LOCAL_CONTAS_RECEBER_KEY, []);
+      const merged = [...contas];
+      let updatedCount = 0;
+
+      rows.forEach((row) => {
+        const doc = row.documento || row.doc || row.numero || row.numero;
+        const empresa = row.empresa || row.cliente || '';
+        const valor = Number((row.valor || row.valor_pago || '0').replace(',', '.'));
+        const dataRecebimento = row.data_recebimento || row.data || new Date().toISOString().slice(0, 10);
+
+        const target = merged.find((item) => {
+          const byDoc = doc && String(item.documento || '').toLowerCase() === String(doc).toLowerCase();
+          const byEmpresaValor =
+            !doc &&
+            empresa &&
+            String(item.empresa || '').toLowerCase().includes(String(empresa).toLowerCase()) &&
+            Math.abs(Number(item.total_liquido || item.valor_original || 0) - valor) < 0.01;
+          return byDoc || byEmpresaValor;
+        });
+
+        if (target) {
+          target.situacao = 'pago';
+          target.data_recebimento = dataRecebimento;
+          target.valor_pago = valor || Number(target.total_liquido || target.valor_original || 0);
+          updatedCount += 1;
+        }
+      });
+
+      const localsOnly = merged.filter((item) => item.local);
+      writeJson(LOCAL_CONTAS_RECEBER_KEY, localsOnly.length ? localsOnly : localCurrent);
+      setContas(merged);
+      setImportResult({ total: rows.length, aplicados: updatedCount, tipo: 'recebimentos' });
+      toast.success(`${updatedCount} recebimentos aplicados via CSV.`);
+      return;
+    }
+
+    const mappedPayables = rows.map((row, index) => ({
+      id: `cp-${Date.now()}-${index}`,
+      descricao: row.descricao || row.historico || 'Lancamento importado',
+      valor: Number((row.valor || '0').replace(',', '.')),
+      data: row.data || new Date().toISOString().slice(0, 10),
+      categoria: row.categoria || 'geral',
+      status: row.status || 'pendente',
+      origem: 'csv_extrato',
+    }));
+    const currentPayables = readJson(LOCAL_CONTAS_PAGAR_KEY, []);
+    writeJson(LOCAL_CONTAS_PAGAR_KEY, [...mappedPayables, ...currentPayables]);
+    setImportResult({ total: rows.length, aplicados: mappedPayables.length, tipo: 'contas_pagar' });
+    toast.success(`${mappedPayables.length} lançamentos enviados para Contas a Pagar.`);
   };
 
   const generateReminder = async (contaId, tipo) => {
@@ -502,6 +665,90 @@ const ContasReceber = () => {
         onSubmit={handlePayment}
         conta={selectedConta}
       />
+
+      {showImportModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-zinc-900 p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">Importar extrato CSV</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportResult(null);
+                }}
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-gray-200"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setImportType('recebimentos')}
+                className={`rounded-lg px-3 py-2 text-sm ${
+                  importType === 'recebimentos'
+                    ? 'bg-emerald-500/20 border border-emerald-500/35 text-emerald-100'
+                    : 'bg-black/30 border border-gray-700 text-gray-300'
+                }`}
+              >
+                Recebimentos (Contas a Receber)
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportType('contas_pagar')}
+                className={`rounded-lg px-3 py-2 text-sm ${
+                  importType === 'contas_pagar'
+                    ? 'bg-sky-500/20 border border-sky-500/35 text-sky-100'
+                    : 'bg-black/30 border border-gray-700 text-gray-300'
+                }`}
+              >
+                Extrato para Contas a Pagar/Pagamentos
+              </button>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => downloadCsvTemplate('recebimentos')}
+                className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-100 hover:bg-emerald-500/25"
+              >
+                Baixar template CSV • Recebimentos
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadCsvTemplate('contas_pagar')}
+                className="rounded-lg border border-sky-500/35 bg-sky-500/15 px-3 py-2 text-xs text-sky-100 hover:bg-sky-500/25"
+              >
+                Baixar template CSV • Contas a Pagar/Pagamentos
+              </button>
+            </div>
+
+            <label className="block rounded-xl border border-dashed border-white/20 bg-black/20 p-4 text-sm text-gray-300">
+              Selecione o CSV
+              <input
+                type="file"
+                accept=".csv"
+                className="mt-3 block w-full text-sm text-gray-200"
+                onChange={(e) => importFromCsv(e.target.files?.[0])}
+              />
+            </label>
+            <p className="mt-3 text-xs text-gray-400">
+              Colunas aceitas: documento/doc/numero, empresa/cliente, valor, data_recebimento/data (recebimentos) e descricao/valor/data/categoria/status (contas a pagar).
+            </p>
+
+            {importResult ? (
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
+                <p className="text-white">Importação concluída</p>
+                <p className="mt-1 text-gray-300">
+                  Tipo: {importResult.tipo} • Linhas: {importResult.total} • Aplicadas: {importResult.aplicados}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       
     </div>
   );

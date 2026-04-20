@@ -3,7 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { Navigate, useLocation } from 'react-router-dom';
 
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -16,7 +17,15 @@ const ProtectedRoute = ({ children }) => {
     );
   }
 
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role === 'cliente' && !location.pathname.startsWith('/cliente')) {
+    return <Navigate to="/cliente" replace state={{ from: location }} />;
+  }
+
+  return children;
 };
 
 export const ModuleGuard = ({ moduleKey, children }) => {

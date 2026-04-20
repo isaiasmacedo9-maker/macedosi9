@@ -1,54 +1,84 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, ChevronDown, ClipboardCheck, FolderKanban, Plus, Workflow } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Info,
+  Minus,
+  MoreHorizontal,
+  Plus,
+  RefreshCcw,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { accountingServiceProcessModels } from '../../dev/accountingProcessTemplates';
-import { useAuth } from '../../contexts/AuthContext';
+import { createProcessModelFromDraft, hydrateProcessModels } from './processModelUtils';
+import {
+  createAcademyModel,
+  generateProcessesBatch,
+  listAcademyModels,
+  updateAcademyModel,
+} from './academyProcessService';
+import './MacedoAcademyDark.css';
 
 const MODELS_KEY = 'mock_macedo_academy_process_models_v1';
 const REAL_KEY = 'mock_macedo_academy_generated_processes_v2';
-const SERVICES_KEY = 'mock_internal_services';
-const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
 
-const TASK_STATUS = ['pendente', 'tarefa_aceita', 'em_andamento', 'concluido', 'transferido'];
-const AREAS = ['processos', 'manuais'];
-const DAY = 24 * 60 * 60 * 1000;
-
-const mockClients = [
-  { id: 'cli-001', nome: 'Macedo Comercio LTDA', cnpj: '12.345.678/0001-90' },
-  { id: 'cli-002', nome: 'Loja Vila Centro', cnpj: '40.112.334/0001-21' },
-  { id: 'cli-003', nome: 'Clinica Sao Miguel', cnpj: '77.001.992/0001-11' },
+const REGIME_OPTIONS = [
+  { id: 'simples_nacional', label: 'Simples Nacional', chip: 'SN' },
+  { id: 'lucro_presumido', label: 'Lucro Presumido', chip: 'LP' },
+  { id: 'lucro_real', label: 'Lucro Real', chip: 'LR' },
+  { id: 'mei', label: 'Microempreendedor Individual', chip: 'MEI' },
+  { id: 'produtor_rural', label: 'Produtor Rural', chip: 'PR' },
+  { id: 'cpf', label: 'Pessoa Fisica', chip: 'CPF' },
 ];
 
-const collaboratorsBySector = {
-  Atendimento: [
-    { id: 'dev-user', nome: 'Desenvolvimento' },
-    { id: 'colaborador@macedosi.com', nome: 'Aline Atendimento' },
-  ],
-  Financeiro: [
-    { id: 'financeiro@macedosi.com', nome: 'Bruno Financeiro' },
-    { id: 'dev-user', nome: 'Desenvolvimento' },
-  ],
-  Fiscal: [
-    { id: 'fiscal@macedosi.com', nome: 'Carla Fiscal' },
-    { id: 'dev-user', nome: 'Desenvolvimento' },
-  ],
-  Trabalhista: [
-    { id: 'trabalhista@macedosi.com', nome: 'Diego Trabalhista' },
-    { id: 'auxiliar@macedosi.com', nome: 'Auxiliar Trabalhista' },
-  ],
-  Societario: [
-    { id: 'contadores@macedosi.com', nome: 'Equipe Societaria' },
-    { id: 'dev-user', nome: 'Desenvolvimento' },
-  ],
+const DEPARTMENT_META = {
+  fiscal: { label: 'Fiscal', badge: 'F', color: 'bg-green-500' },
+  pessoal: { label: 'Pessoal', badge: 'P', color: 'bg-amber-500' },
+  legalizacao: { label: 'Legalizacao', badge: 'L', color: 'bg-cyan-500' },
+  atendimento: { label: 'Atendimento', badge: 'A', color: 'bg-red-500' },
 };
 
+const RESPONSIBLE_OPTIONS = [
+  { id: 'responsavel_cliente', label: 'Responsavel do cliente' },
+  { id: 'nao_atribuido', label: 'Nao atribuido' },
+  { id: 'sara_macedo', label: 'Sara Macedo' },
+  { id: 'naiara', label: 'Naiara' },
+  { id: 'gilvanilson', label: 'Gilvanilson' },
+  { id: 'florivaldo', label: 'Florivaldo' },
+];
+
+const PRIORITY_OPTIONS = [
+  { id: 'todos', label: 'Todos' },
+  { id: 'urgente', label: 'Urgente' },
+  { id: 'alta', label: 'Alta' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'baixa', label: 'Baixa' },
+];
+
+const COMPETENCE_OPTIONS = [
+  { id: 'mes_prazo', label: 'Mes do prazo' },
+  { id: 'mes_anterior', label: 'Mes anterior' },
+];
+
+const RECURRENCES = [
+  { id: 'unica', label: 'Apenas uma vez' },
+  { id: 'mensal', label: 'Mensal' },
+  { id: 'trimestral', label: 'Trimestral' },
+];
+
+const MOCK_CLIENTS = [
+  { id: 'c1', nome: 'A. R. LOUREIRO FARMACIA', cnpj: '29.712.834/0001-01', regime: 'simples_nacional' },
+  { id: 'c2', nome: 'ADI COMERCIO DE MARMORES E GRANITOS LTDA', cnpj: '53.062.700/0001-77', regime: 'simples_nacional' },
+  { id: 'c3', nome: 'ADM MARMORES E GRANITOS LTDA', cnpj: '45.599.415/0001-61', regime: 'lucro_presumido' },
+  { id: 'c4', nome: 'ADR CAR SERVICOS E COMERCIO AUTOMOTIVO', cnpj: '35.025.903/0001-38', regime: 'lucro_real' },
+  { id: 'c5', nome: 'CLINICA VIDA INTEGRADA', cnpj: '18.102.334/0001-77', regime: 'simples_nacional' },
+  { id: 'c6', nome: 'MERCADO SAO JOSE', cnpj: '20.995.211/0001-49', regime: 'mei' },
+];
+
 const uid = (prefix) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-const sortByOrder = (list = []) => [...list].sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
-const toISODate = (date) => new Date(date).toISOString().slice(0, 10);
-const formatDate = (value) => new Date(value).toLocaleDateString('pt-BR');
-const parseChecklist = (obs = '') =>
-  obs.toLowerCase().includes('checklist:')
-    ? obs.split('Checklist:').pop().split(';').map((x) => x.replace(/^-/, '').trim()).filter(Boolean)
-    : [];
 const normalizeText = (value = '') =>
   String(value)
     .normalize('NFD')
@@ -56,850 +86,1901 @@ const normalizeText = (value = '') =>
     .toLowerCase()
     .trim();
 
-const normalizeSector = (raw = '') => {
-  const v = String(raw).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (v.includes('trabalh')) return 'Trabalhista';
-  if (v.includes('fiscal')) return 'Fiscal';
-  if (v.includes('finance')) return 'Financeiro';
-  if (v.includes('societ') || v.includes('contador')) return 'Societario';
-  return 'Atendimento';
+const normalizeSectorKey = (value = '') => {
+  const text = normalizeText(value);
+  if (text.includes('fiscal')) return 'fiscal';
+  if (text.includes('pessoal') || text.includes('trabalh')) return 'pessoal';
+  if (text.includes('legal')) return 'legalizacao';
+  if (text.includes('atend')) return 'atendimento';
+  return 'fiscal';
 };
 
-const mapSectorToModule = (sector = '') => {
-  const normalized = normalizeSector(sector);
-  if (normalized === 'Atendimento') return 'atendimento';
-  if (normalized === 'Financeiro') return 'financeiro';
-  if (normalized === 'Fiscal') return 'fiscal';
-  if (normalized === 'Trabalhista') return 'trabalhista';
-  if (normalized === 'Societario') return 'contadores';
-  return 'atendimento';
+const getRegimeChip = (regimeId) => REGIME_OPTIONS.find((item) => item.id === regimeId)?.chip || regimeId;
+const getResponsibleLabel = (id) => RESPONSIBLE_OPTIONS.find((item) => item.id === id)?.label || 'Responsavel do cliente';
+const getPriorityLabel = (id) => PRIORITY_OPTIONS.find((item) => item.id === id)?.label || 'Todos';
+const toIsoDate = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
 };
 
-const pushNotifications = (notifications) => {
-  const current = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY) || '[]');
-  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify([...(Array.isArray(current) ? current : []), ...notifications]));
+const toModelDraft = (model) => {
+  const regimesSelected = Array.isArray(model?.regimesConfig?.selecionados) ? model.regimesConfig.selecionados : ['simples_nacional'];
+  const etapas = Array.isArray(model?.etapas) ? model.etapas : [];
+
+  const tasks = etapas.length
+    ? etapas.map((step, index) => ({
+        id: step.id || uid('task-card'),
+        title: step.nome || `Tarefa ${index + 1}`,
+        departmentKey: step.departmentKey || normalizeSectorKey(step.setorResponsavel),
+        responsibleId: step.responsibleId || 'responsavel_cliente',
+        estimateDays: step.estimateDays || '',
+        priority: step.priority || 'todos',
+        description: step.description || ((step.tarefas || [])[0]?.descricao || ''),
+        documents: Array.isArray(step.documents) ? step.documents : [],
+      }))
+    : [
+        {
+          id: uid('task-card'),
+          title: 'Sem titulo',
+          departmentKey: 'fiscal',
+          responsibleId: 'responsavel_cliente',
+          estimateDays: '',
+          priority: 'todos',
+          description: '',
+          documents: [],
+        },
+      ];
+
+  return {
+    id: model.id,
+    title: model.nome || '',
+    description: model.descricao || '',
+    regimes: {
+      allClients: !!model?.regimesConfig?.selecionarTodos,
+      selected: regimesSelected,
+      clientsAssociated: Number(model?.regimesConfig?.clientesAssociados || 0),
+      clientsDisabled: Number(model?.regimesConfig?.clientesDesativados || 0),
+    },
+    clientsExceptions: {
+      activeView: 'adicionados',
+      search: '',
+      added: Array.isArray(model?.clientesExcecoesConfig?.adicionados) ? model.clientesExcecoesConfig.adicionados : [],
+      removed: Array.isArray(model?.clientesExcecoesConfig?.removidos) ? model.clientesExcecoesConfig.removidos : [],
+    },
+    deadline: {
+      type: model?.prazoConfig?.tipo || 'data_mensal_fixa',
+      fixedDay: Number(model?.prazoConfig?.diaFixo || 20),
+      competence: model?.prazoConfig?.competencia || 'mes_prazo',
+      useGoal: !!model?.prazoConfig?.usarPrazoMeta,
+      goalDays: Number(model?.prazoConfig?.diasAntecedencia || 5),
+      delayedFine: !!model?.prazoConfig?.atrasoGeraMulta,
+    },
+    recurrence: {
+      type: model?.recorrenciaConfig?.tipo || 'unica',
+    },
+    tasks,
+  };
 };
+
+const draftToModel = (draft, previousModel = null) => {
+  const targetDept = DEPARTMENT_META[draft.tasks[0]?.departmentKey || 'fiscal']?.label || 'Fiscal';
+  const base = createProcessModelFromDraft({
+    nome: draft.title,
+    descricao: draft.description,
+    setorDestino: targetDept,
+    steps: draft.tasks.map((task) => ({
+      nome: task.title,
+      setorResponsavel: DEPARTMENT_META[task.departmentKey]?.label || 'Fiscal',
+      tarefas: [{ descricao: task.description || task.title }],
+    })),
+    idPrefix: previousModel?.id ? 'proc-model-edit' : 'proc-model',
+  });
+  if (!base) return null;
+
+  const mappedSteps = draft.tasks.map((task, index) => ({
+    id: previousModel?.etapas?.[index]?.id || uid('step'),
+    nome: task.title,
+    setorResponsavel: DEPARTMENT_META[task.departmentKey]?.label || 'Fiscal',
+    ordem: index + 1,
+    priority: task.priority,
+    responsibleId: task.responsibleId,
+    estimateDays: task.estimateDays,
+    description: task.description,
+    departmentKey: task.departmentKey,
+    documents: task.documents || [],
+    tarefas: [
+      {
+        id: uid('task'),
+        descricao: task.description || task.title,
+        ordem: 1,
+        observacoes: '',
+      },
+    ],
+  }));
+
+  return {
+    ...base,
+    id: previousModel?.id || base.id,
+    criado_em: previousModel?.criado_em || new Date().toISOString(),
+    atualizado_em: new Date().toISOString(),
+    regimesConfig: {
+      selecionarTodos: draft.regimes.allClients,
+      selecionados: draft.regimes.selected,
+      clientesAssociados: draft.regimes.clientsAssociated,
+      clientesDesativados: draft.regimes.clientsDisabled,
+    },
+    clientesExcecoesConfig: {
+      adicionados: draft.clientsExceptions.added,
+      removidos: draft.clientsExceptions.removed,
+    },
+    prazoConfig: {
+      tipo: draft.deadline.type,
+      diaFixo: draft.deadline.fixedDay,
+      competencia: draft.deadline.competence,
+      usarPrazoMeta: draft.deadline.useGoal,
+      diasAntecedencia: draft.deadline.goalDays,
+      atrasoGeraMulta: draft.deadline.delayedFine,
+    },
+    recorrenciaConfig: {
+      tipo: draft.recurrence.type,
+    },
+    etapas: mappedSteps,
+  };
+};
+
+const EmptyState = ({ text }) => (
+  <div className="rounded-xl border border-dashed border-slate-300/70 px-4 py-8 text-center text-sm text-slate-500">
+    {text}
+  </div>
+);
 
 const MacedoAcademy = () => {
-  const { user } = useAuth();
-  const [models, setModels] = useState(accountingServiceProcessModels);
+  const [models, setModels] = useState(() => hydrateProcessModels(accountingServiceProcessModels));
   const [realProcesses, setRealProcesses] = useState([]);
-  const [services, setServices] = useState([]);
-  const [expandedId, setExpandedId] = useState('');
-  const [activeArea, setActiveArea] = useState('processos');
-  const [flowData, setFlowData] = useState({ setorBase: '', modeloId: '', clienteId: '' });
-  const [selectedProcessSector, setSelectedProcessSector] = useState('');
-  const [transferDraft, setTransferDraft] = useState({});
-  const [showCreateProcess, setShowCreateProcess] = useState(false);
-  const [showCreateManual, setShowCreateManual] = useState(false);
-  const [showEditModel, setShowEditModel] = useState(false);
-  const [newProcessDraft, setNewProcessDraft] = useState({ nome: '', descricao: '', setor: '' });
-  const [newManualDraft, setNewManualDraft] = useState({ titulo: '', objetivo: '', setor: '', etapasTexto: '', checklistTexto: '' });
-  const [editModelDraft, setEditModelDraft] = useState({ id: '', nome: '', descricao: '', setor: '' });
-  const [flowSearch, setFlowSearch] = useState({ setor: '', modelo: '', cliente: '' });
+  const [selectedId, setSelectedId] = useState('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState('regimes');
+  const [isCreateMode, setIsCreateMode] = useState(false);
+  const [createStep, setCreateStep] = useState(1);
+  const [isHeaderActionsOpen, setIsHeaderActionsOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importPreviewId, setImportPreviewId] = useState('');
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [confirmExpandedTasks, setConfirmExpandedTasks] = useState({});
+  const [expandedModelRows, setExpandedModelRows] = useState({});
+  const [search, setSearch] = useState('');
+  const [regimeFilter, setRegimeFilter] = useState('any');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [draft, setDraft] = useState(null);
 
   useEffect(() => {
-    try {
-      const m = JSON.parse(localStorage.getItem(MODELS_KEY) || 'null');
-      if (Array.isArray(m) && m.length) setModels(m);
-      const r = JSON.parse(localStorage.getItem(REAL_KEY) || '[]');
-      if (Array.isArray(r)) setRealProcesses(r);
-      const s = JSON.parse(localStorage.getItem(SERVICES_KEY) || '[]');
-      if (Array.isArray(s)) setServices(s);
-    } catch {}
+    let mounted = true;
+    const loadInitial = async () => {
+      try {
+        const backendModels = await listAcademyModels();
+        if (mounted && Array.isArray(backendModels) && backendModels.length) {
+          setModels(hydrateProcessModels(backendModels));
+        }
+      } catch {}
+
+      try {
+        const storedModels = JSON.parse(localStorage.getItem(MODELS_KEY) || '[]');
+        if (mounted && Array.isArray(storedModels) && storedModels.length) {
+          setModels(hydrateProcessModels(storedModels));
+        }
+        const storedProcesses = JSON.parse(localStorage.getItem(REAL_KEY) || '[]');
+        if (mounted && Array.isArray(storedProcesses)) setRealProcesses(storedProcesses);
+      } catch {}
+    };
+    loadInitial();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  useEffect(() => localStorage.setItem(MODELS_KEY, JSON.stringify(models)), [models]);
-  useEffect(() => localStorage.setItem(REAL_KEY, JSON.stringify(realProcesses)), [realProcesses]);
+  useEffect(() => {
+    localStorage.setItem(MODELS_KEY, JSON.stringify(models));
+  }, [models]);
 
-  const modelUsageMap = useMemo(() => {
-    const byId = new Map();
-    const byName = new Map();
-    services.forEach((service) => {
-      const modelId = service?.process_model_id || service?.modelo_id || service?.model_id;
-      if (modelId) byId.set(String(modelId), (byId.get(String(modelId)) || 0) + 1);
-      const serviceName = normalizeText(service?.tipo_servico || service?.titulo || service?.nome || '');
-      if (serviceName) byName.set(serviceName, (byName.get(serviceName) || 0) + 1);
-    });
-    return { byId, byName };
-  }, [services]);
+  useEffect(() => {
+    localStorage.setItem(REAL_KEY, JSON.stringify(realProcesses));
+  }, [realProcesses]);
 
-  const getModelUsageCount = (model) => {
-    const byIdCount = modelUsageMap.byId.get(String(model?.id || '')) || 0;
-    if (byIdCount > 0) return byIdCount;
-    return modelUsageMap.byName.get(normalizeText(model?.nome || '')) || 0;
-  };
+  const importableTemplates = useMemo(() => {
+    const currentNames = new Set(models.map((item) => normalizeText(item.nome)));
+    return accountingServiceProcessModels.filter((item) => !currentNames.has(normalizeText(item.nome)));
+  }, [models]);
 
   const filteredModels = useMemo(() => {
-    const base = !flowData.setorBase
-      ? models
-      : models.filter((m) => normalizeSector(m.setorDestino || m.setorInicial) === flowData.setorBase);
-
-    const modelTerm = normalizeText(flowSearch.modelo);
-    const searched = modelTerm
-      ? base.filter((m) => normalizeText(m.nome).includes(modelTerm))
-      : base;
-
-    return [...searched].sort((a, b) => {
-      const countDiff = getModelUsageCount(b) - getModelUsageCount(a);
-      if (countDiff !== 0) return countDiff;
-      return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+    return models.filter((model) => {
+      const searchMatches = !search || normalizeText(model.nome).includes(normalizeText(search));
+      const regimes = model?.regimesConfig?.selecionados || [];
+      const regimeMatches = regimeFilter === 'any' || regimes.includes(regimeFilter);
+      const departments = Array.from(new Set((model.etapas || []).map((step) => normalizeSectorKey(step.setorResponsavel))));
+      const departmentMatches = departmentFilter === 'all' || departments.includes(departmentFilter);
+      return searchMatches && regimeMatches && departmentMatches;
     });
-  }, [models, flowData.setorBase, flowSearch.modelo, modelUsageMap]);
+  }, [models, search, regimeFilter, departmentFilter]);
 
-  const selectedFlowModel = useMemo(
-    () => filteredModels.find((m) => m.id === flowData.modeloId) || null,
-    [filteredModels, flowData.modeloId],
-  );
-  const selectedClient = useMemo(() => mockClients.find((c) => c.id === flowData.clienteId) || null, [flowData.clienteId]);
-  const filteredFlowClients = useMemo(() => {
-    const term = normalizeText(flowSearch.cliente);
-    if (!term) return mockClients;
-    const startsWith = mockClients.filter((client) => normalizeText(client.nome).startsWith(term));
-    const contains = mockClients.filter(
-      (client) => !normalizeText(client.nome).startsWith(term) && normalizeText(client.nome).includes(term),
-    );
-    return [...startsWith, ...contains];
-  }, [flowSearch.cliente]);
+  const openEditor = (model) => {
+    setSelectedId(model.id);
+    setIsCreateMode(false);
+    setDraft(toModelDraft(model));
+    setDrawerTab('regimes');
+    setIsHeaderActionsOpen(false);
+    setIsDrawerOpen(true);
+  };
 
-  const modelsBySector = useMemo(() => {
-    const map = {};
-    models.forEach((m) => {
-      const s = normalizeSector(m.setorDestino || m.setorInicial);
-      if (!map[s]) map[s] = [];
-      map[s].push(m);
-    });
-    return map;
-  }, [models]);
+  const openCreateDrawer = () => {
+    const draftModel = {
+      id: '',
+      nome: '',
+      descricao: '',
+      etapas: [],
+      regimesConfig: {
+        selecionarTodos: true,
+        selecionados: ['simples_nacional'],
+        clientesAssociados: MOCK_CLIENTS.length,
+        clientesDesativados: 0,
+      },
+      clientesExcecoesConfig: { adicionados: [], removidos: [] },
+      prazoConfig: {
+        tipo: 'data_mensal_fixa',
+        diaFixo: 20,
+        competencia: 'mes_prazo',
+        usarPrazoMeta: false,
+        diasAntecedencia: 5,
+        atrasoGeraMulta: false,
+      },
+      recorrenciaConfig: { tipo: 'unica' },
+    };
+    setSelectedId('');
+    setIsCreateMode(true);
+    setDraft(toModelDraft(draftModel));
+    setDrawerTab('regimes');
+    setIsHeaderActionsOpen(false);
+    setIsDrawerOpen(true);
+  };
 
-  const servicesBySector = useMemo(() => {
-    const map = {};
-    services.forEach((s) => {
-      const sector = normalizeSector(s.setor || s.tipo_servico);
-      if (!map[sector]) map[sector] = [];
-      map[sector].push(s);
-    });
-    return map;
-  }, [services]);
+  const saveDraftModel = async (options = {}) => {
+    const closeDrawer = options.closeDrawer !== false;
+    if (!draft || !String(draft.title || '').trim()) return;
+    const previous = models.find((item) => item.id === selectedId) || null;
+    const nextModel = draftToModel(draft, previous);
+    if (!nextModel) return;
 
-  const manualsBySector = useMemo(() => {
-    const map = {};
-    models.forEach((m) => {
-      const sector = normalizeSector(m.setorDestino || m.setorInicial);
-      if (!map[sector]) map[sector] = [];
-      map[sector].push({
-        id: m.id,
-        titulo: m.nome,
-        objetivo: m.descricao,
-        etapas: sortByOrder(m.etapas || []).map((e) => e.nome),
-        checklist: parseChecklist((m.etapas || []).flatMap((x) => x.tarefas || []).find((t) => t.observacoes)?.observacoes || ''),
-      });
-    });
-    return map;
-  }, [models]);
-
-  const sectors = useMemo(
-    () => Array.from(new Set([...Object.keys(modelsBySector), ...Object.keys(servicesBySector), ...Object.keys(manualsBySector)])).sort(),
-    [modelsBySector, servicesBySector, manualsBySector],
-  );
-
-  const visibleSectors = useMemo(() => {
-    if (user?.role === 'admin') return sectors;
-    const allowedModules = new Set(user?.allowed_modules || []);
-    return sectors.filter((sector) => allowedModules.has(mapSectorToModule(sector)));
-  }, [sectors, user]);
-  const filteredVisibleSectors = useMemo(() => {
-    const term = normalizeText(flowSearch.setor);
-    if (!term) return visibleSectors;
-    const startsWith = visibleSectors.filter((sector) => normalizeText(sector).startsWith(term));
-    const contains = visibleSectors.filter(
-      (sector) => !normalizeText(sector).startsWith(term) && normalizeText(sector).includes(term),
-    );
-    return [...startsWith, ...contains];
-  }, [visibleSectors, flowSearch.setor]);
-
-  const processesBySelectedSector = useMemo(
-    () =>
-      realProcesses.filter((proc) => {
-        if (!selectedProcessSector) return false;
-        return (proc.etapas || []).some((step) => normalizeSector(step.setorResponsavel) === selectedProcessSector);
-      }),
-    [realProcesses, selectedProcessSector],
-  );
-
-  useEffect(() => {
-    if (!visibleSectors.length) return;
-
-    if (!selectedProcessSector || !visibleSectors.includes(selectedProcessSector)) {
-      setSelectedProcessSector(visibleSectors[0]);
+    if (isCreateMode || !previous) {
+      let persistedModel = nextModel;
+      try {
+        const response = await createAcademyModel({
+          id: nextModel.id,
+          nome: nextModel.nome,
+          descricao: nextModel.descricao,
+          setorDestino: nextModel.setorDestino,
+          regimesConfig: nextModel.regimesConfig,
+          clientesExcecoesConfig: nextModel.clientesExcecoesConfig,
+          prazoConfig: nextModel.prazoConfig,
+          recorrenciaConfig: nextModel.recorrenciaConfig,
+          etapas: nextModel.etapas,
+          metadata: nextModel.metadata || {},
+        });
+        persistedModel = {
+          ...nextModel,
+          ...response,
+        };
+      } catch {}
+      setModels((current) => [persistedModel, ...current]);
+      setSelectedId(persistedModel.id || nextModel.id);
+      setIsCreateMode(false);
+      if (closeDrawer) {
+        setIsDrawerOpen(false);
+        setDraft(null);
+      }
+      return persistedModel.id || nextModel.id;
+    } else {
+      let persistedModel = nextModel;
+      try {
+        const response = await updateAcademyModel(previous.id, {
+          id: previous.id,
+          nome: nextModel.nome,
+          descricao: nextModel.descricao,
+          setorDestino: nextModel.setorDestino,
+          regimesConfig: nextModel.regimesConfig,
+          clientesExcecoesConfig: nextModel.clientesExcecoesConfig,
+          prazoConfig: nextModel.prazoConfig,
+          recorrenciaConfig: nextModel.recorrenciaConfig,
+          etapas: nextModel.etapas,
+          metadata: nextModel.metadata || {},
+        });
+        persistedModel = {
+          ...nextModel,
+          ...response,
+        };
+      } catch {}
+      setModels((current) => current.map((item) => (item.id === previous.id ? persistedModel : item)));
+      if (closeDrawer) {
+        setIsDrawerOpen(false);
+        setDraft(null);
+      }
+      return previous.id;
     }
-  }, [visibleSectors, selectedProcessSector]);
+  };
 
-  useEffect(() => {
-    if (!selectedProcessSector) return;
-    if (flowData.setorBase !== selectedProcessSector) {
-      setFlowData((prev) => ({ ...prev, setorBase: selectedProcessSector, modeloId: '' }));
-    }
-  }, [selectedProcessSector]);
-
-  useEffect(() => {
-    if (flowData.modeloId && !filteredModels.some((m) => m.id === flowData.modeloId)) {
-      setFlowData((prev) => ({ ...prev, modeloId: '' }));
-    }
-  }, [flowData.modeloId, filteredModels]);
-
-  const createRealProcess = () => {
-    if (!selectedFlowModel || !selectedClient) return;
-    const baseDate = Date.now();
-    const etapas = sortByOrder(selectedFlowModel.etapas || []).map((step, stepIndex) => {
-      const assignedTo = stepIndex === 0 ? [user?.id || 'dev-user'] : [];
-      const prazoInicio = toISODate(baseDate + stepIndex * DAY);
-      const prazoFim = toISODate(baseDate + (stepIndex + 2) * DAY);
+  const toggleRegime = (regimeId) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const selected = new Set(current.regimes.selected);
+      if (selected.has(regimeId)) selected.delete(regimeId);
+      else selected.add(regimeId);
       return {
-        id: uid('step'),
-        nome: step.nome,
-        setorResponsavel: normalizeSector(step.setorResponsavel),
-        ordem: stepIndex + 1,
-        status: stepIndex === 0 ? 'em_andamento' : 'pendente',
-        assignedTo,
-        prazoInicio,
-        prazoFim,
-        transferidoEm: null,
-        tarefas: sortByOrder(step.tarefas || []).map((task, taskIndex) => ({
-          id: uid('task'),
-          descricao: task.descricao,
-          ordem: taskIndex + 1,
-          status: 'pendente',
-          acceptedBy: null,
-          acceptedAt: null,
-          assignedTo,
-          prazoInicio,
-          prazoFim,
-          checklist: [
-            { id: uid('chk'), text: 'Conferir dados da tarefa', done: false },
-            { id: uid('chk'), text: 'Validar qualidade da entrega', done: false },
-          ],
-          requiresDocs: false,
-          documents: [],
-          newDocName: '',
-          requiresInfo: false,
-          infoValue: '',
-        })),
+        ...current,
+        regimes: {
+          ...current.regimes,
+          selected: Array.from(selected),
+        },
       };
     });
-
-    const proc = {
-      id: uid('real'),
-      nome: selectedFlowModel.nome,
-      clienteNome: selectedClient.nome,
-      criadoEm: new Date().toISOString(),
-      currentStepIndex: 0,
-      etapas,
-    };
-    setRealProcesses((cur) => [proc, ...cur]);
-    setExpandedId(proc.id);
   };
 
-  const patchTask = (processId, stepId, taskId, fn) => {
-    setRealProcesses((cur) =>
-      cur.map((p) =>
-        p.id !== processId
-          ? p
-          : {
-              ...p,
-              etapas: p.etapas.map((s) =>
-                s.id !== stepId ? s : { ...s, tarefas: s.tarefas.map((t) => (t.id !== taskId ? t : fn(t))) },
-              ),
-            },
-      ),
-    );
-  };
-
-  const acceptTask = (processId, stepId, taskId) => {
-    patchTask(processId, stepId, taskId, (t) => ({
-      ...t,
-      status: 'tarefa_aceita',
-      acceptedBy: user?.id || user?.email || 'colaborador',
-      acceptedAt: new Date().toISOString(),
-    }));
-  };
-
-  const toggleChecklist = (processId, stepId, taskId, checklistId) => {
-    patchTask(processId, stepId, taskId, (t) => ({
-      ...t,
-      checklist: (t.checklist || []).map((item) => (item.id === checklistId ? { ...item, done: !item.done } : item)),
-    }));
-  };
-
-  const addChecklistItem = (processId, stepId, taskId) => {
-    patchTask(processId, stepId, taskId, (t) => ({
-      ...t,
-      checklist: [...(t.checklist || []), { id: uid('chk'), text: 'Novo item', done: false }],
-    }));
-  };
-
-  const updateTaskStatus = (processId, stepId, taskId, status) => {
-    patchTask(processId, stepId, taskId, (t) => ({ ...t, status }));
-  };
-
-  const toggleDoneTask = (processId, stepId, taskId, done) => {
-    patchTask(processId, stepId, taskId, (t) => ({ ...t, status: done ? 'concluido' : 'em_andamento' }));
-  };
-
-  const addDocToTask = (processId, stepId, taskId) => {
-    patchTask(processId, stepId, taskId, (t) => {
-      if (!(t.newDocName || '').trim()) return t;
-      return { ...t, documents: [...(t.documents || []), { id: uid('doc'), nome: t.newDocName.trim() }], newDocName: '' };
+  const addClientException = (client) => {
+    setDraft((current) => {
+      if (!current) return current;
+      const exists = current.clientsExceptions.added.some((item) => item.id === client.id);
+      if (exists) return current;
+      return {
+        ...current,
+        clientsExceptions: {
+          ...current.clientsExceptions,
+          added: [...current.clientsExceptions.added, client],
+        },
+      };
     });
   };
 
-  const updateTaskField = (processId, stepId, taskId, field, value) => {
-    patchTask(processId, stepId, taskId, (t) => ({ ...t, [field]: value }));
+  const removeClientException = (clientId, source) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        clientsExceptions: {
+          ...current.clientsExceptions,
+          [source]: current.clientsExceptions[source].filter((item) => item.id !== clientId),
+        },
+      };
+    });
   };
 
-  const canTransferStep = (step) => (step.tarefas || []).every((t) => t.status === 'concluido');
+  const updateTask = (taskId, field, value) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        tasks: current.tasks.map((task) => (task.id === taskId ? { ...task, [field]: value } : task)),
+      };
+    });
+  };
 
-  const transferToNextSector = (processId) => {
-    setRealProcesses((cur) =>
-      cur.map((p) => {
-        if (p.id !== processId) return p;
-        const currentIndex = p.currentStepIndex ?? 0;
-        const current = p.etapas[currentIndex];
-        const next = p.etapas[currentIndex + 1];
-        if (!current || !next || !canTransferStep(current)) return p;
+  const addTask = () => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        tasks: [
+          ...current.tasks,
+          {
+            id: uid('task-card'),
+            title: 'Sem titulo',
+            departmentKey: 'fiscal',
+            responsibleId: 'responsavel_cliente',
+            estimateDays: '',
+            priority: 'todos',
+            description: '',
+            documents: [],
+          },
+        ],
+      };
+    });
+  };
 
-        const selected = transferDraft[processId]?.[next.id] || [];
-        if (!selected.length) return p;
-        const nowIso = new Date().toISOString();
+  const removeTask = (taskId) => {
+    setDraft((current) => {
+      if (!current || current.tasks.length <= 1) return current;
+      return {
+        ...current,
+        tasks: current.tasks.filter((task) => task.id !== taskId),
+      };
+    });
+  };
 
-        pushNotifications(
-          selected.map((recipientId) => ({
-            id: uid('ntf'),
-            recipientId,
-            processId,
-            message: `Voce recebeu tarefas do processo "${p.nome}" no setor ${next.setorResponsavel}.`,
-            createdAt: nowIso,
-            read: false,
-          })),
-        );
+  const addTaskDocument = (taskId) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        tasks: current.tasks.map((task) =>
+          task.id !== taskId
+            ? task
+            : {
+                ...task,
+                documents: [
+                  ...(task.documents || []),
+                  {
+                    id: uid('doc'),
+                    title: 'Relatorio Analitico',
+                    required: true,
+                    sendToClient: true,
+                  },
+                ],
+              },
+        ),
+      };
+    });
+  };
 
-        const nextUpdated = {
-          ...next,
-          status: 'em_andamento',
-          assignedTo: selected,
-          transferidoEm: nowIso,
-          tarefas: next.tarefas.map((t) => ({ ...t, assignedTo: selected })),
-        };
-        const currentUpdated = {
-          ...current,
-          status: 'transferido',
-          transferidoEm: nowIso,
-          tarefas: current.tarefas.map((t) => ({ ...t, status: t.status === 'concluido' ? 'transferido' : t.status })),
-        };
+  const removeTaskDocument = (taskId, docId) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        tasks: current.tasks.map((task) =>
+          task.id !== taskId
+            ? task
+            : {
+                ...task,
+                documents: (task.documents || []).filter((doc) => doc.id !== docId),
+              },
+        ),
+      };
+    });
+  };
 
-        return {
-          ...p,
-          currentStepIndex: currentIndex + 1,
-          etapas: p.etapas.map((s, idx) => (idx === currentIndex ? currentUpdated : idx === currentIndex + 1 ? nextUpdated : s)),
-        };
+  const updateTaskDocument = (taskId, docId, field, value) => {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        tasks: current.tasks.map((task) =>
+          task.id !== taskId
+            ? task
+            : {
+                ...task,
+                documents: (task.documents || []).map((doc) => (doc.id === docId ? { ...doc, [field]: value } : doc)),
+              },
+        ),
+      };
+    });
+  };
+
+  const importSelectedModel = async () => {
+    const source = importableTemplates.find((item) => item.id === importPreviewId);
+    if (!source) return;
+    const normalized = draftToModel(
+      {
+        ...toModelDraft(source),
+        title: source.nome,
+        description: source.descricao || '',
+      },
+      null,
+    );
+    if (!normalized) return;
+    let persistedModel = normalized;
+    try {
+      const response = await createAcademyModel({
+        id: normalized.id,
+        nome: normalized.nome,
+        descricao: normalized.descricao,
+        setorDestino: normalized.setorDestino,
+        regimesConfig: normalized.regimesConfig,
+        clientesExcecoesConfig: normalized.clientesExcecoesConfig,
+        prazoConfig: normalized.prazoConfig,
+        recorrenciaConfig: normalized.recorrenciaConfig,
+        etapas: normalized.etapas,
+        metadata: normalized.metadata || {},
+      });
+      persistedModel = { ...normalized, ...response };
+    } catch {}
+    setModels((current) => [persistedModel, ...current]);
+    setImportPreviewId('');
+    setIsImportModalOpen(false);
+  };
+
+  const reviewImportInDrawer = (sourceModel) => {
+    if (!sourceModel) return;
+    setSelectedId('');
+    setIsCreateMode(true);
+    setDraft(
+      toModelDraft({
+        ...sourceModel,
+        id: '',
       }),
     );
+    setDrawerTab('regimes');
+    setIsImportModalOpen(false);
+    setIsDrawerOpen(true);
   };
 
-  const createProcessModel = () => {
-    const nome = (newProcessDraft.nome || '').trim();
-    const setor = normalizeSector(newProcessDraft.setor || selectedProcessSector || 'Atendimento');
-    if (!nome) return;
-    const model = {
-      id: uid('model'),
-      nome,
-      descricao: (newProcessDraft.descricao || '').trim() || 'Processo criado manualmente na Macedo Academy.',
-      setorInicial: setor,
-      setorDestino: setor,
-      etapas: [
-        {
-          id: uid('step-model'),
-          nome: 'Execucao principal',
-          setorResponsavel: setor,
-          ordem: 1,
-          tarefas: [
-            { id: uid('task-model'), descricao: 'Executar tarefa principal do processo', ordem: 1, observacoes: '' },
-          ],
-        },
-      ],
-    };
-    setModels((cur) => [model, ...cur]);
-    setSelectedProcessSector(setor);
-    setShowCreateProcess(false);
-    setNewProcessDraft({ nome: '', descricao: '', setor: '' });
+  const handleOpenConfirm = async () => {
+    if (
+      !draft ||
+      !String(draft.title || '').trim() ||
+      (!draft.regimes.allClients && !(draft.regimes.selected || []).length) ||
+      !(draft.tasks || []).length
+    ) {
+      return;
+    }
+    await saveDraftModel({ closeDrawer: false });
+    setConfirmExpandedTasks({});
+    setIsConfirmModalOpen(true);
   };
 
-  const createManualModel = () => {
-    const titulo = (newManualDraft.titulo || '').trim();
-    const setor = normalizeSector(newManualDraft.setor || selectedProcessSector || 'Atendimento');
-    if (!titulo) return;
-    const etapas = (newManualDraft.etapasTexto || '')
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const checklist = (newManualDraft.checklistTexto || '')
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean);
+  // Regra de dominio Macedo Academy:
+  // - Modelos da tela equivalem a Processos (template)
+  // - "Gerar processos" na UI cria Servicos reais para os clientes
+  const generateServicesFromModel = async () => {
+    if (!draft) return;
+    const selectedRegimes = new Set(draft.regimes.selected);
+    const baseClients = draft.regimes.allClients ? MOCK_CLIENTS : MOCK_CLIENTS.filter((item) => selectedRegimes.has(item.regime));
+    const removedIds = new Set((draft.clientsExceptions.removed || []).map((item) => item.id));
+    const added = draft.clientsExceptions.added || [];
 
-    const model = {
-      id: uid('manual-model'),
-      nome: titulo,
-      descricao: (newManualDraft.objetivo || '').trim() || 'Manual setorial para padronizar execucao.',
-      setorInicial: setor,
-      setorDestino: setor,
-      etapas: [
-        {
-          id: uid('manual-step'),
-          nome: etapas[0] || 'Etapa principal',
-          setorResponsavel: setor,
-          ordem: 1,
-          tarefas: [
-            {
-              id: uid('manual-task'),
-              descricao: 'Aplicar orientacoes do manual',
-              ordem: 1,
-              observacoes: checklist.length ? `Checklist: ${checklist.map((item) => `- ${item}`).join('; ')}` : '',
-            },
-          ],
-        },
-      ],
-    };
-    setModels((cur) => [model, ...cur]);
-    setSelectedProcessSector(setor);
-    setShowCreateManual(false);
-    setNewManualDraft({ titulo: '', objetivo: '', setor: '', etapasTexto: '', checklistTexto: '' });
+    const finalClients = [...baseClients.filter((item) => !removedIds.has(item.id)), ...added]
+      .reduce((acc, item) => {
+        if (!acc.some((exists) => exists.id === item.id)) acc.push(item);
+        return acc;
+      }, []);
+
+    const now = new Date();
+    const targetDueDate = toIsoDate(new Date(now.getFullYear(), now.getMonth(), draft.deadline.fixedDay || 20).toISOString());
+
+    const created = finalClients.map((client) => ({
+      id: uid('generated'),
+      tipoRegistro: 'servico',
+      origemModeloId: selectedId || null,
+      nome: draft.title,
+      clienteNome: client.nome,
+      clienteCnpj: client.cnpj,
+      criadoEm: new Date().toISOString(),
+      dataVencimento: targetDueDate,
+      status: 'pendente',
+      prazoConfig: draft.deadline,
+      recorrenciaConfig: draft.recurrence,
+      tarefas: draft.tasks.map((task, index) => ({
+        id: uid('task'),
+        ordem: index + 1,
+        titulo: task.title,
+        prioridade: task.priority,
+        prazoDias: task.estimateDays,
+        responsavel: task.responsibleId,
+      })),
+    }));
+    let finalCreated = created;
+    try {
+      const response = await generateProcessesBatch(
+        created.map((item) => ({
+          // Campos atuais do backend
+          model_id: selectedId || null,
+          model_nome: item.nome,
+          cliente_nome: item.clienteNome,
+          cliente_cnpj: item.clienteCnpj,
+          status: item.status,
+          data_vencimento: item.dataVencimento || null,
+          // Alias sem quebrar compatibilidade para camada de servicos
+          service_type: item.tipoRegistro,
+          service_nome: item.nome,
+          source_model_id: item.origemModeloId,
+          payload: {
+            prazoConfig: item.prazoConfig,
+            recorrenciaConfig: item.recorrenciaConfig,
+            tarefas: item.tarefas,
+          },
+        })),
+      );
+      if (response?.created && Array.isArray(response.items) && response.items.length === created.length) {
+        finalCreated = response.items.map((item, index) => ({
+          id: item.id || created[index].id,
+          tipoRegistro: 'servico',
+          origemModeloId: item.model_id || created[index].origemModeloId,
+          nome: item.model_nome || created[index].nome,
+          clienteNome: item.cliente_nome || created[index].clienteNome,
+          clienteCnpj: item.cliente_cnpj || created[index].clienteCnpj,
+          criadoEm: item.created_at || created[index].criadoEm,
+          dataVencimento: item.data_vencimento || created[index].dataVencimento,
+          status: item.status || created[index].status,
+          prazoConfig: item.payload?.prazoConfig || created[index].prazoConfig,
+          recorrenciaConfig: item.payload?.recorrenciaConfig || created[index].recorrenciaConfig,
+          tarefas: Array.isArray(item.payload?.tarefas) ? item.payload.tarefas : created[index].tarefas,
+        }));
+      }
+    } catch {}
+    setRealProcesses((current) => [...finalCreated, ...current]);
+    setIsConfirmModalOpen(false);
+    setConfirmExpandedTasks({});
+    setIsDrawerOpen(false);
   };
 
-  const openEditModel = (model) => {
-    if (!model) return;
-    setEditModelDraft({
-      id: model.id,
-      nome: model.nome || '',
-      descricao: model.descricao || '',
-      setor: normalizeSector(model.setorDestino || model.setorInicial || 'Atendimento'),
-    });
-    setShowEditModel(true);
-  };
+  const selectedImportPreview = importableTemplates.find((item) => item.id === importPreviewId) || null;
+  const clientsForExceptionSearch = useMemo(() => {
+    const term = normalizeText(draft?.clientsExceptions?.search || '');
+    if (!term) return MOCK_CLIENTS;
+    return MOCK_CLIENTS.filter((item) => normalizeText(item.nome).includes(term) || normalizeText(item.cnpj).includes(term));
+  }, [draft?.clientsExceptions?.search]);
 
-  const saveEditModel = () => {
-    if (!editModelDraft.id || !editModelDraft.nome.trim()) return;
-    setModels((current) =>
-      current.map((model) =>
-        model.id !== editModelDraft.id
-          ? model
-          : {
-              ...model,
-              nome: editModelDraft.nome.trim(),
-              descricao: (editModelDraft.descricao || '').trim() || model.descricao,
-              setorInicial: editModelDraft.setor,
-              setorDestino: editModelDraft.setor,
-              etapas: (model.etapas || []).map((step) => ({
-                ...step,
-                setorResponsavel: step.ordem === 4 ? editModelDraft.setor : step.setorResponsavel,
-              })),
-            },
-      ),
-    );
-    setShowEditModel(false);
-  };
+  const canGenerateModel =
+    !!draft &&
+    !!String(draft.title || '').trim() &&
+    (draft.regimes.allClients || (draft.regimes.selected || []).length > 0) &&
+    (draft.tasks || []).length > 0;
+
+  const tabButton = (tabId, label) => (
+    <button
+      type="button"
+      onClick={() => setDrawerTab(tabId)}
+      className={`rounded-lg border px-4 py-2 text-sm font-semibold ${
+        drawerTab === tabId
+          ? 'border-slate-800 bg-slate-700 text-white'
+          : 'border-transparent bg-transparent text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="glass-intense rounded-2xl border border-white/10 p-6">
-        <h1 className="text-3xl font-bold text-white">Macedo Academy</h1>
-        <p className="mt-2 text-sm text-gray-300">Fluxo operacional completo entre setores com rastreabilidade e responsabilidade.</p>
-      </div>
-
-      <div className="glass rounded-2xl border border-white/10 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex gap-2">
-          {AREAS.map((area) => (
-            <button key={area} onClick={() => setActiveArea(area)} className={`rounded-xl border px-4 py-2 text-sm ${activeArea === area ? 'border-red-500/35 bg-red-500/15 text-red-100' : 'border-white/10 bg-white/5 text-gray-200'}`}>
-              <span className="inline-flex items-center gap-2">{area === 'processos' ? <FolderKanban className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}{area === 'processos' ? 'Processos' : 'Manuais'}</span>
-            </button>
-          ))}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setShowCreateProcess(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Adicionar novo Processo
-            </button>
-            <button
-              onClick={() => setShowCreateManual(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/15 px-3 py-2 text-xs font-medium text-blue-100 hover:bg-blue-500/25"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Adicionar novo Manual
-            </button>
-          </div>
+    <div className="macedo-academy-dark space-y-5 text-slate-100">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-4xl font-bold">Meus modelos</h1>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+          >
+            <FileText className="h-4 w-4" />
+            Importar modelo
+          </button>
+          <button
+            type="button"
+            onClick={openCreateDrawer}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500 bg-emerald-500 px-4 py-2 text-sm font-semibold text-white"
+          >
+            <Plus className="h-4 w-4" />
+            Criar manualmente
+          </button>
         </div>
       </div>
 
-      {showCreateProcess ? (
-        <div className="glass rounded-2xl border border-white/10 p-5">
-          <h3 className="text-base font-semibold text-white">Adicionar novo Processo</h3>
-          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <input
-              value={newProcessDraft.nome}
-              onChange={(e) => setNewProcessDraft((prev) => ({ ...prev, nome: e.target.value }))}
-              placeholder="Nome do processo"
-              className="input-futuristic rounded-lg px-3 py-2 text-sm"
-            />
-            <select
-              value={newProcessDraft.setor}
-              onChange={(e) => setNewProcessDraft((prev) => ({ ...prev, setor: e.target.value }))}
-              className="input-futuristic rounded-lg px-3 py-2 text-sm"
-            >
-              <option value="">Setor</option>
-              {visibleSectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
-            </select>
-          </div>
-          <textarea
-            rows={3}
-            value={newProcessDraft.descricao}
-            onChange={(e) => setNewProcessDraft((prev) => ({ ...prev, descricao: e.target.value }))}
-            placeholder="Descricao resumida"
-            className="input-futuristic mt-2 w-full rounded-lg px-3 py-2 text-sm"
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={createProcessModel} className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-100">Salvar processo</button>
-            <button onClick={() => setShowCreateProcess(false)} className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-gray-200">Cancelar</button>
-          </div>
-        </div>
-      ) : null}
-
-      {showCreateManual ? (
-        <div className="glass rounded-2xl border border-white/10 p-5">
-          <h3 className="text-base font-semibold text-white">Adicionar novo Manual</h3>
-          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <input
-              value={newManualDraft.titulo}
-              onChange={(e) => setNewManualDraft((prev) => ({ ...prev, titulo: e.target.value }))}
-              placeholder="Titulo do manual"
-              className="input-futuristic rounded-lg px-3 py-2 text-sm"
-            />
-            <select
-              value={newManualDraft.setor}
-              onChange={(e) => setNewManualDraft((prev) => ({ ...prev, setor: e.target.value }))}
-              className="input-futuristic rounded-lg px-3 py-2 text-sm"
-            >
-              <option value="">Setor</option>
-              {visibleSectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
-            </select>
-          </div>
-          <textarea
-            rows={2}
-            value={newManualDraft.objetivo}
-            onChange={(e) => setNewManualDraft((prev) => ({ ...prev, objetivo: e.target.value }))}
-            placeholder="Objetivo do manual"
-            className="input-futuristic mt-2 w-full rounded-lg px-3 py-2 text-sm"
-          />
-          <textarea
-            rows={3}
-            value={newManualDraft.etapasTexto}
-            onChange={(e) => setNewManualDraft((prev) => ({ ...prev, etapasTexto: e.target.value }))}
-            placeholder="Etapas (uma por linha)"
-            className="input-futuristic mt-2 w-full rounded-lg px-3 py-2 text-sm"
-          />
-          <textarea
-            rows={3}
-            value={newManualDraft.checklistTexto}
-            onChange={(e) => setNewManualDraft((prev) => ({ ...prev, checklistTexto: e.target.value }))}
-            placeholder="Checklist (um item por linha)"
-            className="input-futuristic mt-2 w-full rounded-lg px-3 py-2 text-sm"
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={createManualModel} className="rounded-lg border border-blue-500/35 bg-blue-500/15 px-3 py-1.5 text-xs text-blue-100">Salvar manual</button>
-            <button onClick={() => setShowCreateManual(false)} className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-gray-200">Cancelar</button>
-          </div>
-        </div>
-      ) : null}
-
-      {activeArea === 'processos' ? (
-        <>
-          <div className="glass rounded-2xl border border-white/10 p-6">
-            <h2 className="mb-4 text-lg font-semibold text-white">Base por setor (modelos + serviços cadastrados)</h2>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {visibleSectors.map((sector) => (
-                <button
-                  key={sector}
-                  onClick={() => setSelectedProcessSector(sector)}
-                  className={`rounded-xl border p-4 text-left ${
-                    selectedProcessSector === sector
-                      ? 'border-red-500/35 bg-red-500/15'
-                      : 'border-white/10 bg-black/20 hover:bg-white/5'
-                  }`}
+      <div className="rounded-2xl border border-slate-200 bg-slate-100/80 p-4">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="space-y-1 text-sm font-semibold text-slate-600">
+              Buscar
+              <div className="flex items-center rounded-lg border border-slate-300 bg-white px-3">
+                <Search className="h-4 w-4 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Buscar..."
+                  className="w-full bg-transparent px-2 py-2.5 text-sm outline-none"
+                />
+              </div>
+            </label>
+            <label className="space-y-1 text-sm font-semibold text-slate-600">
+              Regime
+              <div className="relative">
+                <select
+                  value={regimeFilter}
+                  onChange={(event) => setRegimeFilter(event.target.value)}
+                  className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
                 >
-                  <p className="text-sm font-semibold text-white">{sector}</p>
-                  <p className="mt-2 text-xs text-gray-400">{modelsBySector[sector]?.length || 0} modelos · {servicesBySector[sector]?.length || 0} serviços</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="glass rounded-2xl border border-white/10 p-6">
-            <div className="mb-4 flex items-center gap-2"><Workflow className="h-5 w-5 text-red-300" /><h2 className="text-lg font-semibold text-white">Gerar processo real</h2></div>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-              <div className="space-y-2">
-                <input
-                  value={flowSearch.setor}
-                  onChange={(e) => setFlowSearch((prev) => ({ ...prev, setor: e.target.value }))}
-                  placeholder="Buscar setor"
-                  className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
-                />
-                <select value={flowData.setorBase} onChange={(e) => setSelectedProcessSector(e.target.value)} className="input-futuristic w-full rounded-lg px-3 py-2 text-sm">
-                  <option value="" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Selecione o setor base</option>
-                  {filteredVisibleSectors.map((s) => <option key={s} value={s} style={{ color: '#111827', backgroundColor: '#ffffff' }}>{s}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <input
-                  value={flowSearch.modelo}
-                  onChange={(e) => setFlowSearch((prev) => ({ ...prev, modelo: e.target.value }))}
-                  placeholder="Buscar modelo"
-                  className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
-                />
-                <select value={flowData.modeloId} onChange={(e) => setFlowData((p) => ({ ...p, modeloId: e.target.value }))} className="input-futuristic w-full rounded-lg px-3 py-2 text-sm">
-                  <option value="" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Selecione um modelo</option>
-                  {filteredModels.map((m) => (
-                    <option key={m.id} value={m.id} style={{ color: '#111827', backgroundColor: '#ffffff' }}>
-                      {m.nome}
+                  <option value="any">Qualquer regime</option>
+                  {REGIME_OPTIONS.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
                     </option>
                   ))}
                 </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
               </div>
-              <div className="space-y-2">
-                <input
-                  value={flowSearch.cliente}
-                  onChange={(e) => setFlowSearch((prev) => ({ ...prev, cliente: e.target.value }))}
-                  placeholder="Buscar cliente"
-                  className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
-                />
-                <select value={flowData.clienteId} onChange={(e) => setFlowData((p) => ({ ...p, clienteId: e.target.value }))} className="input-futuristic w-full rounded-lg px-3 py-2 text-sm">
-                  <option value="" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Selecione o cliente</option>
-                  {filteredFlowClients.map((c) => (
-                    <option key={c.id} value={c.id} style={{ color: '#111827', backgroundColor: '#ffffff' }}>
-                      {c.nome} - {c.cnpj}
+            </label>
+            <label className="space-y-1 text-sm font-semibold text-slate-600">
+              Departamentos
+              <div className="relative">
+                <select
+                  value={departmentFilter}
+                  onChange={(event) => setDepartmentFilter(event.target.value)}
+                  className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                >
+                  <option value="all">Todos</option>
+                  {Object.entries(DEPARTMENT_META).map(([key, meta]) => (
+                    <option key={key} value={key}>
+                      {meta.label}
                     </option>
                   ))}
                 </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
               </div>
-              <button onClick={createRealProcess} disabled={!selectedFlowModel || !selectedClient} className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40">
-                <span className="inline-flex items-center gap-2"><Plus className="h-4 w-4" />Criar processo</span>
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                onClick={() => openEditModel(selectedFlowModel)}
-                disabled={!selectedFlowModel}
-                className="rounded-lg border border-blue-500/35 bg-blue-500/15 px-3 py-2 text-xs text-blue-100 hover:bg-blue-500/25 disabled:opacity-40"
-              >
-                Editar modelo selecionado
-              </button>
-            </div>
-          </div>
+            </label>
+        </div>
+      </div>
 
-          <div className="glass rounded-2xl border border-white/10 p-6">
-            <h2 className="mb-4 text-lg font-semibold text-white">Processos reais operacionais</h2>
-            <div className="space-y-3">
-              {processesBySelectedSector.map((proc) => (
-                <div key={proc.id} className="rounded-xl border border-white/10 bg-black/20">
-                  <button onClick={() => setExpandedId(expandedId === proc.id ? '' : proc.id)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-                    <div>
-                      <p className="text-sm font-semibold text-white">{proc.nome}</p>
-                      <p className="text-xs text-gray-400">Cliente: {proc.clienteNome}</p>
-                    </div>
-                    <ChevronDown className={`h-4 w-4 text-gray-400 transition ${expandedId === proc.id ? 'rotate-180' : ''}`} />
-                  </button>
-                  {expandedId === proc.id ? (
-                    <div className="space-y-3 border-t border-white/10 p-4">
-                      {sortByOrder(proc.etapas || []).map((step, idx) => {
-                        const isCurrent = (proc.currentStepIndex ?? 0) === idx;
-                        const nextStep = proc.etapas[(proc.currentStepIndex ?? 0) + 1];
-                        const nextCollabs = nextStep ? collaboratorsBySector[nextStep.setorResponsavel] || [] : [];
-                        const selectedRecipients = transferDraft[proc.id]?.[nextStep?.id] || [];
-                        return (
-                          <div key={step.id} className={`rounded-lg border p-3 ${isCurrent ? 'border-red-500/35 bg-red-500/10' : 'border-white/10 bg-black/25'}`}>
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-white">Etapa {step.ordem}: {step.nome}</p>
-                              <span className="text-xs text-gray-300">{step.status}</span>
-                            </div>
-                            <p className="mt-1 text-xs text-gray-400">Setor: {step.setorResponsavel} · Prazo: {formatDate(step.prazoInicio)} até {formatDate(step.prazoFim)}</p>
-
-                            <div className="mt-3 space-y-2">
-                              {(step.tarefas || []).map((task) => (
-                                <div key={task.id} className="rounded-md border border-white/10 bg-black/30 p-3">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-xs font-semibold text-white">#{task.ordem} {task.descricao}</p>
-                                    <label className="inline-flex items-center gap-1 text-xs text-emerald-200">
-                                      <input type="checkbox" checked={task.status === 'concluido'} onChange={(e) => toggleDoneTask(proc.id, step.id, task.id, e.target.checked)} />
-                                      Feita
-                                    </label>
-                                  </div>
-
-                                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
-                                    <select value={task.status} onChange={(e) => updateTaskStatus(proc.id, step.id, task.id, e.target.value)} className="input-futuristic rounded-lg px-2 py-1.5 text-xs">
-                                      {TASK_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                    <input type="date" value={task.prazoInicio} onChange={(e) => updateTaskField(proc.id, step.id, task.id, 'prazoInicio', e.target.value)} className="input-futuristic rounded-lg px-2 py-1.5 text-xs" />
-                                    <input type="date" value={task.prazoFim} onChange={(e) => updateTaskField(proc.id, step.id, task.id, 'prazoFim', e.target.value)} className="input-futuristic rounded-lg px-2 py-1.5 text-xs" />
-                                  </div>
-
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    <button onClick={() => acceptTask(proc.id, step.id, task.id)} className="rounded-md border border-sky-500/35 bg-sky-500/15 px-2.5 py-1 text-xs text-sky-100">Aceitar tarefa</button>
-                                    <button onClick={() => addChecklistItem(proc.id, step.id, task.id)} className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-gray-200">+ checklist</button>
-                                  </div>
-                                  <p className="mt-1 text-[11px] text-gray-400">{task.acceptedBy ? `Aceita por ${task.acceptedBy} em ${formatDate(task.acceptedAt)}` : 'Ainda não aceita'}</p>
-
-                                  <div className="mt-2 space-y-1">
-                                    {(task.checklist || []).map((chk) => (
-                                      <label key={chk.id} className="flex items-center gap-2 text-xs text-gray-300">
-                                        <input type="checkbox" checked={chk.done} onChange={() => toggleChecklist(proc.id, step.id, task.id, chk.id)} />
-                                        {chk.text}
-                                      </label>
-                                    ))}
-                                  </div>
-
-                                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                                    <label className="inline-flex items-center gap-2 text-xs text-gray-300">
-                                      <input type="checkbox" checked={!!task.requiresDocs} onChange={(e) => updateTaskField(proc.id, step.id, task.id, 'requiresDocs', e.target.checked)} />
-                                      Exige documentos
-                                    </label>
-                                    <label className="inline-flex items-center gap-2 text-xs text-gray-300">
-                                      <input type="checkbox" checked={!!task.requiresInfo} onChange={(e) => updateTaskField(proc.id, step.id, task.id, 'requiresInfo', e.target.checked)} />
-                                      Exige informacao
-                                    </label>
-                                  </div>
-
-                                  {task.requiresDocs ? (
-                                    <div className="mt-2 rounded-md border border-white/10 bg-black/20 p-2">
-                                      <div className="flex gap-2">
-                                        <input value={task.newDocName || ''} onChange={(e) => updateTaskField(proc.id, step.id, task.id, 'newDocName', e.target.value)} placeholder="Nome do documento" className="input-futuristic w-full rounded-md px-2 py-1.5 text-xs" />
-                                        <button onClick={() => addDocToTask(proc.id, step.id, task.id)} className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-gray-200">Anexar</button>
-                                      </div>
-                                      <div className="mt-1 space-y-1">
-                                        {(task.documents || []).map((doc) => <p key={doc.id} className="text-xs text-gray-300">• {doc.nome}</p>)}
-                                      </div>
-                                    </div>
-                                  ) : null}
-
-                                  {task.requiresInfo ? (
-                                    <textarea value={task.infoValue || ''} onChange={(e) => updateTaskField(proc.id, step.id, task.id, 'infoValue', e.target.value)} placeholder="Preencha a informacao necessaria..." rows={2} className="input-futuristic mt-2 w-full rounded-md px-2 py-1.5 text-xs" />
-                                  ) : null}
-                                </div>
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="max-h-[560px] overflow-auto">
+          <table className="w-full min-w-[920px] text-left">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b border-slate-200 text-sm text-slate-500">
+                <th className="px-4 py-3 font-semibold">Título</th>
+                <th className="px-4 py-3 font-semibold">Regimes</th>
+                <th className="px-4 py-3 font-semibold">Departamentos</th>
+                <th className="px-4 py-3 font-semibold">Clientes associados</th>
+                <th className="px-4 py-3 font-semibold">Recorrência</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredModels.map((model) => {
+                const isSelected = selectedId === model.id;
+                const isExpanded = !!expandedModelRows[model.id];
+                const modelRegimes = model?.regimesConfig?.selecionados || [];
+                const departments = Array.from(new Set((model.etapas || []).map((step) => normalizeSectorKey(step.setorResponsavel))));
+                return (
+                  <React.Fragment key={model.id}>
+                    <tr
+                      className={`border-b border-slate-100 text-sm ${isSelected ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                      style={isSelected ? { boxShadow: 'inset 0 0 0 1px rgba(16, 185, 129, 0.45)' } : undefined}
+                    >
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedModelRows((current) => ({ ...current, [model.id]: !current[model.id] }));
+                          }}
+                          className="mr-2 inline-flex h-5 w-5 items-center justify-center"
+                        >
+                          <ChevronRight className={`h-3 w-3 text-slate-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        </button>
+                        <button type="button" onClick={() => openEditor(model)} className="font-semibold text-slate-700">
+                          {model.nome}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {modelRegimes.length ? (
+                            modelRegimes.map((regime) => (
+                              <span key={regime} className="rounded-full border border-emerald-500 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                                {getRegimeChip(regime)}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="rounded-full border border-emerald-500 px-2 py-0.5 text-xs font-semibold text-emerald-700">TODOS</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {departments.map((dept) => (
+                            <span
+                              key={dept}
+                              className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 text-xs font-bold text-white ${DEPARTMENT_META[dept]?.color || 'bg-slate-500'}`}
+                            >
+                              {DEPARTMENT_META[dept]?.badge || dept.slice(0, 1).toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-600">
+                        {model?.regimesConfig?.clientesAssociados || 0}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-400 text-xs text-slate-500">
+                          {model?.recorrenciaConfig?.tipo === 'unica' ? <Minus className="h-3 w-3" /> : <RefreshCcw className="h-3 w-3" />}
+                        </span>
+                      </td>
+                    </tr>
+                    {isExpanded ? (
+                      (model.etapas || []).map((step, index) => (
+                        <tr key={`${model.id}-step-${step.id || index}`} className="border-b border-slate-100 bg-slate-50/80 text-sm">
+                          <td className="px-10 py-2 text-slate-700">
+                            <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded bg-slate-200 text-xs font-semibold text-slate-600">{index + 1}</span>
+                            {step.nome}
+                            <div className="mt-1 text-xs text-slate-500">
+                              {(step.tarefas || []).map((task, taskIndex) => (
+                                <div key={`${step.id || index}-task-${taskIndex}`}>{task.descricao}</div>
                               ))}
                             </div>
+                          </td>
+                          <td className="px-4 py-2" />
+                          <td className="px-4 py-2">
+                            <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 text-xs font-bold text-white ${DEPARTMENT_META[normalizeSectorKey(step.setorResponsavel)]?.color || 'bg-slate-500'}`}>
+                              {DEPARTMENT_META[normalizeSectorKey(step.setorResponsavel)]?.badge || 'F'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2" />
+                          <td className="px-4 py-2" />
+                        </tr>
+                      ))
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          {!filteredModels.length ? <EmptyState text="Nenhum modelo encontrado para os filtros selecionados." /> : null}
+        </div>
+      </div>
 
-                            {isCurrent && nextStep ? (
-                              <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3">
-                                <p className="text-xs font-medium text-white">Transferir para próximo setor: {nextStep.setorResponsavel}</p>
-                                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                                  {nextCollabs.map((collab) => (
-                                    <label key={collab.id} className="inline-flex items-center gap-2 text-xs text-gray-300">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedRecipients.includes(collab.id)}
-                                        onChange={(e) =>
-                                          setTransferDraft((prev) => {
-                                            const procDraft = prev[proc.id] || {};
-                                            const curr = procDraft[nextStep.id] || [];
-                                            const nextList = e.target.checked ? [...new Set([...curr, collab.id])] : curr.filter((id) => id !== collab.id);
-                                            return { ...prev, [proc.id]: { ...procDraft, [nextStep.id]: nextList } };
-                                          })
-                                        }
-                                      />
-                                      {collab.nome}
-                                    </label>
-                                  ))}
-                                </div>
-                                <button
-                                  onClick={() => transferToNextSector(proc.id)}
-                                  disabled={!canTransferStep(step) || !selectedRecipients.length}
-                                  className="mt-3 rounded-md border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-100 disabled:opacity-40"
-                                >
-                                  Transferir etapa para próximo setor
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+      {false ? (
+        <div className="fixed inset-0 z-40 bg-black/30">
+          <div className="absolute right-0 top-0 h-full w-full max-w-[860px] overflow-auto border-l border-slate-200 bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="w-full">
+                  <h2 className="text-4xl font-bold">{createStep === 1 ? 'Crie um modelo' : 'Criando novo modelo'}</h2>
                 </div>
-              ))}
-              {processesBySelectedSector.length === 0 ? <div className="rounded-xl border border-dashed border-white/15 bg-black/15 p-6 text-center text-sm text-gray-400">Nenhum processo real gerado para o setor selecionado.</div> : null}
+                <button
+                  type="button"
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="rounded-full border border-slate-300 p-2 text-slate-500"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-8 px-6 py-6">
+              {createStep === 1 ? (
+                <div className="space-y-4">
+                  <label className="block text-sm font-semibold text-slate-600">
+                    Nome do processo
+                    <input
+                      value={draft.title}
+                      onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="Insira o nome do processo"
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-600">
+                    Descrição
+                    <textarea
+                      value={draft.description}
+                      onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="Insira uma descrição"
+                      rows={8}
+                      className="mt-1 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              {createStep === 2 ? (
+                <div className="space-y-6">
+                  <input
+                    value={draft.title}
+                    onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                  />
+
+                  <div className="space-y-4 border-t border-slate-200 pt-6">
+                    <h3 className="text-4xl font-bold">Escolha um tipo de prazo</h3>
+                    <label className="flex items-start gap-3">
+                      <input
+                        type="radio"
+                        name="create-deadline-type"
+                        checked={draft.deadline.type === 'data_mensal_fixa'}
+                        onChange={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, type: 'data_mensal_fixa' },
+                          }))
+                        }
+                      />
+                      <div>
+                        <div className="text-2xl font-semibold">Data mensal fixa</div>
+                        <div className="text-slate-500">Ideal para obrigações mensais.</div>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3">
+                      <input
+                        type="radio"
+                        name="create-deadline-type"
+                        checked={draft.deadline.type === 'tempo_estimado_execucao'}
+                        onChange={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, type: 'tempo_estimado_execucao' },
+                          }))
+                        }
+                      />
+                      <div>
+                        <div className="text-2xl font-semibold">Tempo estimado para execução</div>
+                        <div className="text-slate-500">Ideal para tarefas rápidas.</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  {draft.deadline.type === 'data_mensal_fixa' ? (
+                    <div className="space-y-4 border-t border-slate-200 pt-6">
+                      <h4 className="text-4xl font-bold">Configure a data mensal fixa</h4>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Data mensal fixa
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.fixedDay}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, fixedDay: Number(event.target.value) },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                          >
+                            {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                              <option key={day} value={day}>{`Dia ${day}`}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
+
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Competência
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.competence}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, competence: event.target.value },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                          >
+                            {COMPETENCE_OPTIONS.map((item) => (
+                              <option key={item.id} value={item.id}>{item.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
+
+                      <label className="inline-flex items-center gap-2 text-2xl font-semibold">
+                        <input
+                          type="checkbox"
+                          checked={draft.deadline.useGoal}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              deadline: { ...current.deadline, useGoal: event.target.checked },
+                            }))
+                          }
+                        />
+                        Usar prazo-meta
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 border-t border-slate-200 pt-6">
+                      <h4 className="text-4xl font-bold">Configure o prazo estimado</h4>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Tempo estimado de execução
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.goalDays}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, goalDays: Number(event.target.value) },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                          >
+                            <option value="">Selecione um tempo estimado</option>
+                            {[1, 2, 3, 4, 5, 6, 7, 10, 15].map((day) => (
+                              <option key={day} value={day}>{`${day} dias`}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
+                  <div className="space-y-3 border-t border-slate-200 pt-6">
+                    <h4 className="text-3xl font-bold">Esta tarefa gera multa se atrasar?</h4>
+                    <div className="text-slate-500">Ative para ser notificado antes do vencimento.</div>
+                    <label className="inline-flex items-center gap-2 text-2xl font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={draft.deadline.delayedFine}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, delayedFine: event.target.checked },
+                          }))
+                        }
+                      />
+                      Atraso gera multa
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+
+              {createStep === 3 ? (
+                <div className="space-y-6">
+                  <input
+                    value={draft.title}
+                    onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-lg"
+                  />
+
+                  <div className="space-y-2 border-t border-slate-200 pt-6">
+                    <h3 className="text-4xl font-bold">Adicione tarefas</h3>
+                    <p className="text-lg text-slate-600">Monte seu checklist para facilitar o trabalho.</p>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-base text-slate-700">
+                    <Info className="mr-2 inline h-4 w-4" />
+                    {draft.deadline.type === 'tempo_estimado_execucao'
+                      ? 'O prazo das tarefas será baseado em tempo estimado de execução (dias a partir da criação do processo).'
+                      : 'O prazo das tarefas será baseado em data mensal fixa.'}
+                  </div>
+
+                  <div className="space-y-4">
+                    {draft.tasks.map((task, index) => (
+                      <div key={task.id} className="rounded-lg border border-slate-200 p-4">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div className="text-2xl font-bold">
+                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-sm">{index + 1}</span>
+                            <input
+                              value={task.title}
+                              onChange={(event) => updateTask(task.id, 'title', event.target.value)}
+                              className="rounded-md border border-transparent px-2 py-1 outline-none focus:border-slate-300"
+                            />
+                          </div>
+                          {draft.tasks.length > 1 ? (
+                            <button type="button" onClick={() => removeTask(task.id)} className="rounded-md border border-slate-300 p-1.5 text-slate-500">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          ) : null}
+                        </div>
+
+                        <div className="rounded-lg bg-slate-100 p-3">
+                          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                            <div className="relative">
+                              <select
+                                value={task.departmentKey}
+                                onChange={(event) => updateTask(task.id, 'departmentKey', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                {Object.entries(DEPARTMENT_META).map(([key, meta]) => (
+                                  <option key={key} value={key}>{meta.label}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                            <div className="relative">
+                              <select
+                                value={task.responsibleId}
+                                onChange={(event) => updateTask(task.id, 'responsibleId', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                {RESPONSIBLE_OPTIONS.map((item) => (
+                                  <option key={item.id} value={item.id}>{item.label}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 space-y-3">
+                          <label className="block text-sm font-semibold text-slate-600">
+                            Tempo estimado (dias)
+                            <div className="relative mt-1">
+                              <select
+                                value={task.estimateDays}
+                                onChange={(event) => updateTask(task.id, 'estimateDays', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                <option value="">Selecione o tempo estimado</option>
+                                {[1, 2, 3, 4, 5, 7, 10, 15].map((day) => (
+                                  <option key={day} value={day}>{`${day} dias`}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => addTaskDocument(task.id)}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-400 bg-white px-4 py-2 text-xl text-slate-700"
+                          >
+                            <Plus className="h-4 w-4" />
+                            Documento
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={addTask}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-5 py-2.5 text-lg font-semibold text-white"
+                    >
+                      + Tarefa padrão
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4">
+              <div className="flex items-center justify-between gap-3">
+                {createStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep((current) => Math.max(1, current - 1))}
+                    className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xl font-semibold text-slate-700"
+                  >
+                    Voltar
+                  </button>
+                ) : <span />}
+
+                {createStep < 3 ? (
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep((current) => Math.min(3, current + 1))}
+                    disabled={createStep === 1 && !String(draft.title || '').trim()}
+                    className="rounded-lg border border-slate-700 bg-slate-700 px-5 py-2.5 text-xl font-semibold text-white disabled:opacity-40"
+                  >
+                    Continuar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => saveDraftModel({ closeAfterCreate: true })}
+                    className="rounded-lg border border-emerald-600 bg-emerald-600 px-5 py-2.5 text-xl font-semibold text-white"
+                  >
+                    Salvar modelo
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {visibleSectors.map((sector) => (
-            <section key={sector} className="glass rounded-2xl border border-white/10 p-5">
-              <h2 className="text-lg font-semibold text-white">{sector}</h2>
-              <p className="mt-1 text-xs text-gray-400">{manualsBySector[sector]?.length || 0} manuais derivados dos modelos</p>
-              <div className="mt-4 space-y-3">
-                {(manualsBySector[sector] || []).slice(0, 6).map((manual) => (
-                  <article key={manual.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <p className="text-sm font-semibold text-white">{manual.titulo}</p>
-                    <p className="mt-1 text-xs text-gray-400">{manual.objetivo || 'Manual setorial para padronizar execucao.'}</p>
-                    <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-blue-200"><Workflow className="h-3.5 w-3.5" />Etapas</p>
-                      {manual.etapas.slice(0, 4).map((e) => <p key={e} className="text-xs text-gray-300">• {e}</p>)}
+        </div>
+      ) : null}
+
+      {isDrawerOpen && draft ? (
+        <div className="fixed inset-0 z-40 bg-black/30">
+          <div className="absolute right-0 top-0 h-full w-full max-w-[860px] overflow-auto border-l border-slate-200 bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+              <div className="px-6 py-5">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <input
+                    value={draft.title}
+                    onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder="PGDAS"
+                    className="w-full bg-transparent text-4xl font-bold outline-none"
+                  />
+                  <div className="relative flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsHeaderActionsOpen((current) => !current)}
+                      className="rounded-lg border border-slate-300 bg-white p-2 text-slate-500"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    {isHeaderActionsOpen ? (
+                      <div className="absolute right-11 top-0 z-20 min-w-[160px] rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await saveDraftModel({ closeDrawer: false });
+                            setIsHeaderActionsOpen(false);
+                          }}
+                          className="w-full rounded-md px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          Salvar alteracoes
+                        </button>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHeaderActionsOpen(false);
+                        setIsDrawerOpen(false);
+                      }}
+                      className="rounded-full border border-slate-300 p-2 text-slate-500"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mb-4 text-sm text-slate-500">Descrição</div>
+                <textarea
+                  value={draft.description}
+                  onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                  rows={3}
+                  className="mb-5 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-base outline-none"
+                />
+                <div className="flex gap-2 overflow-auto">
+                  {tabButton('regimes', 'Regimes')}
+                  {tabButton('clientes_excecoes', 'Clientes e Exceções')}
+                  {tabButton('prazo', 'Prazo')}
+                  {tabButton('tarefas', 'Tarefas')}
+                  {tabButton('recorrencia', 'Recorrência')}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6 px-6 py-6">
+              {drawerTab === 'regimes' ? (
+                <>
+                  <h3 className="text-3xl font-bold">Escolha os regimes que receberao este serviço</h3>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={draft.regimes.allClients}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            regimes: { ...current.regimes, allClients: event.target.checked },
+                          }))
+                        }
+                      />
+                      <span className="rounded-full border border-emerald-500 px-2 py-0.5 text-xs font-semibold text-emerald-700">TODOS</span>
+                      <span className="font-semibold">Todos os clientes</span>
+                    </label>
+                    {REGIME_OPTIONS.map((regime) => (
+                      <label key={regime.id} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={draft.regimes.selected.includes(regime.id)}
+                          onChange={() => toggleRegime(regime.id)}
+                        />
+                        <span className="rounded-full border border-emerald-500 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                          {regime.chip}
+                        </span>
+                        <span className="font-semibold">{regime.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border border-emerald-400 bg-emerald-50 px-4 py-3 font-semibold text-emerald-700">
+                      ✓ {draft.regimes.clientsAssociated} clientes associados
                     </div>
-                    <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3">
-                      <p className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-emerald-200"><ClipboardCheck className="h-3.5 w-3.5" />Checklist</p>
-                      {(manual.checklist.length ? manual.checklist : ['Checklist não informado']).slice(0, 4).map((c) => <p key={c} className="text-xs text-gray-300">• {c}</p>)}
+                    <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 font-semibold text-slate-600">
+                      i {draft.regimes.clientsDisabled} clientes desativados
                     </div>
-                  </article>
+                  </div>
+                </>
+              ) : null}
+
+              {drawerTab === 'clientes_excecoes' ? (
+                <>
+                  <h3 className="text-3xl font-bold">Gerencie clientes e excecoes</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            clientsExceptions: { ...current.clientsExceptions, activeView: 'adicionados' },
+                          }))
+                        }
+                        className={`rounded-md px-4 py-2 text-sm font-semibold ${
+                          draft.clientsExceptions.activeView === 'adicionados' ? 'bg-slate-700 text-white' : 'text-slate-500'
+                        }`}
+                      >
+                        Adicionados
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            clientsExceptions: { ...current.clientsExceptions, activeView: 'removidos' },
+                          }))
+                        }
+                        className={`rounded-md px-4 py-2 text-sm font-semibold ${
+                          draft.clientsExceptions.activeView === 'removidos' ? 'bg-slate-700 text-white' : 'text-slate-500'
+                        }`}
+                      >
+                        Removidos
+                      </button>
+                    </div>
+                    <div className="rounded-lg border border-emerald-400 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700">
+                      ✓ {draft.regimes.clientsAssociated} clientes
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-1 items-center rounded-lg border border-slate-300 bg-white px-3">
+                      <Search className="h-4 w-4 text-slate-400" />
+                      <input
+                        value={draft.clientsExceptions.search}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            clientsExceptions: { ...current.clientsExceptions, search: event.target.value },
+                          }))
+                        }
+                        placeholder="Filtre por nome ou CNPJ"
+                        className="w-full bg-transparent px-2 py-2.5 text-sm outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          clientsExceptions: {
+                            ...current.clientsExceptions,
+                            [current.clientsExceptions.activeView]: [],
+                          },
+                        }))
+                      }
+                      className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-500"
+                    >
+                      Remover todos
+                    </button>
+                  </div>
+
+                  <div className="max-h-[360px] space-y-2 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    {clientsForExceptionSearch.map((client) => (
+                      <div key={client.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                        <div>
+                          <div className="font-semibold">{client.nome}</div>
+                          <div className="text-sm text-slate-500">{client.cnpj}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addClientException(client)}
+                            className="rounded-md border border-emerald-400 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700"
+                          >
+                            Adicionar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeClientException(client.id, draft.clientsExceptions.activeView)}
+                            className="rounded-md border border-rose-400 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+
+              {drawerTab === 'prazo' ? (
+                <>
+                  <h3 className="text-3xl font-bold">Escolha um tipo de prazo</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3">
+                      <input
+                        type="radio"
+                        name="deadline-type"
+                        checked={draft.deadline.type === 'data_mensal_fixa'}
+                        onChange={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, type: 'data_mensal_fixa' },
+                          }))
+                        }
+                      />
+                      <div>
+                        <div className="text-2xl font-semibold">Data mensal fixa</div>
+                        <div className="text-slate-500">Ideal para obrigacoes mensais.</div>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3">
+                      <input
+                        type="radio"
+                        name="deadline-type"
+                        checked={draft.deadline.type === 'tempo_estimado_execucao'}
+                        onChange={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, type: 'tempo_estimado_execucao' },
+                          }))
+                        }
+                      />
+                      <div>
+                        <div className="text-2xl font-semibold">Tempo estimado para execucao</div>
+                        <div className="text-slate-500">Ideal para tarefas eventuais.</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+                    <h4 className="text-2xl font-bold">Configure a data mensal fixa</h4>
+                    <label className="block text-sm font-semibold text-slate-600">
+                      Data mensal fixa
+                      <div className="relative mt-1">
+                        <select
+                          value={draft.deadline.fixedDay}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              deadline: { ...current.deadline, fixedDay: Number(event.target.value) },
+                            }))
+                          }
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                        >
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                            <option key={day} value={day}>{`Dia ${day}`}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                      </div>
+                    </label>
+
+                    <label className="block text-sm font-semibold text-slate-600">
+                      Competencia
+                      <div className="relative mt-1">
+                        <select
+                          value={draft.deadline.competence}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              deadline: { ...current.deadline, competence: event.target.value },
+                            }))
+                          }
+                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                        >
+                          {COMPETENCE_OPTIONS.map((item) => (
+                            <option key={item.id} value={item.id}>{item.label}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+                    <h4 className="text-2xl font-bold">Quer estabelecer um prazo-meta?</h4>
+                    <label className="inline-flex items-center gap-2 text-lg font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={draft.deadline.useGoal}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, useGoal: event.target.checked },
+                          }))
+                        }
+                      />
+                      Usar prazo-meta
+                    </label>
+                    {draft.deadline.useGoal ? (
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Dias de antecedencia
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.goalDays}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, goalDays: Number(event.target.value) },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                          >
+                            {[1, 2, 3, 5, 7, 10].map((day) => (
+                              <option key={day} value={day}>{`${day} dias de antecedencia`}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2 rounded-lg border border-slate-200 p-4">
+                    <h4 className="text-2xl font-bold">Esta tarefa gera multa se atrasar?</h4>
+                    <label className="inline-flex items-center gap-2 text-lg font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={draft.deadline.delayedFine}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            deadline: { ...current.deadline, delayedFine: event.target.checked },
+                          }))
+                        }
+                      />
+                      Atraso gera multa
+                    </label>
+                  </div>
+                </>
+              ) : null}
+
+              {drawerTab === 'tarefas' ? (
+                <>
+                  <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                    <Info className="mr-2 inline h-4 w-4" />
+                    O prazo das tarefas sera baseado em <b>data mensal fixa</b>.
+                  </div>
+                  <div className="space-y-4">
+                    {draft.tasks.map((task, index) => (
+                      <div key={task.id} className="rounded-lg border border-slate-200 p-4">
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div className="text-2xl font-bold">
+                            <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-sm">{index + 1}</span>
+                            <input
+                              value={task.title}
+                              onChange={(event) => updateTask(task.id, 'title', event.target.value)}
+                              className="rounded-md border border-transparent px-2 py-1 outline-none focus:border-slate-300"
+                            />
+                          </div>
+                          <button type="button" onClick={() => removeTask(task.id)} className="rounded-md border border-slate-300 p-1.5 text-slate-500">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="rounded-lg bg-slate-100 p-3">
+                          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                            <div className="relative">
+                              <select
+                                value={task.departmentKey}
+                                onChange={(event) => updateTask(task.id, 'departmentKey', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                {Object.entries(DEPARTMENT_META).map(([key, meta]) => (
+                                  <option key={key} value={key}>{meta.label}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                            <div className="relative">
+                              <select
+                                value={task.responsibleId}
+                                onChange={(event) => updateTask(task.id, 'responsibleId', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                {RESPONSIBLE_OPTIONS.map((item) => (
+                                  <option key={item.id} value={item.id}>{item.label}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 space-y-3">
+                          <label className="block text-sm font-semibold text-slate-600">
+                            Tempo estimado (dias)
+                            <div className="relative mt-1">
+                              <select
+                                value={task.estimateDays}
+                                onChange={(event) => updateTask(task.id, 'estimateDays', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                <option value="">Selecione o tempo estimado</option>
+                                {[1, 2, 3, 4, 5, 7, 10, 15].map((day) => (
+                                  <option key={day} value={day}>{`${day} dias`}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                          </label>
+                          <label className="block text-sm font-semibold text-slate-600">
+                            Prioridade
+                            <div className="relative mt-1">
+                              <select
+                                value={task.priority}
+                                onChange={(event) => updateTask(task.id, 'priority', event.target.value)}
+                                className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                              >
+                                {PRIORITY_OPTIONS.map((item) => (
+                                  <option key={item.id} value={item.id}>{item.label}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                            </div>
+                          </label>
+                          <label className="block text-sm font-semibold text-slate-600">
+                            Descricao
+                            <textarea
+                              value={task.description}
+                              onChange={(event) => updateTask(task.id, 'description', event.target.value)}
+                              rows={3}
+                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                            />
+                          </label>
+                        </div>
+
+                        {(task.documents || []).map((doc) => (
+                          <div key={doc.id} className="mt-3 rounded-lg border border-slate-200 bg-slate-100 p-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="text-2xl font-bold">Ordem de documento</div>
+                              <button
+                                type="button"
+                                onClick={() => removeTaskDocument(task.id, doc.id)}
+                                className="rounded-md border border-slate-300 p-1.5 text-slate-500"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <label className="block text-sm font-semibold text-slate-600">
+                              Titulo do documento
+                              <input
+                                value={doc.title}
+                                onChange={(event) => updateTaskDocument(task.id, doc.id, 'title', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                              />
+                            </label>
+                            <div className="mt-3 space-y-2">
+                              <label className="inline-flex items-center gap-2 text-base font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={doc.required}
+                                  onChange={(event) => updateTaskDocument(task.id, doc.id, 'required', event.target.checked)}
+                                />
+                                Documento obrigatorio
+                              </label>
+                              <label className="inline-flex items-center gap-2 text-base font-semibold">
+                                <input
+                                  type="checkbox"
+                                  checked={doc.sendToClient}
+                                  onChange={(event) => updateTaskDocument(task.id, doc.id, 'sendToClient', event.target.checked)}
+                                />
+                                Enviar para o cliente ao concluir
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => addTaskDocument(task.id)}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-400 bg-white px-4 py-2 text-xl text-slate-700"
+                          >
+                            <Plus className="h-4 w-4" />
+                            Documento
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={addTask}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-5 py-2.5 text-lg font-semibold text-white"
+                    >
+                      + Tarefa padrao
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {drawerTab === 'recorrencia' ? (
+                <div className="space-y-4">
+                  <h3 className="text-3xl font-bold">Recorrencia</h3>
+                  <label className="block text-sm font-semibold text-slate-600">
+                    Tipo de recorrencia
+                    <div className="relative mt-1">
+                      <select
+                        value={draft.recurrence.type}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            recurrence: { ...current.recurrence, type: event.target.value },
+                          }))
+                        }
+                        className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                      >
+                        {RECURRENCES.map((item) => (
+                          <option key={item.id} value={item.id}>{item.label}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                    </div>
+                  </label>
+                  <div className="rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                    {draft.recurrence.type === 'unica'
+                      ? 'O serviço sera gerado apenas uma vez.'
+                      : `O serviço sera gerado em recorrencia ${draft.recurrence.type}.`}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="sticky bottom-0 border-t border-slate-200 bg-white px-6 py-4">
+              <button
+                type="button"
+                onClick={handleOpenConfirm}
+                disabled={!canGenerateModel}
+                className="w-full rounded-lg border border-emerald-600 bg-emerald-600 px-6 py-2.5 text-2xl font-semibold text-white disabled:opacity-40"
+              >
+                Gerar processos
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isImportModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-[560px] rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-3xl font-bold">Importar modelo</h2>
+              <button type="button" onClick={() => setIsImportModalOpen(false)} className="rounded-full border border-slate-300 p-1.5 text-slate-500">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {!importableTemplates.length ? (
+              <EmptyState text="Nao existem novos modelos para importar." />
+            ) : (
+              <>
+                <label className="block text-sm font-semibold text-slate-600">
+                  Selecione o modelo
+                  <div className="relative mt-1">
+                    <select
+                      value={importPreviewId}
+                      onChange={(event) => setImportPreviewId(event.target.value)}
+                      className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                    >
+                      <option value="">Selecione</option>
+                      {importableTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>{template.nome}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                  </div>
+                </label>
+
+                {selectedImportPreview ? (
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-2xl font-bold">{selectedImportPreview.nome}</div>
+                    <p className="mt-1 text-sm text-slate-600">{selectedImportPreview.descricao}</p>
+                    <div className="mt-3 space-y-2">
+                      {(selectedImportPreview.etapas || []).map((step, index) => (
+                        <div key={step.id || `${selectedImportPreview.id}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="font-semibold">{`${index + 1}. ${step.nome}`}</div>
+                          <div className="text-sm text-slate-500">{((step.tarefas || [])[0]?.descricao || 'Sem descricao')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => reviewImportInDrawer(selectedImportPreview)}
+                    disabled={!importPreviewId}
+                    className="rounded-lg border border-slate-300 bg-slate-100 px-5 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-40"
+                  >
+                    Revisar no painel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={importSelectedModel}
+                    disabled={!importPreviewId}
+                    className="rounded-lg border border-emerald-600 bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    Importar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {isConfirmModalOpen && draft ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-[920px] rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-4xl font-bold">Confirme suas acoes</h2>
+              <button type="button" onClick={() => setIsConfirmModalOpen(false)} className="rounded-full border border-slate-300 p-1.5 text-slate-500">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xl font-bold">{draft.title}</div>
+                  <div className="text-sm text-slate-500">{draft.regimes.clientsAssociated} clientes associados</div>
+                </div>
+                <span className="rounded-full border border-emerald-500 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                  {draft.regimes.selected.length ? getRegimeChip(draft.regimes.selected[0]) : 'TODOS'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <h3 className="mb-2 text-xl font-bold">Tarefas</h3>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                {draft.tasks.map((task, index) => (
+                  <div key={task.id} className="border-b border-slate-200 py-2 last:border-b-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setConfirmExpandedTasks((current) => ({
+                            ...current,
+                            [task.id]: !current[task.id],
+                          }))
+                        }
+                        className="inline-flex items-center gap-2 text-left font-semibold text-slate-800"
+                      >
+                        <ChevronRight className={`h-4 w-4 text-slate-500 transition-transform ${confirmExpandedTasks[task.id] ? 'rotate-90' : ''}`} />
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-xs">{index + 1}</span>
+                        {task.title}
+                      </button>
+                      <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 text-xs font-bold text-white ${DEPARTMENT_META[task.departmentKey]?.color || 'bg-slate-500'}`}>
+                        {DEPARTMENT_META[task.departmentKey]?.badge || 'F'}
+                      </span>
+                    </div>
+                    {confirmExpandedTasks[task.id] ? (
+                      <div className="ml-8 mt-2 text-sm text-slate-600">
+                        {task.description || 'Sem descrição da etapa.'}
+                      </div>
+                    ) : null}
+                  </div>
                 ))}
               </div>
-            </section>
-          ))}
-        </div>
-      )}
-
-      {showEditModel ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-zinc-900 p-6">
-            <h3 className="text-lg font-semibold text-white">Editar modelo de processo</h3>
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <input
-                value={editModelDraft.nome}
-                onChange={(e) => setEditModelDraft((prev) => ({ ...prev, nome: e.target.value }))}
-                placeholder="Nome do modelo"
-                className="input-futuristic rounded-lg px-3 py-2 text-sm"
-              />
-              <select
-                value={editModelDraft.setor}
-                onChange={(e) => setEditModelDraft((prev) => ({ ...prev, setor: e.target.value }))}
-                className="input-futuristic rounded-lg px-3 py-2 text-sm"
-              >
-                {visibleSectors.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
-              </select>
-              <textarea
-                value={editModelDraft.descricao}
-                onChange={(e) => setEditModelDraft((prev) => ({ ...prev, descricao: e.target.value }))}
-                placeholder="Descricao"
-                rows={3}
-                className="input-futuristic rounded-lg px-3 py-2 text-sm md:col-span-2"
-              />
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={saveEditModel} className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-100">
-                Salvar alteracoes
-              </button>
-              <button onClick={() => setShowEditModel(false)} className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-gray-200">
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 p-3">
+                <div className="text-xl font-bold">Prazo</div>
+                <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  <Info className="mr-1 inline h-4 w-4" />
+                  {draft.deadline.delayedFine ? 'Esse serviço gera multa, caso atrase.' : 'Esse serviço nao gera multa por atraso.'}
+                </div>
+                <div className="mt-2 rounded-md bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
+                  Tipo: {draft.deadline.type === 'data_mensal_fixa' ? 'Mensal Fixo' : 'Tempo estimado'}
+                  <br />
+                  Data: Dia {draft.deadline.fixedDay}
+                  <br />
+                  Prazo-meta: {draft.deadline.useGoal ? `${draft.deadline.goalDays} dias de antecedencia` : 'Nao definido'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <div className="text-xl font-bold">Recorrencia</div>
+                <div className="mt-2 text-sm text-slate-500">
+                  {draft.recurrence.type === 'unica'
+                    ? 'O serviço sera gerado apenas uma vez.'
+                    : `O serviço sera gerado com recorrencia ${draft.recurrence.type}.`}
+                </div>
+                <div className="mt-3 rounded-md bg-slate-100 px-3 py-4 text-xl font-bold text-slate-700">
+                  Data de vencimento: {new Date().toLocaleDateString('pt-BR')}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmModalOpen(false)}
+                className="rounded-lg border border-slate-300 bg-slate-100 px-5 py-2.5 text-lg font-semibold text-slate-700"
+              >
                 Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={generateServicesFromModel}
+                className="rounded-lg border border-slate-700 bg-slate-700 px-5 py-2.5 text-lg font-semibold text-white"
+              >
+                Confirmar
               </button>
             </div>
           </div>

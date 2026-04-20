@@ -18,6 +18,25 @@ const Login = () => {
     e.preventDefault();
     const result = await login(email, password);
     if (result.success) {
+      let storedUser = null;
+      try {
+        storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+      } catch {
+        storedUser = null;
+      }
+      const linkedClientIds = Array.isArray(storedUser?.linked_client_ids)
+        ? storedUser.linked_client_ids.filter(Boolean)
+        : [];
+      const isClientPortalUser =
+        storedUser?.mock_client_login ||
+        storedUser?.role === 'cliente' ||
+        storedUser?.is_client === true;
+
+      if (isClientPortalUser && linkedClientIds.length) {
+        navigate(`/cliente/${linkedClientIds[0]}`, { replace: true });
+        return;
+      }
+
       navigate(from, { replace: true });
     }
   };

@@ -2,10 +2,13 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ALL_INTERNAL_MODULE_KEYS, deriveAllowedModules, getEmailFromName, INTERNAL_MODULES } from '../../config/modules';
+import { mockClients } from '../../dev/mockData';
 
 const MOCK_USERS_KEY = 'mock_users_management_v1';
 const MODULE_OVERRIDES_KEY = 'mock_user_modules_overrides_v1';
 const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
+const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
+const CLIENT_SETUP_STORAGE_KEY = 'mock_admin_client_setup_center_v2';
 
 const DEFAULT_CONFIG = {
   cidades: ['Todas', 'Jacobina', 'Ourolândia', 'Umburanas', 'Uberlândia'],
@@ -35,6 +38,57 @@ const getFirstName = (fullName = '') => {
   return cleaned.split(' ')[0];
 };
 
+const normalizeText = (value = '') =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const getClientPrimaryName = (client = {}) =>
+  client?.nome_fantasia || client?.nome_empresa || client?.name || 'Cliente';
+
+const buildClientEmail = (clientName = '') => {
+  const normalized = normalizeText(clientName).replace(/[^a-z0-9\s]/g, ' ');
+  const firstWord = normalized.split(/\s+/).filter(Boolean)[0] || 'cliente';
+  return `${firstWord}@macedosi.com`;
+};
+
+const mergeClientsUnique = (...lists) => {
+  const map = new Map();
+  lists.flat().forEach((client) => {
+    if (!client) return;
+    const key = String(client.id || client.clientRefId || client.cnpj || getClientPrimaryName(client));
+    if (!map.has(key)) map.set(key, { ...client, id: key });
+  });
+  return Array.from(map.values());
+};
+
+const getSetupClientName = (setup = {}, fallback = 'Cliente') =>
+  setup?.empresa?.nomeFantasia ||
+  setup?.empresa?.nome_fantasia ||
+  setup?.empresa?.razaoSocial ||
+  setup?.empresa?.razao_social ||
+  setup?.setupEmpresa?.nomeFantasia ||
+  setup?.setupEmpresa?.nome_fantasia ||
+  setup?.setupEmpresa?.razaoSocial ||
+  setup?.setupEmpresa?.razao_social ||
+  fallback;
+
+const getLinkedClientRefIds = (clientUser = {}) => {
+  if (Array.isArray(clientUser.linkedClientRefs)) {
+    return [...new Set(clientUser.linkedClientRefs.map((value) => String(value || '').trim()).filter(Boolean))];
+  }
+  return [String(clientUser.clientRefId || '').trim()].filter(Boolean);
+};
+
+const getLinkedClienteIds = (clientUser = {}) => {
+  if (Array.isArray(clientUser.linkedClientIds)) {
+    return [...new Set(clientUser.linkedClientIds.map((value) => String(value || '').trim()).filter(Boolean))];
+  }
+  return [String(clientUser.clienteId || '').trim()].filter(Boolean);
+};
+
 const resolveExplicitModules = (user = {}) => {
   const source = Array.isArray(user.allowed_modules)
     ? user.allowed_modules
@@ -62,12 +116,14 @@ const Users = () => {
   const [showClientForm, setShowClientForm] = useState(false);
   const [editingClientUser, setEditingClientUser] = useState(null);
   const [showClientPassword, setShowClientPassword] = useState(false);
+  const [clientCatalog, setClientCatalog] = useState([]);
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [clientFormData, setClientFormData] = useState({
-    nome: '',
     email: '',
     senha: '',
-    clientRefId: '',
-    clienteId: '',
+    fixedClientRefId: '',
+    fixedClienteId: '',
   });
   const [formData, setFormData] = useState({
     name: '',
@@ -89,6 +145,7 @@ const Users = () => {
     loadUsers();
     loadConfig();
     loadClientUsers();
+    loadClientCatalog();
   }, []);
 
   const safeParse = (value, fallback) => {
@@ -174,6 +231,28 @@ const Users = () => {
     setClientUsers(Array.isArray(parsed) ? parsed : []);
   };
 
+  const loadClientCatalog = async () => {
+    let backendClients = [];
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/clients?limit=1000`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        backendClients = payload?.clients || payload || [];
+      }
+    } catch {}
+
+    const localClients = safeParse(localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY) || '[]', []);
+    const merged = mergeClientsUnique(
+      Array.isArray(backendClients) ? backendClients : [],
+      Array.isArray(localClients) ? localClients : [],
+      Array.isArray(mockClients) ? mockClients : [],
+    );
+    setClientCatalog(merged);
+  };
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -193,12 +272,13 @@ const Users = () => {
 
   const resetClientForm = () => {
     setClientFormData({
-      nome: '',
       email: '',
       senha: '',
-      clientRefId: '',
-      clienteId: '',
+      fixedClientRefId: '',
+      fixedClienteId: '',
     });
+    setSelectedClientId('');
+    setSelectedClientIds([]);
     setEditingClientUser(null);
     setShowClientPassword(false);
     setShowClientForm(false);
@@ -428,13 +508,15 @@ const Users = () => {
   };
 
   const handleEditClientUser = (clientUser) => {
+    const linkedRefs = getLinkedClientRefIds(clientUser);
     setEditingClientUser(clientUser);
+    setSelectedClientId('');
+    setSelectedClientIds(linkedRefs);
     setClientFormData({
-      nome: clientUser.nome || '',
       email: clientUser.email || '',
       senha: clientUser.senha || '',
-      clientRefId: clientUser.clientRefId || '',
-      clienteId: clientUser.clienteId || '',
+      fixedClientRefId: String(clientUser.clientRefId || '').trim(),
+      fixedClienteId: String(clientUser.clienteId || '').trim(),
     });
     setShowClientPassword(false);
     setShowClientForm(true);
@@ -447,21 +529,74 @@ const Users = () => {
     setClientUsers(next);
   };
 
+  const handleToggleLinkedClient = (clientId, isChecked) => {
+    const normalizedId = String(clientId || '');
+    if (!normalizedId) return;
+
+    if (isChecked) {
+      const nextIds = selectedClientIds.filter((id) => id !== normalizedId);
+      setSelectedClientIds(nextIds);
+      if (String(selectedClientId) === normalizedId) {
+        setSelectedClientId(nextIds[0] || '');
+      }
+      return;
+    }
+
+    setSelectedClientIds((prev) => [...new Set([normalizedId, ...prev])]);
+  };
+
+  const handleLinkSelectedClient = () => {
+    const normalizedSelectedId = String(selectedClientId || '').trim();
+    if (!normalizedSelectedId) return;
+    if (selectedClientIds.includes(normalizedSelectedId)) return;
+    const selectedOption = availableClientOptions.find((item) => String(item.id) === normalizedSelectedId) || null;
+    const nextSelectedIds = [...new Set([...selectedClientIds, normalizedSelectedId])];
+    setSelectedClientIds(nextSelectedIds);
+    setClientFormData((prev) => {
+      if (prev.fixedClientRefId && prev.fixedClienteId) return prev;
+      return {
+        ...prev,
+        fixedClientRefId: prev.fixedClientRefId || String(selectedOption?.clientRefId || normalizedSelectedId),
+        fixedClienteId: prev.fixedClienteId || String(selectedOption?.clienteId || normalizedSelectedId),
+      };
+    });
+    const nextOption = availableClientOptions.find((item) => !nextSelectedIds.includes(String(item.id)));
+    setSelectedClientId(nextOption ? String(nextOption.id) : '');
+  };
+
   const handleSubmitClientUser = (event) => {
     event.preventDefault();
-    const nome = String(clientFormData.nome || '').trim();
-    const email = String(clientFormData.email || '').trim().toLowerCase();
     const senha = String(clientFormData.senha || '').trim();
+    const normalizedSelectedClientIds = [...new Set(
+      selectedClientIds.map((value) => String(value || '').trim()).filter(Boolean),
+    )];
+    const selectedIdsForSave = normalizedSelectedClientIds.length
+      ? normalizedSelectedClientIds
+      : [String(selectedClientId || '').trim()].filter(Boolean);
+    const selectedClients = availableClientOptions.filter((item) =>
+      selectedIdsForSave.includes(String(item.id)),
+    );
+    const primaryClient = selectedClients.find((item) => String(item.id) === String(selectedClientId)) || selectedClients[0];
 
-    if (!nome || !email || !senha) return;
+    const email = String(clientFormData.email || primaryClient?.email || '').trim().toLowerCase();
+
+    if (!primaryClient || !senha || !email) return;
+
+    const nome = primaryClient.nome;
+    const clientRefId = String(clientFormData.fixedClientRefId || primaryClient.clientRefId || '').trim();
+    const clienteId = String(clientFormData.fixedClienteId || primaryClient.clienteId || '').trim();
+    const linkedClientRefs = [...new Set(selectedClients.map((item) => String(item.clientRefId || '').trim()).filter(Boolean))];
+    const linkedClientIds = [...new Set(selectedClients.map((item) => String(item.clienteId || '').trim()).filter(Boolean))];
 
     const record = {
       id: editingClientUser?.id || `portal-user-${Date.now()}`,
       nome,
       email,
       senha,
-      clientRefId: String(clientFormData.clientRefId || '').trim(),
-      clienteId: String(clientFormData.clienteId || '').trim(),
+      clientRefId: String(clientRefId || '').trim(),
+      clienteId: String(clienteId || '').trim(),
+      linkedClientRefs,
+      linkedClientIds,
       updatedAt: new Date().toISOString(),
       createdAt: editingClientUser?.createdAt || new Date().toISOString(),
     };
@@ -474,6 +609,121 @@ const Users = () => {
     setClientUsers(next);
     resetClientForm();
   };
+
+  const setupMap = useMemo(
+    () => safeParse(localStorage.getItem(CLIENT_SETUP_STORAGE_KEY) || '{}', {}),
+    [clientUsers, clientCatalog.length],
+  );
+
+  const availableClientOptions = useMemo(() => {
+    const linkedToOtherUsers = new Set(
+      clientUsers
+        .filter((item) => !editingClientUser || item.id !== editingClientUser.id)
+        .flatMap((item) => getLinkedClientRefIds(item))
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    );
+
+    const fromCatalog = clientCatalog
+      .map((client) => {
+        const clientRefId = String(client.id || '');
+        const setup = setupMap?.[clientRefId] || {};
+        const nome = getClientPrimaryName(client);
+        const clienteId = String(setup?.acessoCliente?.clienteId || clientRefId);
+        return {
+          id: clientRefId,
+          nome,
+          email: buildClientEmail(nome),
+          clientRefId,
+          clienteId,
+        };
+      })
+      .filter((item) => item.clientRefId && !linkedToOtherUsers.has(String(item.clientRefId)));
+
+    const fromSetupMap = Object.entries(setupMap || {}).map(([clientRefId, setup]) => {
+      const refId = String(clientRefId || '').trim();
+      const nome = getSetupClientName(setup, refId);
+      const clienteId = String(setup?.acessoCliente?.clienteId || refId);
+      return {
+        id: refId,
+        nome,
+        email: buildClientEmail(nome),
+        clientRefId: refId,
+        clienteId,
+      };
+    }).filter((item) => item.clientRefId && !linkedToOtherUsers.has(String(item.clientRefId)));
+
+    const byId = new Map();
+    [...fromCatalog, ...fromSetupMap].forEach((item) => {
+      const key = String(item.clientRefId || '').trim();
+      if (!key) return;
+      if (!byId.has(key)) {
+        byId.set(key, item);
+      }
+    });
+
+    const merged = Array.from(byId.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+    if (editingClientUser) {
+      const editingRefs = getLinkedClientRefIds(editingClientUser);
+      const editingIds = getLinkedClienteIds(editingClientUser);
+      editingRefs.forEach((refId, index) => {
+        const hasCurrent = merged.some((item) => String(item.clientRefId) === String(refId));
+        if (hasCurrent) return;
+        merged.unshift({
+          id: refId || String(editingClientUser.id || ''),
+          nome: editingClientUser.nome || 'Cliente',
+          email: editingClientUser.email || buildClientEmail(editingClientUser.nome || 'cliente'),
+          clientRefId: refId,
+          clienteId: String(editingIds[index] || editingClientUser.clienteId || refId || ''),
+        });
+      });
+    }
+
+    return merged;
+  }, [clientCatalog, clientUsers, editingClientUser, setupMap]);
+
+  const selectedClientOption = useMemo(
+    () => availableClientOptions.find((item) => String(item.id) === String(selectedClientId)) || null,
+    [availableClientOptions, selectedClientId],
+  );
+
+  useEffect(() => {
+    if (!showClientForm) return;
+    if (!selectedClientOption) return;
+    setClientFormData((prev) => ({
+      ...prev,
+      email: prev.email || selectedClientOption.email || '',
+    }));
+  }, [showClientForm, selectedClientOption]);
+
+  const unlinkedClientOptions = useMemo(
+    () => availableClientOptions.filter((item) => !selectedClientIds.includes(String(item.id))),
+    [availableClientOptions, selectedClientIds],
+  );
+
+  const selectedClientOptions = useMemo(
+    () => availableClientOptions.filter((item) => selectedClientIds.includes(String(item.id))),
+    [availableClientOptions, selectedClientIds],
+  );
+
+  useEffect(() => {
+    if (!showClientForm) return;
+    if (!availableClientOptions.length) return;
+
+    if (selectedClientId && !selectedClientOption) {
+      const fallbackId = String(unlinkedClientOptions[0]?.id || '');
+      setSelectedClientId(String(fallbackId));
+    }
+  }, [
+    showClientForm,
+    selectedClientId,
+    selectedClientOption,
+    selectedClientIds,
+    availableClientOptions,
+    unlinkedClientOptions,
+    editingClientUser,
+  ]);
 
   if (loading) {
     return (
@@ -522,12 +772,13 @@ const Users = () => {
 
             setEditingClientUser(null);
             setClientFormData({
-              nome: '',
               email: '',
               senha: '',
-              clientRefId: '',
-              clienteId: '',
+              fixedClientRefId: '',
+              fixedClienteId: '',
             });
+            setSelectedClientId('');
+            setSelectedClientIds([]);
             setShowClientPassword(false);
             setShowClientForm(true);
           }}
@@ -549,7 +800,7 @@ const Users = () => {
                 : 'bg-white/5 text-gray-200 hover:bg-white/10'
             }`}
           >
-            Usuarios da dash interna
+            Usuarios Macedo Interno
           </button>
           <button
             type="button"
@@ -839,24 +1090,91 @@ const Users = () => {
             </div>
             <form onSubmit={handleSubmitClientUser} className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-300">Nome</label>
-                <input
-                  type="text"
-                  value={clientFormData.nome}
-                  onChange={(e) => setClientFormData((prev) => ({ ...prev, nome: e.target.value }))}
+                <label className="mb-2 block text-sm font-medium text-gray-300">Nome (cliente)</label>
+                <select
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
                   className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
-                  required
-                />
+                >
+                  <option value="">Selecione uma empresa para vincular</option>
+                  {!unlinkedClientOptions.length ? (
+                    <option value="">Todas as empresas ja estao vinculadas</option>
+                  ) : null}
+                  {unlinkedClientOptions.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.nome}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  Escolha a empresa principal do acesso. Abaixo voce pode vincular outras empresas ao mesmo usuario.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleLinkSelectedClient}
+                  disabled={!selectedClientId || selectedClientIds.includes(String(selectedClientId))}
+                  className="mt-2 inline-flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus size={14} />
+                  Vincular empresa selecionada
+                </button>
+                {unlinkedClientOptions.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {unlinkedClientOptions.slice(0, 8).map((client) => (
+                      <button
+                        key={`quick-select-${client.id}`}
+                        type="button"
+                        onClick={() => setSelectedClientId(String(client.id))}
+                        className={`rounded-md border px-2 py-1 text-[11px] ${
+                          String(selectedClientId) === String(client.id)
+                            ? 'border-red-500/40 bg-red-500/20 text-red-100'
+                            : 'border-white/15 bg-white/5 text-gray-200 hover:bg-white/10'
+                        }`}
+                      >
+                        {client.nome}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Empresas vinculadas ao usuario</label>
+                <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-3">
+                  {selectedClientOptions.map((client) => (
+                    <div key={`selected-link-${client.id}`} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                      <div className="text-sm text-white">{client.nome}</div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleLinkedClient(client.id, true)}
+                        className="rounded-md border border-white/20 px-2 py-1 text-xs text-gray-200 hover:bg-white/10"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  {selectedClientOptions.length === 0 && availableClientOptions.length > 0 ? (
+                    <p className="text-xs text-gray-400">Nenhuma empresa vinculada ainda. Use o botao acima para vincular.</p>
+                  ) : null}
+                  {!availableClientOptions.length ? (
+                    <p className="text-xs text-gray-400">Nenhum cliente disponivel para vinculo.</p>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  Empresas selecionadas: {selectedClientOptions.length}
+                </p>
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-300">Email</label>
                 <input
                   type="email"
-                  value={clientFormData.email}
+                  value={clientFormData.email || ''}
                   onChange={(e) => setClientFormData((prev) => ({ ...prev, email: e.target.value }))}
                   className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
                   required
                 />
+                <p className="mt-1 text-xs text-gray-400">
+                  Preenchimento automatico habilitado. Voce pode editar manualmente antes de salvar.
+                </p>
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-300">Senha</label>
@@ -883,26 +1201,28 @@ const Users = () => {
                   <label className="mb-2 block text-sm font-medium text-gray-300">Client Ref ID</label>
                   <input
                     type="text"
-                    value={clientFormData.clientRefId}
-                    onChange={(e) => setClientFormData((prev) => ({ ...prev, clientRefId: e.target.value }))}
+                    value={clientFormData.fixedClientRefId || ''}
                     className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="id interno da empresa"
+                    readOnly
                   />
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-300">Cliente ID (rota)</label>
                   <input
                     type="text"
-                    value={clientFormData.clienteId}
-                    onChange={(e) => setClientFormData((prev) => ({ ...prev, clienteId: e.target.value }))}
+                    value={clientFormData.fixedClienteId || ''}
                     className="w-full rounded-lg bg-gray-700 px-4 py-2 text-white outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="ex.: c8f3d"
+                    readOnly
                   />
                 </div>
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-white hover:bg-red-700">
+                <button
+                  type="submit"
+                  disabled={!selectedClientOptions.length}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-white hover:bg-red-700 disabled:opacity-40"
+                >
                   <Save size={18} />
                   {editingClientUser ? 'Atualizar' : 'Criar'} usuario cliente
                 </button>
@@ -1007,7 +1327,7 @@ const Users = () => {
                       <p className="font-medium text-white">{clientUser.nome}</p>
                       <p className="text-sm text-gray-300">{clientUser.email}</p>
                       <p className="mt-1 text-xs text-gray-400">
-                        Cliente ID: {clientUser.clienteId || '-'} | Client Ref: {clientUser.clientRefId || '-'}
+                        Empresas vinculadas: {getLinkedClienteIds(clientUser).join(', ') || '-'}
                       </p>
                     </div>
                   </div>

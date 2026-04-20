@@ -6,6 +6,8 @@ import { mockClients } from '../../dev/mockData';
 import { accountingServiceProcessModels } from '../../dev/accountingProcessTemplates';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'sonner';
+import { createProcessModelFromDraft, hydrateProcessModels } from '../Ourolandia/processModelUtils';
+import './ServicesDark.css';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 const MOCK_INTERNAL_SERVICES_KEY = 'mock_internal_services';
@@ -158,6 +160,12 @@ const getServiceAssignedIds = (service) => {
   return ids;
 };
 
+const isOrderService = (service = {}) => {
+  const origem = normalizeText(service?.origem || '');
+  const numero = String(service?.numero || service?.numero_os || '').toUpperCase();
+  return origem.includes('servicos_avulsos') || numero.startsWith('OS-');
+};
+
 const Services = () => {
   const { user } = useAuth();
   const location = useLocation();
@@ -171,6 +179,9 @@ const Services = () => {
   const [selectedServico, setSelectedServico] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
+  const [topViewTab, setTopViewTab] = useState('servicos');
+  const [scopeTab, setScopeTab] = useState('cliente');
+  const [quickSearch, setQuickSearch] = useState('');
   const [showCustomServiceInput, setShowCustomServiceInput] = useState(false);
   const [customServiceName, setCustomServiceName] = useState('');
   const [serviceTypeSearchTerm, setServiceTypeSearchTerm] = useState('');
@@ -181,10 +192,18 @@ const Services = () => {
   const [draftFilters, setDraftFilters] = useState({
     cliente: '',
     setor: '',
+    cadastradosPorVoce: false,
+    vinculados: false,
+    ordensServico: false,
+    servicosPadrao: false,
   });
   const [appliedFilters, setAppliedFilters] = useState({
     cliente: '',
     setor: '',
+    cadastradosPorVoce: false,
+    vinculados: false,
+    ordensServico: false,
+    servicosPadrao: false,
   });
   const [accessDeniedBySector, setAccessDeniedBySector] = useState(false);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
@@ -198,7 +217,7 @@ const Services = () => {
     setor_key: 'atendimento',
     cidade: '',
   });
-  const [processModels, setProcessModels] = useState(accountingServiceProcessModels);
+  const [processModels, setProcessModels] = useState(() => hydrateProcessModels(accountingServiceProcessModels));
   const [processDraft, setProcessDraft] = useState({
     nome: '',
     descricao: '',
@@ -209,13 +228,19 @@ const Services = () => {
     ],
   });
 
+  const isDashboardTab = topViewTab === 'dashboard';
+  const isServicosTab = topViewTab === 'servicos';
+  const isProcessosTab = topViewTab === 'processos';
+  const isConfiguracoesTab = topViewTab === 'configuracoes';
+  const isTableLikeTab = isServicosTab || isProcessosTab;
+
   useEffect(() => {
     loadServicos();
     loadSupportData();
     try {
       const storedModels = JSON.parse(localStorage.getItem(MODELS_KEY) || '[]');
       if (Array.isArray(storedModels) && storedModels.length) {
-        setProcessModels(storedModels);
+        setProcessModels(hydrateProcessModels(storedModels));
       }
     } catch {}
   }, []);
@@ -548,11 +573,40 @@ const Services = () => {
     return userVisibleServicos.filter((item) => {
       const matchCliente = !appliedFilters.cliente || (item.empresa_id || item.empresa_nome) === appliedFilters.cliente;
       const matchSetor = !appliedFilters.setor || normalizeSectorKey(item.setor) === appliedFilters.setor;
-      return matchCliente && matchSetor;
-    });
-  }, [userVisibleServicos, appliedFilters, accessDeniedBySector]);
+      const createdByIds = new Set(
+        [item?.criado_por?.id, item?.criado_por?.email, item?.responsavel_id, item?.responsavel_email].filter(Boolean),
+      );
+      const currentUserIds = [user?.id, user?.email].filter(Boolean);
+      const matchCadastradosPorVoce = !appliedFilters.cadastradosPorVoce
+        || currentUserIds.some((id) => createdByIds.has(id));
 
-  const canSearch = Boolean(draftFilters.cliente || draftFilters.setor);
+      const assignedIds = getServiceAssignedIds(item);
+      const matchVinculados = !appliedFilters.vinculados
+        || currentUserIds.some((id) => assignedIds.has(id));
+
+      const itemIsOrderService = isOrderService(item);
+      const matchOrdensServico = !appliedFilters.ordensServico || itemIsOrderService;
+      const matchServicosPadrao = !appliedFilters.servicosPadrao || !itemIsOrderService;
+
+      return (
+        matchCliente
+        && matchSetor
+        && matchCadastradosPorVoce
+        && matchVinculados
+        && matchOrdensServico
+        && matchServicosPadrao
+      );
+    });
+  }, [userVisibleServicos, appliedFilters, accessDeniedBySector, user?.id, user?.email]);
+
+  const canSearch = Boolean(
+    draftFilters.cliente
+    || draftFilters.setor
+    || draftFilters.cadastradosPorVoce
+    || draftFilters.vinculados
+    || draftFilters.ordensServico
+    || draftFilters.servicosPadrao,
+  );
 
   const handleSearch = () => {
     if (
@@ -569,7 +623,14 @@ const Services = () => {
   };
 
   const handleClearFilters = () => {
-    const cleared = { cliente: '', setor: '' };
+    const cleared = {
+      cliente: '',
+      setor: '',
+      cadastradosPorVoce: false,
+      vinculados: false,
+      ordensServico: false,
+      servicosPadrao: false,
+    };
     setDraftFilters(cleared);
     setAppliedFilters(cleared);
     setAccessDeniedBySector(false);
@@ -585,6 +646,62 @@ const Services = () => {
       concluidos: filteredServicos.filter((item) => item.status_ui === 'concluido').length,
     };
   }, [filteredServicos]);
+
+  const visibleServicos = useMemo(() => {
+    const term = normalizeText(quickSearch);
+    if (!term) return filteredServicos;
+    return filteredServicos.filter((item) =>
+      normalizeText(item.empresa_nome).includes(term)
+      || normalizeText(item.tipo_servico).includes(term)
+      || normalizeText(item.titulo).includes(term),
+    );
+  }, [filteredServicos, quickSearch]);
+
+  const groupedByClient = useMemo(() => {
+    const grouped = new Map();
+    visibleServicos.forEach((item) => {
+      const key = item.empresa_nome || 'Sem cliente';
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(item);
+    });
+    return Array.from(grouped.entries());
+  }, [visibleServicos]);
+
+  const groupedByProcess = useMemo(() => {
+    const grouped = new Map();
+    visibleServicos.forEach((item) => {
+      const key = item.tipo_servico || item.titulo || 'Processo sem nome';
+      if (!grouped.has(key)) {
+        grouped.set(key, { clients: new Set(), total: 0, setor: item.setor || '-' });
+      }
+      const row = grouped.get(key);
+      row.total += 1;
+      if (item.empresa_nome) row.clients.add(item.empresa_nome);
+    });
+    return Array.from(grouped.entries()).map(([name, data]) => ({
+      name,
+      clients: data.clients.size,
+      total: data.total,
+      setor: data.setor,
+    }));
+  }, [visibleServicos]);
+
+  const taskRows = useMemo(() => {
+    const rows = [];
+    visibleServicos.forEach((item) => {
+      rows.push({
+        key: `${item.id}-task`,
+        tarefa: item.tipo_servico || item.titulo || 'Tarefa',
+        situacao: getStatusMeta(item.status_ui).label,
+        cliente: item.empresa_nome || '-',
+        processo: item.tipo_servico || '-',
+        prazo: formatDate(item.data_prazo || item.created_at),
+        departamento: item.setor || '-',
+      });
+    });
+    return rows;
+  }, [visibleServicos]);
+
 
   const updateMockStatus = (serviceId, nextStatus) => {
     try {
@@ -801,24 +918,29 @@ const Services = () => {
     }
 
     const setorDestinoLabel = sectorLabelMap[processDraft.setorDestinoKey] || 'Atendimento';
-    const novoModelo = {
-      id: createId('proc-model'),
+    const novoModelo = createProcessModelFromDraft({
       nome,
       descricao: processDraft.descricao.trim() || `Modelo personalizado para ${nome.toLowerCase()}.`,
-      setorInicial: 'Atendimento',
       setorDestino: setorDestinoLabel,
-      alocacaoColaboradores: [
-        { setor: 'Atendimento', modulo: 'atendimento', colaboradores: [] },
-        { setor: setorDestinoLabel, modulo: sectorToModule[processDraft.setorDestinoKey] || 'atendimento', colaboradores: [] },
-      ],
-      etapas,
-      criado_manual: true,
-      criado_em: new Date().toISOString(),
-    };
+      steps: etapas.map((etapa) => ({
+        nome: etapa.nome,
+        setorResponsavel: etapa.setorResponsavel,
+        tarefas: (etapa.tarefas || []).map((tarefa) => ({
+          descricao: tarefa.descricao,
+          observacoes: tarefa.observacoes || '',
+        })),
+      })),
+      idPrefix: 'proc-model',
+    });
+    if (!novoModelo) {
+      toast.error('Nao foi possivel criar o modelo.');
+      return;
+    }
 
     const nextModels = [novoModelo, ...processModels];
-    setProcessModels(nextModels);
-    localStorage.setItem(MODELS_KEY, JSON.stringify(nextModels));
+    const hydratedNextModels = hydrateProcessModels(nextModels);
+    setProcessModels(hydratedNextModels);
+    localStorage.setItem(MODELS_KEY, JSON.stringify(hydratedNextModels));
 
     setNewService((prev) => ({
       ...prev,
@@ -866,7 +988,7 @@ const Services = () => {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="services-dark space-y-6 p-6">
       <div className="glass-intense rounded-[24px] border border-white/10 p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -877,7 +999,7 @@ const Services = () => {
             <button
               type="button"
               onClick={handleOpenCreate}
-              className="inline-flex items-center gap-2 rounded-xl border border-red-500/35 bg-red-500/15 px-4 py-2 text-sm text-red-100 hover:bg-red-500/25"
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25"
             >
               <Plus className="h-4 w-4" />
               Adicionar novo servico
@@ -894,24 +1016,209 @@ const Services = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="glass rounded-[24px] border border-white/10 p-4">
+        <div className="mb-4 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setTopViewTab('dashboard')}
+            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
+              isDashboardTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => setTopViewTab('servicos')}
+            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
+              isServicosTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
+            }`}
+          >
+            Serviços
+            
+          </button>
+          <button
+            type="button"
+            onClick={() => setTopViewTab('processos')}
+            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
+              isProcessosTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
+            }`}
+          >
+            Processos
+            
+          </button>
+          <button
+            type="button"
+            onClick={() => setTopViewTab('configuracoes')}
+            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
+              isConfiguracoesTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
+            }`}
+          >
+            Configurações
+          </button>
+        </div>
+
+        {isTableLikeTab ? (
+          <>
+            <div className="mb-3 inline-flex rounded-lg border border-white/10 bg-white/5 p-1">
+              {[
+                ['cliente', 'Cliente'],
+                ['processo', 'Processo'],
+                ['tarefa', 'Tarefa'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setScopeTab(key)}
+                  className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
+                    scopeTab === key ? 'bg-white text-slate-900' : 'text-gray-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center rounded-xl border border-white/15 bg-zinc-900 px-3 py-2">
+              <Search className="h-4 w-4 text-gray-500" />
+              <input
+                value={quickSearch}
+                onChange={(e) => setQuickSearch(e.target.value)}
+                placeholder={scopeTab === 'tarefa' ? 'Busque por cliente ou tarefa...' : 'Busque por cliente ou processo...'}
+                className="w-full bg-transparent px-2 text-sm text-white outline-none placeholder:text-gray-500"
+              />
+            </div>
+            <div className="mt-2 text-xs text-gray-400">
+              Cliente: {groupedByClient.length} grupos | Processo: {groupedByProcess.length} grupos | Tarefa: {taskRows.length} itens
+            </div>
+          </>
+        ) : isConfiguracoesTab ? (
+          <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-center text-gray-300">
+            Configurações do módulo em preparação.
+          </div>
+        ) : null}
+      </div>
+
+      {isDashboardTab ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+              <h3 className="text-2xl font-semibold text-white">Performance geral</h3>
+              <p className="mt-1 text-sm text-gray-400">Acompanhe o resumo dos processos e tarefas do periodo selecionado.</p>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <MiniCard title="A fazer" value={resumo.novo} tone="border-white/10 bg-white/5 text-white" />
+                <MiniCard title="Em progresso" value={resumo.emAndamento} tone="border-blue-500/30 bg-blue-500/10 text-blue-100" />
+                <MiniCard title="Concluidas" value={resumo.concluidos} tone="border-emerald-500/30 bg-emerald-500/10 text-emerald-100" />
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <MiniCard title="Em atraso" value={Math.max(0, resumo.total - resumo.concluidos)} tone="border-amber-500/30 bg-amber-500/10 text-amber-100" />
+                <MiniCard title="Proximo da multa" value={0} tone="border-orange-500/30 bg-orange-500/10 text-orange-100" />
+                <MiniCard title="Em multa" value={0} tone="border-rose-500/30 bg-rose-500/10 text-rose-100" />
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+                <h3 className="text-3xl font-semibold text-white">Envio em lote</h3>
+                <p className="text-sm text-gray-400">Confira a quantidade de processos na fila.</p>
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-lg font-semibold text-white">0 na fila de envio</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+                <h3 className="text-3xl font-semibold text-white">Ordem de servico</h3>
+                <p className="text-sm text-gray-400">Acompanhe o resumo das solicitacoes.</p>
+                <div className="mt-4 space-y-2 text-sm">
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-gray-200">A fazer: {resumo.novo}</div>
+                  <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-cyan-100">Em progresso: {resumo.emAndamento}</div>
+                  <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-100">Concluidas: {resumo.concluidos}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-2xl font-semibold text-white">Performance do departamento</h3>
+              <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-sm">
+                <button type="button" className="rounded-md bg-white px-3 py-1 font-semibold text-slate-900">Equipe</button>
+                <button type="button" className="rounded-md px-3 py-1 font-semibold text-gray-300">Departamento</button>
+              </div>
+            </div>
+            <div className="overflow-auto rounded-xl border border-white/10">
+              <table className="w-full min-w-[720px]">
+                <thead className="bg-white/10 text-xs uppercase tracking-wide text-gray-300">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Departamento</th>
+                    <th className="px-3 py-2 text-left">Colaboradores</th>
+                    <th className="px-3 py-2 text-left">Situacao das tarefas</th>
+                    <th className="px-3 py-2 text-left">Desempenho</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10 text-sm">
+                  {[
+                    { nome: 'Pessoal', colabs: 3, pendente: 1, progresso: 0, concluidas: 2, desempenho: '67%' },
+                    { nome: 'Administrativo', colabs: 5, pendente: 216, progresso: 0, concluidas: 0, desempenho: '0%' },
+                  ].map((row) => (
+                    <tr key={row.nome} className="hover:bg-white/5">
+                      <td className="px-3 py-3 text-white">{row.nome}</td>
+                      <td className="px-3 py-3 text-gray-300">{row.colabs}</td>
+                      <td className="px-3 py-3 text-gray-300">{`${row.pendente} / ${row.progresso} / ${row.concluidas}`}</td>
+                      <td className="px-3 py-3">
+                        <div className="h-3 w-24 overflow-hidden rounded bg-white/10">
+                          <div className="h-full bg-emerald-400" style={{ width: row.desempenho }} />
+                        </div>
+                        <div className="mt-1 text-xs text-emerald-300">{row.desempenho}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className={`grid grid-cols-1 gap-4 md:grid-cols-4 ${isTableLikeTab ? '' : 'hidden'}`}>
         <MiniCard title="Total" value={resumo.total} tone="border-white/10 bg-white/5 text-white" />
         <MiniCard title="Novo" value={resumo.novo} tone="border-blue-500/30 bg-blue-500/10 text-blue-100" />
         <MiniCard title="Em andamento" value={resumo.emAndamento} tone="border-amber-500/30 bg-amber-500/10 text-amber-100" />
         <MiniCard title="Concluidos" value={resumo.concluidos} tone="border-emerald-500/30 bg-emerald-500/10 text-emerald-100" />
       </div>
 
-      <div className="glass rounded-[24px] border border-white/10 p-4">
-        <div className="mb-3 inline-flex items-center gap-2 text-sm text-gray-300">
-          <Filter className="h-4 w-4" />
-          Filtros
+      <div className={`glass rounded-[24px] border border-white/10 p-4 ${isTableLikeTab ? '' : 'hidden'}`}>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="inline-flex items-center gap-2 text-sm text-gray-300">
+            <Filter className="h-4 w-4" />
+            Filtros
+          </div>
+          <div className="min-w-[190px]">
+            <div className="mb-2 text-sm font-semibold text-gray-200">Acoes</div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="w-full rounded-lg border border-emerald-500/45 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30"
+              >
+                + Criar processo
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
+              >
+                Edicao em lote
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-semibold text-gray-200 hover:bg-white/10"
+              >
+                Envio em lote
+              </button>
+            </div>
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="relative">
             <button
               type="button"
               onClick={() => setClientDropdownOpen((prev) => !prev)}
-              className="inline-flex w-full items-center justify-between rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+              className="inline-flex w-full items-center justify-between rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
             >
               <span className="truncate">{selectedClienteLabel}</span>
               <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${clientDropdownOpen ? 'rotate-180' : ''}`} />
@@ -963,7 +1270,7 @@ const Services = () => {
           <select
             value={draftFilters.setor}
             onChange={(e) => setDraftFilters((prev) => ({ ...prev, setor: e.target.value }))}
-            className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+            className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
           >
             <option value="">Todos os setores</option>
             {setorFilterOptions.map((item) => (
@@ -974,17 +1281,60 @@ const Services = () => {
           </select>
         </div>
 
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
+            <input
+              type="checkbox"
+              checked={draftFilters.cadastradosPorVoce}
+              onChange={(e) => setDraftFilters((prev) => ({ ...prev, cadastradosPorVoce: e.target.checked }))}
+            />
+            Cadastrados por voce
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
+            <input
+              type="checkbox"
+              checked={draftFilters.vinculados}
+              onChange={(e) => setDraftFilters((prev) => ({ ...prev, vinculados: e.target.checked }))}
+            />
+            Vinculados
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
+            <input
+              type="checkbox"
+              checked={draftFilters.ordensServico}
+              onChange={(e) => setDraftFilters((prev) => ({ ...prev, ordensServico: e.target.checked }))}
+            />
+            Ordens de servico
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
+            <input
+              type="checkbox"
+              checked={draftFilters.servicosPadrao}
+              onChange={(e) => setDraftFilters((prev) => ({ ...prev, servicosPadrao: e.target.checked }))}
+            />
+            Servicos padrao
+          </label>
+        </div>
+
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {canSearch ? (
             <button
               type="button"
               onClick={handleSearch}
-              className="inline-flex items-center gap-2 rounded-lg border border-red-500/35 bg-red-500/15 px-4 py-2 text-sm text-red-100 hover:bg-red-500/25"
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25"
             >
               Buscar
             </button>
           ) : null}
-          {(appliedFilters.cliente || appliedFilters.setor || accessDeniedBySector) ? (
+          {(
+            appliedFilters.cliente
+            || appliedFilters.setor
+            || appliedFilters.cadastradosPorVoce
+            || appliedFilters.vinculados
+            || appliedFilters.ordensServico
+            || appliedFilters.servicosPadrao
+            || accessDeniedBySector
+          ) ? (
             <button
               type="button"
               onClick={handleClearFilters}
@@ -996,10 +1346,10 @@ const Services = () => {
         </div>
       </div>
 
-      <div className="glass rounded-[24px] border border-white/10 overflow-hidden">
+      <div className={`glass rounded-[24px] border border-white/10 overflow-hidden ${isTableLikeTab ? '' : 'hidden'}`}>
         {loading ? (
           <div className="p-8 text-center text-sm text-gray-400">Carregando servicos...</div>
-        ) : filteredServicos.length === 0 ? (
+        ) : visibleServicos.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-400">
             {accessDeniedBySector ? 'Você não tem acesso a esse setor.' : 'Nenhum servico encontrado.'}
           </div>
@@ -1008,47 +1358,95 @@ const Services = () => {
             <table className="w-full min-w-[860px]">
               <thead className="bg-white/10">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Cliente</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Tipo do servico</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Data de criacao</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Status</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-300">Acoes</th>
+                  {scopeTab === 'cliente' ? (
+                    <>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Tipo do servico</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Data de criacao</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Status</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-300">Acoes</th>
+                    </>
+                  ) : null}
+                  {scopeTab === 'processo' ? (
+                    <>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Processos</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Nº de clientes</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Nº de processos</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Departamentos</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Responsaveis</th>
+                    </>
+                  ) : null}
+                  {scopeTab === 'tarefa' ? (
+                    <>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Tarefas</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Situacao</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Cliente</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Nome processo</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Prazo processo</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
-                {filteredServicos.map((servico) => {
-                  const statusMeta = getStatusMeta(servico.status_ui);
-                  return (
-                    <tr key={servico.id} className="hover:bg-white/5">
-                      <td className="px-4 py-3 text-sm text-white">{servico.empresa_nome || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-200">{servico.tipo_servico || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{formatDate(servico.created_at || servico.data_criacao || servico.data_prazo)}</td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={servico.status_ui}
-                          onChange={(e) => handleStatusChange(servico.id, e.target.value)}
-                          className={`rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none ${statusMeta.className}`}
-                        >
-                          {statusOptions.map((status) => (
-                            <option key={status.value} value={status.value}>
-                              {status.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedServico(servico)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          Detalhes
-                        </button>
-                      </td>
+                {scopeTab === 'cliente'
+                  ? visibleServicos.map((servico) => {
+                    const statusMeta = getStatusMeta(servico.status_ui);
+                    return (
+                      <tr key={servico.id} className="hover:bg-white/5">
+                        <td className="px-4 py-3 text-sm text-white">{servico.empresa_nome || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-200">{servico.tipo_servico || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{formatDate(servico.created_at || servico.data_criacao || servico.data_prazo)}</td>
+                        <td className="px-4 py-3">
+                          <select
+                            value={servico.status_ui}
+                            onChange={(e) => handleStatusChange(servico.id, e.target.value)}
+                            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none ${statusMeta.className}`}
+                          >
+                            {statusOptions.map((status) => (
+                              <option key={status.value} value={status.value}>
+                                {status.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedServico(servico)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Detalhes
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                  : null}
+
+                {scopeTab === 'processo'
+                  ? groupedByProcess.map((row) => (
+                    <tr key={row.name} className="hover:bg-white/5">
+                      <td className="px-4 py-3 text-sm text-white">{row.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.clients}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.total}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.setor}</td>
+                      <td className="px-4 py-3 text-sm text-gray-400">-</td>
                     </tr>
-                  );
-                })}
+                  ))
+                  : null}
+
+                {scopeTab === 'tarefa'
+                  ? taskRows.map((row) => (
+                    <tr key={row.key} className="hover:bg-white/5">
+                      <td className="px-4 py-3 text-sm text-white">{row.tarefa}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.situacao}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.cliente}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.processo}</td>
+                      <td className="px-4 py-3 text-sm text-gray-300">{row.prazo}</td>
+                    </tr>
+                  ))
+                  : null}
               </tbody>
             </table>
           </div>
@@ -1108,7 +1506,7 @@ const Services = () => {
                 <input
                   value={processDraft.nome}
                   onChange={(e) => setProcessDraft((prev) => ({ ...prev, nome: e.target.value }))}
-                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                   placeholder="Ex.: Simulacao de ferias"
                 />
               </FormField>
@@ -1116,7 +1514,7 @@ const Services = () => {
                 <select
                   value={processDraft.setorDestinoKey}
                   onChange={(e) => setProcessDraft((prev) => ({ ...prev, setorDestinoKey: e.target.value }))}
-                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 >
                   {Object.entries(sectorLabelMap).map(([key, label]) => (
                     <option key={key} value={key}>{label}</option>
@@ -1128,7 +1526,7 @@ const Services = () => {
                   <textarea
                     value={processDraft.descricao}
                     onChange={(e) => setProcessDraft((prev) => ({ ...prev, descricao: e.target.value }))}
-                    className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                    className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                     rows={2}
                     placeholder="Descreva o objetivo desse processo"
                   />
@@ -1165,12 +1563,12 @@ const Services = () => {
                       value={etapa.nome}
                       onChange={(e) => updateProcessStep(index, 'nome', e.target.value)}
                       placeholder="Nome da etapa"
-                      className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                      className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                     />
                     <select
                       value={etapa.setorResponsavelKey}
                       onChange={(e) => updateProcessStep(index, 'setorResponsavelKey', e.target.value)}
-                      className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                      className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                     >
                       {Object.entries(sectorLabelMap).map(([key, label]) => (
                         <option key={key} value={key}>{label}</option>
@@ -1182,7 +1580,7 @@ const Services = () => {
                         onChange={(e) => updateProcessStep(index, 'tarefasTexto', e.target.value)}
                         placeholder="Uma tarefa por linha"
                         rows={3}
-                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                       />
                     </div>
                   </div>
@@ -1223,7 +1621,7 @@ const Services = () => {
                 <button
                   type="button"
                   onClick={handleOpenProcessBuilder}
-                  className="inline-flex items-center gap-2 rounded-xl border border-red-500/35 bg-red-500/15 px-3 py-2 text-xs font-medium text-red-100 hover:bg-red-500/25"
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25"
                 >
                   <Plus className="h-4 w-4" />
                   Cadastrar novo processo
@@ -1248,7 +1646,7 @@ const Services = () => {
                       modelo_id: '',
                     }))
                   }
-                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 >
                   {sectorOptions.map((sector) => (
                     <option key={sector.key} value={sector.key}>
@@ -1276,7 +1674,7 @@ const Services = () => {
                           ?.key || ''
                       }
                       onChange={(e) => handleServiceOptionChange(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                      className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                     >
                       <option value="">Selecione um servico</option>
                       {filteredServiceTypeOptions.map((option) => (
@@ -1288,7 +1686,7 @@ const Services = () => {
                     <button
                       type="button"
                       onClick={handleOpenProcessBuilder}
-                      className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-red-500/35 bg-red-500/15 text-red-100 hover:bg-red-500/25"
+                      className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25"
                       title="Cadastrar novo processo"
                     >
                       <Plus className="h-4 w-4" />
@@ -1308,7 +1706,7 @@ const Services = () => {
                       value={customServiceName}
                       onChange={(e) => setCustomServiceName(e.target.value)}
                       placeholder="Digite o nome do novo servico"
-                      className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                      className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                     />
                     <button
                       type="button"
@@ -1328,7 +1726,7 @@ const Services = () => {
                 <select
                   value={newService.cidade}
                   onChange={(e) => handleCityChange(e.target.value)}
-                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 >
                   <option value="">Selecione a base</option>
                   {cityOptions.map((city) => (
@@ -1343,7 +1741,7 @@ const Services = () => {
                 <select
                   value={newService.empresa_id}
                   onChange={(e) => handleCompanyChange(e.target.value)}
-                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                   disabled={!newService.cidade}
                 >
                   <option value="">{newService.cidade ? 'Selecione a empresa' : 'Selecione a cidade primeiro'}</option>
@@ -1361,7 +1759,7 @@ const Services = () => {
                   onChange={(e) => setNewService((prev) => ({ ...prev, descricao: e.target.value }))}
                   placeholder="Descricao opcional do servico"
                   rows={3}
-                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-red-400/40"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 />
               </FormField>
             </div>
@@ -1431,7 +1829,7 @@ const Services = () => {
             ) : null}
 
             <div className="mt-4 flex justify-end">
-              <button type="button" onClick={handleCreateService} className="inline-flex items-center gap-2 rounded-xl border border-red-500/35 bg-red-500/15 px-4 py-2 text-sm text-red-100 hover:bg-red-500/25">
+              <button type="button" onClick={handleCreateService} className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25">
                 <Plus className="h-4 w-4" />
                 Salvar servico
               </button>

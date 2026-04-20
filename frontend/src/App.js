@@ -11,6 +11,7 @@ import DashboardTaskDetailView from "./components/Dashboard/DashboardTaskDetailV
 import ClientPortalEntry from "./components/ClientPortal/ClientPortalEntry";
 import ClientPortalRoutes from "./components/ClientPortal/ClientPortalRoutes";
 import ClientesExpandido from "./components/Clients/ClientesExpandido";
+import ClientesAvulso from "./components/Clients/ClientesAvulso";
 import FinancialClients from "./components/Clients/FinancialClients";
 import FinanceiroExpandido from "./components/Financial/FinanceiroExpandido";
 import FinanceiroHub from "./components/Financial/FinanceiroHub";
@@ -22,8 +23,7 @@ import FiscalExpandido from "./components/Fiscal/FiscalExpandido";
 import AtendimentoAgendamento from "./components/Atendimento/AtendimentoAgendamento";
 import PainelContadores from "./components/Contadores/PainelContadores";
 import Configuracoes from "./components/Configuracoes/Configuracoes";
-import Chat from "./components/Chat/Chat";
-import ChatEnhanced from "./components/Chat/ChatEnhanced";
+import ChatHub from "./components/Chat/ChatHub";
 import Users from "./components/Settings/Users";
 import MeusDados from "./components/Settings/MeusDados";
 import ChangePassword from "./components/Settings/ChangePassword";
@@ -80,6 +80,7 @@ function AppContent() {
                       <Route path="/documentos" element={<DocumentsCenter />} />
                       <Route path="/comercial" element={<ModuleGuard moduleKey="comercial"><Comercial /></ModuleGuard>} />
                       <Route path="/clientes" element={<ModuleGuard moduleKey="clientes"><ClientesExpandido /></ModuleGuard>} />
+                      <Route path="/clientes-avulso" element={<ClientesAvulso />} />
                       <Route path="/financeiro" element={<ModuleGuard moduleKey="financeiro"><FinanceiroHub /></ModuleGuard>} />
                       <Route path="/clientes-financeiro" element={<ModuleGuard moduleKey="financeiro"><FinancialClients /></ModuleGuard>} />
                       <Route path="/contas-receber" element={<ModuleGuard moduleKey="financeiro"><FinanceiroExpandido /></ModuleGuard>} />
@@ -93,7 +94,7 @@ function AppContent() {
                       <Route path="/atendimento" element={<ModuleGuard moduleKey="atendimento"><AtendimentoAgendamento /></ModuleGuard>} />
                       <Route path="/contadores" element={<ModuleGuard moduleKey="contadores"><PainelContadores /></ModuleGuard>} />
                       <Route path="/ourolandia" element={<ModuleGuard moduleKey="ourolandia"><MacedoAcademy /></ModuleGuard>} />
-                      <Route path="/chat" element={<ModuleGuard moduleKey="chat"><ChatEnhanced /></ModuleGuard>} />
+                      <Route path="/chat" element={<ModuleGuard moduleKey="chat"><ChatHub /></ModuleGuard>} />
                       <Route path="/meus-dados" element={<ColaboradorGuard><MeusDados /></ColaboradorGuard>} />
                       <Route path="/configuracoes" element={<AdminGuard><ModuleGuard moduleKey="configuracoes"><Configuracoes /></ModuleGuard></AdminGuard>} />
                       <Route path="/configuracoes/meus-dados" element={<AdminGuard><ModuleGuard moduleKey="configuracoes"><MeusDados /></ModuleGuard></AdminGuard>} />

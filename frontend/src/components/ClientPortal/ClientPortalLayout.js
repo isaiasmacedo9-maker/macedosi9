@@ -27,6 +27,7 @@ import {
   userHasAccessToPortalClient,
 } from '../../dev/clientPortalData';
 import { useAuth } from '../../contexts/AuthContext';
+import { Z_LAYERS } from '../../constants/zLayers';
 
 const topButtonBase =
   'group flex min-h-[92px] items-center gap-3 rounded-2xl border px-4 py-3 transition-all duration-200';
@@ -231,7 +232,8 @@ const ClientPortalLayout = ({ children }) => {
       <div className="flex min-h-screen">
         {!isMacedogramView ? (
           <aside
-            className={`sidebar-futuristic fixed inset-y-0 left-0 z-50 w-[280px] border-r border-white/10 transition-transform duration-300 lg:translate-x-0 ${
+            style={{ zIndex: Z_LAYERS.appSidebar }}
+            className={`sidebar-futuristic fixed inset-y-0 left-0 w-[280px] border-r border-white/10 transition-transform duration-300 lg:translate-x-0 ${
               mobileOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
           >
@@ -379,7 +381,7 @@ const ClientPortalLayout = ({ children }) => {
 
         <div className={`flex min-h-screen min-w-0 flex-1 flex-col ${isMacedogramView ? '' : 'lg:ml-[280px]'}`}>
           {!isMacedogramView ? (
-            <header className="glass-intense sticky top-0 z-30 border-b border-white/10 px-4 py-4 sm:px-6">
+            <header style={{ zIndex: Z_LAYERS.stickyHeader }} className="glass-intense sticky top-0 border-b border-white/10 px-4 py-4 sm:px-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <button
@@ -464,8 +466,8 @@ const ClientPortalLayout = ({ children }) => {
           type="button"
           onMouseDown={handleWhatsappMouseDown}
           onClick={handleWhatsappClick}
-          style={whatsappPosition ? { left: `${whatsappPosition.x}px`, top: `${whatsappPosition.y}px` } : undefined}
-          className={`fixed z-[80] ${whatsappPosition ? '' : 'bottom-6 right-6'} inline-flex cursor-move items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-4 py-2.5 text-sm font-medium text-emerald-50 shadow-[0_10px_24px_rgba(0,0,0,0.28)] hover:bg-emerald-500/30`}
+          style={whatsappPosition ? { left: `${whatsappPosition.x}px`, top: `${whatsappPosition.y}px`, zIndex: Z_LAYERS.floatingWidget } : { zIndex: Z_LAYERS.floatingWidget }}
+          className={`fixed ${whatsappPosition ? '' : 'bottom-6 right-6'} inline-flex cursor-move items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/20 px-4 py-2.5 text-sm font-medium text-emerald-50 shadow-[0_10px_24px_rgba(0,0,0,0.28)] hover:bg-emerald-500/30`}
           title="WhatsApp de suporte (arrastável)"
         >
           <Move className="h-4 w-4 text-emerald-100/90" />

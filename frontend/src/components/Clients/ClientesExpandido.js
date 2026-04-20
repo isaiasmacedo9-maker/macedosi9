@@ -5,6 +5,7 @@ import { mockClients } from '../../dev/mockData';
 import { getMockInternalServices } from '../../dev/clientPortalData';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const CLIENT_SETUP_STORAGE_KEY = 'mock_admin_client_setup_center_v2';
 const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
@@ -214,7 +215,8 @@ const suggestedModulesByConfigType = {
 };
 
 const ClientesExpandido = () => {
-  const { user } = useAuth();
+  const { user, hasModuleAccess } = useAuth();
+  const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -240,6 +242,7 @@ const ClientesExpandido = () => {
     cidade: 'Jacobina',
   });
   const [showPortalPassword, setShowPortalPassword] = useState(false);
+  const canAccessClientesAvulso = hasModuleAccess('comercial') || hasModuleAccess('financeiro');
 
   useEffect(() => {
     loadClients();
@@ -833,14 +836,25 @@ const ClientesExpandido = () => {
           </h1>
           <p className="text-gray-400 mt-2">Centro de configuracao do cliente no sistema.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowNewClientModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-200 hover:bg-red-600/30"
-        >
-          <UploadCloud className="w-4 h-4" />
-          Novo Cliente
-        </button>
+        <div className="flex items-center gap-2">
+          {canAccessClientesAvulso ? (
+            <button
+              type="button"
+              onClick={() => navigate('/clientes-avulso')}
+              className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/35 bg-cyan-500/15 px-4 py-2 text-cyan-100 hover:bg-cyan-500/25"
+            >
+              Lista de Clientes Avulso
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setShowNewClientModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-200 hover:bg-red-600/30"
+          >
+            <UploadCloud className="w-4 h-4" />
+            Novo Cliente
+          </button>
+        </div>
       </div>
 
       <div className="glass rounded-xl p-4">

@@ -17,7 +17,8 @@ const CreateContaModal = ({ isOpen, onClose, onSubmit }) => {
     valor_original: '',
     observacao: '',
     cidade_atendimento: '',
-    usuario_responsavel: ''
+    usuario_responsavel: '',
+    gerar_mais_meses: '0',
   });
 
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,8 @@ const CreateContaModal = ({ isOpen, onClose, onSubmit }) => {
         valor_original: '',
         observacao: '',
         cidade_atendimento: '',
-        usuario_responsavel: ''
+        usuario_responsavel: '',
+        gerar_mais_meses: '0',
       });
     } catch (error) {
       console.error('Error creating conta:', error);
@@ -237,6 +239,22 @@ const CreateContaModal = ({ isOpen, onClose, onSubmit }) => {
                 className="input-futuristic w-full px-3 py-2 rounded-lg"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Gerar mais meses
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="36"
+                name="gerar_mais_meses"
+                value={formData.gerar_mais_meses}
+                onChange={handleInputChange}
+                className="input-futuristic w-full px-3 py-2 rounded-lg"
+                placeholder="0"
+              />
+              <p className="mt-1 text-xs text-gray-500">0 = apenas este mes, 1+ = recorrencia mensal adicional</p>
             </div>
           </div>
 

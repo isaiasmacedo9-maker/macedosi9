@@ -70,6 +70,7 @@ const mergeClientsUnique = (...lists) => {
 const TrabalhistaCompleto = () => {
   const { hasAccess, user } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard'); 
+  const [moduleDivision, setModuleDivision] = useState('obrigacoes_mensais');
   // dashboard, recalculos, admissoes, demissoes, solicitacoes, obrigacoes, calendario, relatorios
   
   const [loading, setLoading] = useState(true);
@@ -332,6 +333,18 @@ const TrabalhistaCompleto = () => {
       loadRelatorio();
     }
   }, [activeTab, selectedMonth, relatorioType]);
+
+  useEffect(() => {
+    const obrigacoesTabs = new Set(['dashboard', 'clientes_empresas', 'obrigacoes', 'calendario', 'relatorios']);
+    const avulsosTabs = new Set(['dashboard', 'clientes_empresas', 'recalculos', 'admissoes', 'demissoes', 'solicitacoes']);
+
+    if (moduleDivision === 'obrigacoes_mensais' && !obrigacoesTabs.has(activeTab)) {
+      setActiveTab('obrigacoes');
+    }
+    if (moduleDivision === 'servicos_avulsos' && !avulsosTabs.has(activeTab)) {
+      setActiveTab('solicitacoes');
+    }
+  }, [moduleDivision, activeTab]);
 
   useEffect(() => {
     if (!hasAccess([], ['trabalhista'])) return undefined;
@@ -1121,6 +1134,23 @@ const TrabalhistaCompleto = () => {
     expirando: cctDetails.filter((item) => item.status === 'expirando').length,
     vencidas: cctDetails.filter((item) => item.status === 'vencida').length,
   };
+  // eslint-disable-next-line no-unused-vars
+  const tabItems = moduleDivision === 'obrigacoes_mensais'
+    ? [
+        { key: 'dashboard', icon: '📊', label: 'Dashboard' },
+        { key: 'clientes_empresas', icon: '🏢', label: 'Empresas' },
+        { key: 'obrigacoes', icon: '📄', label: 'Obrigações mensais' },
+        { key: 'calendario', icon: '📅', label: 'Calendário' },
+        { key: 'relatorios', icon: '📈', label: 'Relatórios' },
+      ]
+    : [
+        { key: 'dashboard', icon: '📊', label: 'Dashboard' },
+        { key: 'clientes_empresas', icon: '🏢', label: 'Empresas' },
+        { key: 'solicitacoes', icon: '📋', label: 'Solicitações' },
+        { key: 'recalculos', icon: '🧮', label: 'Recalculos' },
+        { key: 'admissoes', icon: '➕', label: 'Admissões' },
+        { key: 'demissoes', icon: '➖', label: 'Demissões' },
+      ];
 
   if (!hasAccess([], ['trabalhista'])) {
     return (
@@ -1252,6 +1282,28 @@ const TrabalhistaCompleto = () => {
       )}
 
       {/* Tabs */}
+      <div className="glass rounded-xl p-2 inline-flex flex-wrap gap-2">
+        <button
+          onClick={() => setModuleDivision('obrigacoes_mensais')}
+          className={`rounded-lg px-4 py-2 text-sm font-medium ${
+            moduleDivision === 'obrigacoes_mensais'
+              ? 'bg-red-600 text-white'
+              : 'bg-black/30 text-gray-300 hover:text-white'
+          }`}
+        >
+          Obrigações mensais
+        </button>
+        <button
+          onClick={() => setModuleDivision('servicos_avulsos')}
+          className={`rounded-lg px-4 py-2 text-sm font-medium ${
+            moduleDivision === 'servicos_avulsos'
+              ? 'bg-red-600 text-white'
+              : 'bg-black/30 text-gray-300 hover:text-white'
+          }`}
+        >
+          Serviços avulsos
+        </button>
+      </div>
       <div className="glass rounded-xl p-1 inline-flex flex-wrap gap-1">
         {[
           { key: 'dashboard', icon: '📊', label: 'Dashboard' },

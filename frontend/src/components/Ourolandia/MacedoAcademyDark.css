@@ -1,0 +1,53 @@
+.macedo-academy-dark {
+  background: #2f3747;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.macedo-academy-dark .bg-white {
+  background-color: #101827 !important;
+}
+
+.macedo-academy-dark .bg-slate-50,
+.macedo-academy-dark .bg-slate-100,
+.macedo-academy-dark .bg-slate-100\/80 {
+  background-color: #1b2536 !important;
+}
+
+.macedo-academy-dark .bg-slate-700,
+.macedo-academy-dark .bg-slate-800 {
+  background-color: #273244 !important;
+}
+
+.macedo-academy-dark .border-slate-200,
+.macedo-academy-dark .border-slate-300,
+.macedo-academy-dark .border-slate-100 {
+  border-color: #344054 !important;
+}
+
+.macedo-academy-dark .text-slate-800,
+.macedo-academy-dark .text-slate-700,
+.macedo-academy-dark .text-slate-600,
+.macedo-academy-dark .text-slate-500 {
+  color: #d1d5db !important;
+}
+
+.macedo-academy-dark input,
+.macedo-academy-dark select,
+.macedo-academy-dark textarea {
+  background: #111b2b !important;
+  border-color: #475467 !important;
+  color: #e5e7eb !important;
+}
+
+.macedo-academy-dark button {
+  border-color: #42526b;
+}
+
+.macedo-academy-dark .hover\:bg-slate-50:hover {
+  background: #182234 !important;
+}
+
+.macedo-academy-dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+}

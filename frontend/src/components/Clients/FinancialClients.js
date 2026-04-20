@@ -12,6 +12,7 @@ const WORKFORCE_STORAGE_KEY = 'mock_trabalhista_workforce_v1';
 const FISCAL_CLIENT_SETUP_KEY = 'mock_fiscal_client_setup_v1';
 const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
 const FINANCIAL_SYNC_META_KEY = 'mock_financial_sync_meta_v1';
+const FINANCIAL_HONORARIOS_CONFIG_KEY = 'mock_financial_honorarios_config_v1';
 
 const normalizeText = (value = '') =>
   String(value)
@@ -22,6 +23,11 @@ const normalizeText = (value = '') =>
 
 const formatCurrency = (value) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const toCsv = (headers, rows) => {
+  const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  return [headers.map(escapeCell).join(';'), ...rows.map((row) => row.map(escapeCell).join(';'))].join('\n');
+};
 
 const mergeClientsUnique = (...lists) => {
   const map = new Map();
@@ -79,6 +85,15 @@ const defaultForm = {
   incluirObservacoesAcordo: false,
   observacoesAcordo: '',
   capacidadePagamento: 'paga_em_dia',
+  assinaturaNome: 'Plano Essencial',
+  assinaturaValorMensal: '',
+  assinaturaDireitos: {
+    financeiro: true,
+    atendimento: true,
+    fiscal: false,
+    trabalhista: false,
+  },
+  assinaturaDescricaoLivre: '',
 };
 
 const MESES = [
@@ -104,6 +119,15 @@ const CAPACIDADE_OPTIONS = [
 const capacidadeLabel = (value) =>
   CAPACIDADE_OPTIONS.find((item) => item.value === value)?.label || 'Nao informado';
 
+const defaultHonorariosConfig = [
+  { key: 'baseMensal', label: 'Base mensal (BPO contábil)', valor: 280 },
+  { key: 'porFuncionario', label: 'Por funcionário ativo', valor: 38 },
+  { key: 'porNotaFiscal', label: 'Por nota fiscal mensal', valor: 3.5 },
+  { key: 'atendimentoPrioritario', label: 'Atendimento prioritário', valor: 120 },
+  { key: 'consultoriaHora', label: 'Consultoria por hora (média digital)', valor: 165 },
+  { key: 'relatorioGerencial', label: 'Relatório gerencial extra', valor: 95 },
+];
+
 const FinancialClients = () => {
   const { user, hasAccess } = useAuth();
   const location = useLocation();
@@ -115,6 +139,14 @@ const FinancialClients = () => {
   const [selectedFinancialClient, setSelectedFinancialClient] = useState(null);
   const [financialViewTab, setFinancialViewTab] = useState('dados_financeiros');
   const [form, setForm] = useState(defaultForm);
+  const [honorariosConfig, setHonorariosConfig] = useState(defaultHonorariosConfig);
+  const [honorariosInput, setHonorariosInput] = useState({
+    funcionarios: 0,
+    notasFiscais: 0,
+    horasConsultoria: 0,
+    includeAtendimentoPrioritario: false,
+    includeRelatorioGerencial: false,
+  });
 
   const [filterColumn, setFilterColumn] = useState('empresa_nome');
   const [filterValue, setFilterValue] = useState('');
@@ -125,6 +157,7 @@ const FinancialClients = () => {
     semMovimento: true,
     semFuncionarios: true,
   });
+  const [reportClientId, setReportClientId] = useState('');
 
   useEffect(() => {
     if (!hasAccess([], ['financeiro'])) return;
@@ -141,6 +174,17 @@ const FinancialClients = () => {
     const capacidade = search.get('capacidade') || '';
     setCapacidadeFilter(capacidade);
   }, [location.search]);
+
+  useEffect(() => {
+    const stored = readJson(FINANCIAL_HONORARIOS_CONFIG_KEY, defaultHonorariosConfig);
+    if (Array.isArray(stored) && stored.length) {
+      setHonorariosConfig(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(FINANCIAL_HONORARIOS_CONFIG_KEY, JSON.stringify(honorariosConfig));
+  }, [honorariosConfig]);
 
   const loadBaseClients = async () => {
     let localClients = [];
@@ -219,6 +263,48 @@ const FinancialClients = () => {
     () => allClients.find((client) => String(client.id) === String(form.clientId)),
     [allClients, form.clientId],
   );
+
+  const getHonorarioValor = (key) => Number(honorariosConfig.find((item) => item.key === key)?.valor || 0);
+
+  const honorariosResultado = useMemo(() => {
+    const baseMensal = getHonorarioValor('baseMensal');
+    const porFuncionario = getHonorarioValor('porFuncionario') * Number(honorariosInput.funcionarios || 0);
+    const porNotaFiscal = getHonorarioValor('porNotaFiscal') * Number(honorariosInput.notasFiscais || 0);
+    const consultoria = getHonorarioValor('consultoriaHora') * Number(honorariosInput.horasConsultoria || 0);
+    const atendimentoPrioritario = honorariosInput.includeAtendimentoPrioritario ? getHonorarioValor('atendimentoPrioritario') : 0;
+    const relatorioGerencial = honorariosInput.includeRelatorioGerencial ? getHonorarioValor('relatorioGerencial') : 0;
+    const total = baseMensal + porFuncionario + porNotaFiscal + consultoria + atendimentoPrioritario + relatorioGerencial;
+    return {
+      baseMensal,
+      porFuncionario,
+      porNotaFiscal,
+      consultoria,
+      atendimentoPrioritario,
+      relatorioGerencial,
+      total,
+    };
+  }, [honorariosConfig, honorariosInput]);
+
+  const updateHonorarioConfig = (key) => {
+    const current = getHonorarioValor(key);
+    const nextRaw = window.prompt('Novo valor desse campo (R$):', String(current));
+    if (nextRaw === null) return;
+    const nextValue = Number(String(nextRaw).replace(',', '.'));
+    if (Number.isNaN(nextValue) || nextValue < 0) {
+      toast.error('Valor inválido.');
+      return;
+    }
+    setHonorariosConfig((prev) => prev.map((item) => (item.key === key ? { ...item, valor: nextValue } : item)));
+  };
+
+  const applyHonorarioToBoleto = () => {
+    setForm((prev) => ({
+      ...prev,
+      valorBoleto: String(honorariosResultado.total.toFixed(2)),
+      assinaturaValorMensal: String(honorariosResultado.total.toFixed(2)),
+    }));
+    toast.success('Valor da calculadora aplicado no boleto e na assinatura.');
+  };
 
   const selectedBaseClientForView = useMemo(() => {
     if (!selectedFinancialClient) return null;
@@ -299,6 +385,17 @@ const FinancialClients = () => {
       status_fiscal: readJson(FISCAL_CLIENT_SETUP_KEY, {})[selectedClient.id]?.statusFiscal || 'sem_movimento',
       status_pagamento: 'em_dia',
       cidade: selectedClient.cidade || '',
+      assinatura: {
+        nome: form.assinaturaNome || 'Plano personalizado',
+        valor_mensal: Number(form.assinaturaValorMensal || form.valorBoleto || honorariosResultado.total || 0),
+        direitos: {
+          financeiro: Boolean(form.assinaturaDireitos?.financeiro),
+          atendimento: Boolean(form.assinaturaDireitos?.atendimento),
+          fiscal: Boolean(form.assinaturaDireitos?.fiscal),
+          trabalhista: Boolean(form.assinaturaDireitos?.trabalhista),
+        },
+        descricao_livre: form.assinaturaDescricaoLivre || '',
+      },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -374,6 +471,64 @@ const FinancialClients = () => {
     const byCity = Array.from(byCityMap.entries()).map(([city, values]) => ({ city, ...values }));
     return { totalReceber, totalComDesconto, byCity };
   }, [filteredList, cityByClientId]);
+
+  const emAbertoList = useMemo(
+    () => filteredList.filter((item) => (item.status_pagamento || 'em_dia') !== 'pago'),
+    [filteredList],
+  );
+
+  const selectedReportClient = useMemo(
+    () => allClients.find((client) => String(client.id) === String(reportClientId)) || null,
+    [allClients, reportClientId],
+  );
+
+  const downloadOpenReport = (mode = 'geral') => {
+    const base = mode === 'cliente'
+      ? emAbertoList.filter((item) => String(item.client_id) === String(reportClientId))
+      : emAbertoList;
+
+    if (!base.length) {
+      toast.error(mode === 'cliente' ? 'Sem registros em aberto para este cliente.' : 'Sem registros em aberto para exportar.');
+      return;
+    }
+
+    const headers = [
+      'Empresa',
+      'CNPJ',
+      'Cidade',
+      'Valor Boleto',
+      'Valor com Desconto',
+      'Data Vencimento',
+      'Status Pagamento',
+      'Status Fiscal',
+      'Responsavel Financeiro',
+    ];
+
+    const rows = base.map((item) => [
+      item.empresa_nome,
+      item.cnpj || '',
+      item.cidade || '',
+      Number(item.valor_boleto || 0).toFixed(2),
+      Number(item.valor_com_desconto || 0).toFixed(2),
+      item.data_vencimento || '',
+      item.status_pagamento || 'em_aberto',
+      item.status_fiscal || '',
+      item.responsavel_financeiro || '',
+    ]);
+
+    const csv = toCsv(headers, rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const filename = mode === 'cliente'
+      ? `relatorio_em_aberto_${normalizeText(selectedReportClient?.nome_empresa || selectedReportClient?.nome_fantasia || 'cliente') || 'cliente'}.csv`
+      : 'relatorio_geral_em_aberto.csv';
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success(mode === 'cliente' ? 'Relatório por cliente exportado.' : 'Relatório geral exportado.');
+  };
 
   if (!hasAccess([], ['financeiro'])) {
     return (
@@ -491,6 +646,47 @@ const FinancialClients = () => {
             <div className="rounded-xl border border-white/30 bg-white/10 p-3 text-sm">Sem dados por cidade.</div>
           ) : null}
         </div>
+      </div>
+
+      <div className="glass rounded-2xl border border-white/10 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Modelo de relatórios em aberto do cliente</h2>
+            <p className="mt-1 text-sm text-gray-400">Exporte visão geral ou focada por cliente com os valores em aberto.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadOpenReport('geral')}
+              className="rounded-lg border border-sky-500/35 bg-sky-500/15 px-3 py-2 text-sm text-sky-100 hover:bg-sky-500/25"
+            >
+              Relatório Geral
+            </button>
+            <select
+              value={reportClientId}
+              onChange={(e) => setReportClientId(e.target.value)}
+              className="bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+            >
+              <option value="">Selecione o cliente</option>
+              {allClients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.nome_empresa || client.nome_fantasia}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => downloadOpenReport('cliente')}
+              disabled={!reportClientId}
+              className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50"
+            >
+              Relatório por cliente
+            </button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          Em aberto no filtro atual: {emAbertoList.length} cliente(s) • Valor total: {formatCurrency(emAbertoList.reduce((sum, item) => sum + Number(item.valor_com_desconto || 0), 0))}
+        </p>
       </div>
 
       <div className="glass rounded-2xl overflow-hidden">
@@ -634,20 +830,41 @@ const FinancialClients = () => {
               <button type="button" onClick={() => setFinancialViewTab('dados_empresa')} className={`px-3 py-2 rounded-lg text-sm ${financialViewTab === 'dados_empresa' ? 'bg-red-500/15 border border-red-500/35 text-red-100' : 'bg-black/25 border border-gray-700 text-gray-200'}`}>Dados da empresa</button>
             </div>
             {financialViewTab === 'dados_financeiros' ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <DetailItem label="Empresa" value={selectedFinancialClient.empresa_nome} />
-                <DetailItem label="CNPJ" value={selectedFinancialClient.cnpj || '-'} />
-                <DetailItem label="Cidade" value={selectedFinancialClient.cidade || '-'} />
-                <DetailItem label="Valor boleto" value={formatCurrency(selectedFinancialClient.valor_boleto)} />
-                <DetailItem label="Valor desconto" value={formatCurrency(selectedFinancialClient.valor_desconto)} />
-                <DetailItem label="Valor com desconto" value={formatCurrency(selectedFinancialClient.valor_com_desconto)} />
-                <DetailItem label="Data vencimento" value={selectedFinancialClient.data_vencimento || '-'} />
-                <DetailItem label="Qtd. funcionarios" value={selectedFinancialClient.quantidade_funcionarios ?? 0} />
-                <DetailItem label="Status fiscal" value={selectedFinancialClient.status_fiscal === 'com_movimento' ? 'Com movimento' : 'Sem movimento'} />
-                <DetailItem label="Responsavel financeiro" value={selectedFinancialClient.responsavel_financeiro || '-'} />
-                <DetailItem label="Tipo honorario" value={selectedFinancialClient.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'} />
-                <DetailItem label="Tipo pagamento" value={selectedFinancialClient.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorario'} />
-                <DetailItem label="Capacidade de pagamento" value={capacidadeLabel(selectedFinancialClient.capacidade_pagamento)} />
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <DetailItem label="Empresa" value={selectedFinancialClient.empresa_nome} />
+                  <DetailItem label="CNPJ" value={selectedFinancialClient.cnpj || '-'} />
+                  <DetailItem label="Cidade" value={selectedFinancialClient.cidade || '-'} />
+                  <DetailItem label="Valor boleto" value={formatCurrency(selectedFinancialClient.valor_boleto)} />
+                  <DetailItem label="Valor desconto" value={formatCurrency(selectedFinancialClient.valor_desconto)} />
+                  <DetailItem label="Valor com desconto" value={formatCurrency(selectedFinancialClient.valor_com_desconto)} />
+                  <DetailItem label="Data vencimento" value={selectedFinancialClient.data_vencimento || '-'} />
+                  <DetailItem label="Qtd. funcionarios" value={selectedFinancialClient.quantidade_funcionarios ?? 0} />
+                  <DetailItem label="Status fiscal" value={selectedFinancialClient.status_fiscal === 'com_movimento' ? 'Com movimento' : 'Sem movimento'} />
+                  <DetailItem label="Responsavel financeiro" value={selectedFinancialClient.responsavel_financeiro || '-'} />
+                  <DetailItem label="Tipo honorario" value={selectedFinancialClient.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'} />
+                  <DetailItem label="Tipo pagamento" value={selectedFinancialClient.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorario'} />
+                  <DetailItem label="Capacidade de pagamento" value={capacidadeLabel(selectedFinancialClient.capacidade_pagamento)} />
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-sm font-semibold text-white">Assinatura vinculada (Financeiro + Atendimento)</p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <DetailItem label="Plano" value={selectedFinancialClient.assinatura?.nome || 'Nao definido'} />
+                    <DetailItem label="Valor mensal" value={formatCurrency(selectedFinancialClient.assinatura?.valor_mensal || 0)} />
+                    <DetailItem
+                      label="Direitos"
+                      value={[
+                        selectedFinancialClient.assinatura?.direitos?.financeiro ? 'Financeiro' : null,
+                        selectedFinancialClient.assinatura?.direitos?.atendimento ? 'Atendimento' : null,
+                        selectedFinancialClient.assinatura?.direitos?.fiscal ? 'Fiscal' : null,
+                        selectedFinancialClient.assinatura?.direitos?.trabalhista ? 'Trabalhista' : null,
+                      ].filter(Boolean).join(', ') || 'Sem direitos definidos'}
+                    />
+                  </div>
+                  {selectedFinancialClient.assinatura?.descricao_livre ? (
+                    <p className="mt-3 text-sm text-gray-300">{selectedFinancialClient.assinatura.descricao_livre}</p>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -781,6 +998,133 @@ const FinancialClients = () => {
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
+              </div>
+              <div className="md:col-span-3 rounded-lg border border-gray-700 bg-black/20 p-3">
+                <p className="text-sm font-medium text-white">Assinatura vinculada (direitos por plano)</p>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Nome do plano</label>
+                    <input
+                      value={form.assinaturaNome}
+                      onChange={(e) => setForm((prev) => ({ ...prev, assinaturaNome: e.target.value }))}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-2">Valor mensal da assinatura</label>
+                    <input
+                      type="number"
+                      value={form.assinaturaValorMensal}
+                      onChange={(e) => setForm((prev) => ({ ...prev, assinaturaValorMensal: e.target.value }))}
+                      className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <p className="text-xs text-gray-400">Esta área define o que o cliente tem direito pelo preço pago.</p>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-200">
+                  {[
+                    { key: 'financeiro', label: 'Financeiro' },
+                    { key: 'atendimento', label: 'Atendimento' },
+                    { key: 'fiscal', label: 'Fiscal' },
+                    { key: 'trabalhista', label: 'Trabalhista' },
+                  ].map((item) => (
+                    <label key={item.key} className="inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.assinaturaDireitos?.[item.key])}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            assinaturaDireitos: {
+                              ...(prev.assinaturaDireitos || {}),
+                              [item.key]: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      {item.label}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm text-gray-300 mb-2">Descrição do que está incluso</label>
+                  <textarea
+                    rows={2}
+                    value={form.assinaturaDescricaoLivre}
+                    onChange={(e) => setForm((prev) => ({ ...prev, assinaturaDescricaoLivre: e.target.value }))}
+                    className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
+                    placeholder="Ex.: atendimento prioritário, fechamento mensal, suporte via chat..."
+                  />
+                </div>
+              </div>
+              <div className="md:col-span-3 rounded-lg border border-sky-700/50 bg-sky-900/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-white">Calculadora de valor de honorários</p>
+                  <button
+                    type="button"
+                    onClick={applyHonorarioToBoleto}
+                    className="rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-100 hover:bg-emerald-500/25"
+                  >
+                    Aplicar no boleto
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  Referência de mercado digital por hora e escopo (base mock para desenvolvimento).
+                </p>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <CalcField
+                    label="Funcionários ativos"
+                    value={honorariosInput.funcionarios}
+                    onChange={(value) => setHonorariosInput((prev) => ({ ...prev, funcionarios: value }))}
+                    valorUnitario={getHonorarioValor('porFuncionario')}
+                    onConfigurar={() => updateHonorarioConfig('porFuncionario')}
+                  />
+                  <CalcField
+                    label="Notas fiscais/mês"
+                    value={honorariosInput.notasFiscais}
+                    onChange={(value) => setHonorariosInput((prev) => ({ ...prev, notasFiscais: value }))}
+                    valorUnitario={getHonorarioValor('porNotaFiscal')}
+                    onConfigurar={() => updateHonorarioConfig('porNotaFiscal')}
+                  />
+                  <CalcField
+                    label="Horas consultoria/mês"
+                    value={honorariosInput.horasConsultoria}
+                    onChange={(value) => setHonorariosInput((prev) => ({ ...prev, horasConsultoria: value }))}
+                    valorUnitario={getHonorarioValor('consultoriaHora')}
+                    onConfigurar={() => updateHonorarioConfig('consultoriaHora')}
+                  />
+                  <div className="rounded-lg border border-white/10 bg-black/25 p-3">
+                    <p className="text-xs text-gray-300">Adicionais</p>
+                    <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={honorariosInput.includeAtendimentoPrioritario}
+                        onChange={(e) => setHonorariosInput((prev) => ({ ...prev, includeAtendimentoPrioritario: e.target.checked }))}
+                      />
+                      Atendimento prioritário ({formatCurrency(getHonorarioValor('atendimentoPrioritario'))})
+                    </label>
+                    <button type="button" onClick={() => updateHonorarioConfig('atendimentoPrioritario')} className="ml-2 text-xs text-sky-300 underline">
+                      Configurar
+                    </button>
+                    <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={honorariosInput.includeRelatorioGerencial}
+                        onChange={(e) => setHonorariosInput((prev) => ({ ...prev, includeRelatorioGerencial: e.target.checked }))}
+                      />
+                      Relatório gerencial ({formatCurrency(getHonorarioValor('relatorioGerencial'))})
+                    </label>
+                    <button type="button" onClick={() => updateHonorarioConfig('relatorioGerencial')} className="ml-2 text-xs text-sky-300 underline">
+                      Configurar
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-3">
+                  <p className="text-xs text-gray-200">Base mensal: {formatCurrency(getHonorarioValor('baseMensal'))} <button type="button" className="ml-2 text-xs text-sky-300 underline" onClick={() => updateHonorarioConfig('baseMensal')}>Configurar</button></p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-100">Honorário sugerido: {formatCurrency(honorariosResultado.total)}</p>
+                </div>
               </div>
               {form.tipoHonorario === 'grupo' ? (
                 <div className="md:col-span-2">
@@ -952,6 +1296,25 @@ const DetailItem = ({ label, value }) => (
   <div className="rounded-xl border border-white/10 bg-white/5 p-3">
     <div className="text-xs uppercase tracking-wide text-gray-400">{label}</div>
     <div className="mt-2 text-sm text-white">{value}</div>
+  </div>
+);
+
+const CalcField = ({ label, value, onChange, valorUnitario, onConfigurar }) => (
+  <div className="rounded-lg border border-white/10 bg-black/25 p-3">
+    <div className="flex items-center justify-between gap-2">
+      <p className="text-xs text-gray-300">{label}</p>
+      <button type="button" onClick={onConfigurar} className="text-xs text-sky-300 underline">
+        Configurar
+      </button>
+    </div>
+    <input
+      type="number"
+      min="0"
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value || 0))}
+      className="mt-2 w-full bg-black/40 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
+    />
+    <p className="mt-2 text-xs text-gray-400">Valor unitário: {Number(valorUnitario || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
   </div>
 );
 

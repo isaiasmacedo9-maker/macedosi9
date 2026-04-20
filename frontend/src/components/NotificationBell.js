@@ -1,14 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, MessageCircle, Send, Wrench } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Bell, CheckSquare, MessageCircle, RefreshCcw, UsersRound } from 'lucide-react';
 import {
   getSupportUnreadCount,
   listSupportThreadsForAccounting,
   markSupportThreadRead,
-  sendSupportMessage,
   subscribeSupportChat,
 } from '../dev/clientSupportChat';
+import {
+  getDashboardTasks,
+  getNewTasksForToday,
+  getPendingTasks,
+} from './Dashboard/dashboardTaskData';
+import { Z_LAYERS } from '../constants/zLayers';
 
 const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
+const CHAT_INTERNAL_SEEN_KEY = 'mock_chat_internal_seen_ids_v1';
 
 const readJsonArray = (key) => {
   try {
@@ -16,6 +23,15 @@ const readJsonArray = (key) => {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+};
+
+const readJsonObject = (key) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
   }
 };
 
@@ -31,18 +47,41 @@ const formatDateTime = (value) => {
   });
 };
 
+const playNotificationSound = () => {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.001, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 0.02);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.2);
+  } catch {}
+};
+
 const NotificationBell = ({
   mode = 'admin',
   userName = 'Contabilidade',
+  user = null,
+  hasModuleAccess = () => true,
   clientId = null,
-  clientName = '',
   onOpenClientChat = null,
+  onNavigate = null,
 }) => {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [supportThreads, setSupportThreads] = useState([]);
-  const [selectedThreadId, setSelectedThreadId] = useState('');
-  const [replyText, setReplyText] = useState('');
+  const [activeTab, setActiveTab] = useState('chat_macedo');
+  const prevTotalRef = useRef(0);
+  const buttonRef = useRef(null);
+  const [panelStyle, setPanelStyle] = useState({ top: 64, left: 16, width: 360 });
 
   const audience = mode === 'client' ? 'cliente' : 'contabilidade';
 
@@ -62,12 +101,6 @@ const NotificationBell = ({
     };
   }, []);
 
-  useEffect(() => {
-    if (!selectedThreadId && supportThreads.length) {
-      setSelectedThreadId(supportThreads[0].clientId);
-    }
-  }, [selectedThreadId, supportThreads]);
-
   const unreadSupportCount = useMemo(
     () =>
       getSupportUnreadCount({
@@ -77,64 +110,209 @@ const NotificationBell = ({
     [audience, mode, clientId, supportThreads],
   );
 
-  const unreadInternalCount = useMemo(() => {
+  const unseenInternalChatCount = useMemo(() => {
     if (mode === 'client') return 0;
-    return notifications.filter((item) => item && !item.read).length;
+    const seenMap = readJsonObject(CHAT_INTERNAL_SEEN_KEY);
+    const unread = notifications.filter(
+      (item) =>
+        item?.scope === 'chat_macedo' &&
+        item?.messageId &&
+        !seenMap[item.messageId],
+    );
+    return unread.length;
   }, [notifications, mode]);
 
-  const totalUnread = unreadSupportCount + unreadInternalCount;
+  const tasks = useMemo(() => {
+    if (mode === 'client' || !user) return [];
+    const isAdmin = user?.role === 'admin';
+    return getDashboardTasks({ user, isAdmin, hasModuleAccess });
+  }, [mode, user, hasModuleAccess, notifications]);
 
-  const selectedThread = useMemo(
-    () => supportThreads.find((thread) => thread.clientId === selectedThreadId) || null,
-    [supportThreads, selectedThreadId],
-  );
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const newTasks = useMemo(() => {
+    if (mode === 'client') return [];
+    return getNewTasksForToday({ user, tasks, todayIso });
+  }, [mode, user, tasks, todayIso]);
+  const taskUpdates = useMemo(() => {
+    if (mode === 'client') return [];
+    return getPendingTasks(tasks).filter(
+      (task) => task.status === 'tarefa_aceita' || task.status === 'em_andamento',
+    );
+  }, [mode, tasks]);
 
-  const clientThread = useMemo(() => {
-    if (mode !== 'client') return null;
-    return supportThreads.find((thread) => thread.clientId === clientId) || null;
-  }, [mode, supportThreads, clientId]);
+  const unreadInternalCount = useMemo(() => {
+    if (mode === 'client') return 0;
+    return unseenInternalChatCount + newTasks.length + taskUpdates.length + unreadSupportCount;
+  }, [mode, unseenInternalChatCount, newTasks.length, taskUpdates.length, unreadSupportCount]);
 
-  const clientPreview = useMemo(
-    () => (clientThread?.messages || []).slice(-4).reverse(),
-    [clientThread],
-  );
+  const totalUnread = mode === 'client' ? unreadSupportCount : unreadInternalCount;
 
-  const markInternalAsRead = () => {
-    if (mode === 'client') return;
-    const next = notifications.map((item) => ({ ...item, read: true }));
-    localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(next));
-    setNotifications(next);
-  };
-
-  const handleOpen = () => {
-    setOpen((prev) => !prev);
-    if (!open) {
-      if (mode === 'client' && clientId) {
-        markSupportThreadRead({ clientId, audience: 'cliente' });
-      } else {
-        markInternalAsRead();
-      }
+  useEffect(() => {
+    if (totalUnread > prevTotalRef.current) {
+      playNotificationSound();
     }
+    prevTotalRef.current = totalUnread;
+  }, [totalUnread]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const updatePanelPosition = () => {
+      const trigger = buttonRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const margin = 12;
+      const panelWidth = Math.min(360, Math.max(280, window.innerWidth - margin * 2));
+      const top = rect.bottom + 8;
+      const desiredLeft = rect.right - panelWidth;
+      const maxLeft = window.innerWidth - panelWidth - margin;
+      const left = Math.min(Math.max(margin, desiredLeft), Math.max(margin, maxLeft));
+      setPanelStyle({ top, left, width: panelWidth });
+    };
+
+    updatePanelPosition();
+    window.addEventListener('resize', updatePanelPosition);
+    window.addEventListener('scroll', updatePanelPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePanelPosition);
+      window.removeEventListener('scroll', updatePanelPosition, true);
+    };
+  }, [open]);
+
+  const markAllAsRead = () => {
+    if (mode === 'client') {
+      if (clientId) markSupportThreadRead({ clientId, audience: 'cliente' });
+      return;
+    }
+    const seenMap = readJsonObject(CHAT_INTERNAL_SEEN_KEY);
+    notifications.forEach((item) => {
+      if (item?.messageId) seenMap[item.messageId] = true;
+    });
+    localStorage.setItem(CHAT_INTERNAL_SEEN_KEY, JSON.stringify(seenMap));
   };
 
-  const handleSendReply = () => {
-    if (!selectedThreadId || !replyText.trim()) return;
-    sendSupportMessage({
-      clientId: selectedThreadId,
-      clientName: selectedThread?.clientName,
-      from: 'contabilidade',
-      senderName: userName,
-      text: replyText,
-    });
-    markSupportThreadRead({ clientId: selectedThreadId, audience: 'contabilidade' });
-    setReplyText('');
+  const chatClienteSummary = useMemo(
+    () => supportThreads.slice(0, 4).map((thread) => {
+      const last = (thread.messages || [])[thread.messages.length - 1];
+      return {
+        id: thread.clientId,
+        title: thread.clientName,
+        subtitle: last?.text || 'Sem mensagens',
+        date: formatDateTime(last?.createdAt),
+      };
+    }),
+    [supportThreads],
+  );
+
+  const chatMacedoSummary = useMemo(
+    () =>
+      notifications
+        .filter((item) => item?.scope === 'chat_macedo')
+        .slice(-4)
+        .reverse()
+        .map((item) => ({
+          id: item.id,
+          title: item.title || 'Chat interno',
+          subtitle: item.message,
+          date: formatDateTime(item.createdAt),
+        })),
+    [notifications],
+  );
+
+  const tabs = mode === 'client'
+    ? [{ key: 'chat_cliente', label: 'Chat Cliente', count: unreadSupportCount }]
+    : [
+        { key: 'chat_macedo', label: 'Chat Macedo', count: unseenInternalChatCount },
+        { key: 'novas_tarefas', label: 'Novas Tarefas', count: newTasks.length },
+        { key: 'atualizacoes_tarefas', label: 'Atualizações de Tarefas', count: taskUpdates.length },
+        { key: 'chat_cliente', label: 'Chat Cliente', count: unreadSupportCount },
+      ];
+
+  const goTo = (path) => {
+    setOpen(false);
+    if (onNavigate) onNavigate(path);
+  };
+
+  const renderAdminTab = () => {
+    if (activeTab === 'chat_macedo') {
+      if (!chatMacedoSummary.length) {
+        return <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-gray-400">Sem novas mensagens internas.</div>;
+      }
+      return chatMacedoSummary.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => goTo('/chat')}
+          className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
+        >
+          <p className="text-xs font-medium text-white">{item.title}</p>
+          <p className="mt-1 text-xs text-gray-300 line-clamp-2">{item.subtitle}</p>
+          <p className="mt-1 text-[10px] text-gray-500">{item.date}</p>
+        </button>
+      ));
+    }
+
+    if (activeTab === 'novas_tarefas') {
+      if (!newTasks.length) {
+        return <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-gray-400">Sem novas tarefas.</div>;
+      }
+      return newTasks.slice(0, 4).map((task) => (
+        <button
+          key={task.id}
+          type="button"
+          onClick={() => goTo('/dashboard/novas-tarefas')}
+          className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
+        >
+          <p className="text-xs font-medium text-white">{task.titulo}</p>
+          <p className="mt-1 text-[11px] text-gray-400">Setor: {task.moduleKey}</p>
+        </button>
+      ));
+    }
+
+    if (activeTab === 'atualizacoes_tarefas') {
+      if (!taskUpdates.length) {
+        return <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-gray-400">Sem atualizações de tarefas.</div>;
+      }
+      return taskUpdates.slice(0, 4).map((task) => (
+        <button
+          key={task.id}
+          type="button"
+          onClick={() => goTo('/dashboard/tarefas-pendentes')}
+          className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
+        >
+          <p className="text-xs font-medium text-white">{task.titulo}</p>
+          <p className="mt-1 text-[11px] text-gray-400">Status: {task.status}</p>
+        </button>
+      ));
+    }
+
+    if (!chatClienteSummary.length) {
+      return <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-gray-400">Sem mensagens de clientes.</div>;
+    }
+    return chatClienteSummary.map((item) => (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => goTo('/chat')}
+        className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
+      >
+        <p className="text-xs font-medium text-white">{item.title}</p>
+        <p className="mt-1 text-xs text-gray-300 line-clamp-2">{item.subtitle}</p>
+        <p className="mt-1 text-[10px] text-gray-500">{item.date}</p>
+      </button>
+    ));
   };
 
   return (
-    <div className="relative">
+    <div style={{ zIndex: Z_LAYERS.notificationTrigger }} className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={handleOpen}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) markAllAsRead();
+        }}
         className="top-action-btn"
         aria-label="Notificações"
         title="Notificações"
@@ -147,125 +325,63 @@ const NotificationBell = ({
         ) : null}
       </button>
 
-      {open ? (
-        <div className="absolute right-0 top-[52px] z-[90] w-[360px] rounded-2xl border border-white/10 bg-zinc-950/95 p-3 shadow-2xl backdrop-blur-xl">
+      {open ? createPortal(
+        <div
+          style={{ top: panelStyle.top, left: panelStyle.left, width: panelStyle.width, zIndex: Z_LAYERS.notificationPanel }}
+          className="fixed rounded-2xl border border-white/10 bg-zinc-950/95 p-3 shadow-2xl backdrop-blur-xl"
+        >
           {mode === 'client' ? (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <MessageCircle className="h-4 w-4 text-sky-300" />
-                  Mensagens da contabilidade
+            <div className="space-y-2">
+              {chatClienteSummary.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    if (onOpenClientChat) onOpenClientChat();
+                  }}
+                  className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
+                >
+                  <p className="text-xs font-medium text-white">{item.title}</p>
+                  <p className="mt-1 text-xs text-gray-300">{item.subtitle}</p>
+                </button>
+              ))}
+              {!chatClienteSummary.length ? (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs text-gray-400">
+                  Sem novidades no chat do cliente.
                 </div>
-                <p className="mt-1 text-xs text-gray-400">
-                  Novas mensagens e atualizações sobre seus serviços.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {clientPreview.length ? (
-                  clientPreview.map((message) => (
-                    <div key={message.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-xs text-gray-400">{message.senderName}</div>
-                      <div className="mt-1 text-sm text-white">{message.text}</div>
-                      <div className="mt-1 text-[11px] text-gray-500">{formatDateTime(message.createdAt)}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-gray-400">
-                    Nenhuma mensagem nova no momento.
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  if (onOpenClientChat) onOpenClientChat();
-                }}
-                className="w-full rounded-xl border border-sky-500/30 bg-sky-500/15 px-3 py-2 text-sm font-medium text-sky-100 hover:bg-sky-500/25"
-              >
-                Abrir chat da contabilidade
-              </button>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                <div className="text-sm font-semibold text-white">Notificações internas</div>
-                <div className="mt-2 space-y-2">
-                  {notifications.slice(-4).reverse().map((item) => (
-                    <div key={item.id} className="rounded-lg border border-white/10 bg-white/5 p-2.5">
-                      <div className="flex items-start gap-2">
-                        <Wrench className="mt-0.5 h-4 w-4 text-amber-300" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-gray-200">{item.message}</p>
-                          <p className="mt-1 text-[11px] text-gray-500">{formatDateTime(item.createdAt)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {!notifications.length ? (
-                    <p className="text-xs text-gray-500">Sem alertas internos recentes.</p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-                <div className="mb-2 text-sm font-semibold text-white">Mensagens de clientes</div>
-                <div className="grid grid-cols-1 gap-2">
-                  <select
-                    value={selectedThreadId}
-                    onChange={(event) => {
-                      const nextClientId = event.target.value;
-                      setSelectedThreadId(nextClientId);
-                      markSupportThreadRead({ clientId: nextClientId, audience: 'contabilidade' });
-                    }}
-                    className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
+              <div className="flex flex-wrap gap-1.5">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] ${
+                      activeTab === tab.key
+                        ? 'border-red-500/35 bg-red-500/15 text-red-100'
+                        : 'border-white/10 bg-white/5 text-gray-300 hover:bg-white/10'
+                    }`}
                   >
-                    {!supportThreads.length ? (
-                      <option value="">Nenhuma conversa de cliente</option>
-                    ) : null}
-                    {supportThreads.map((thread) => (
-                      <option key={thread.clientId} value={thread.clientId}>
-                        {thread.clientName}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="max-h-40 space-y-2 overflow-y-auto rounded-lg border border-white/10 bg-black/25 p-2">
-                    {(selectedThread?.messages || []).slice(-6).map((message) => (
-                      <div key={message.id} className="rounded-md border border-white/10 bg-white/5 p-2">
-                        <p className="text-[11px] text-gray-400">{message.senderName}</p>
-                        <p className="mt-0.5 text-xs text-white">{message.text}</p>
-                        <p className="mt-0.5 text-[10px] text-gray-500">{formatDateTime(message.createdAt)}</p>
-                      </div>
-                    ))}
-                    {!selectedThread?.messages?.length ? (
-                      <p className="text-xs text-gray-500">Sem mensagens neste chat.</p>
-                    ) : null}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      value={replyText}
-                      onChange={(event) => setReplyText(event.target.value)}
-                      placeholder="Responder cliente..."
-                      className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSendReply}
-                      disabled={!selectedThreadId || !replyText.trim()}
-                      className="rounded-lg border border-red-500/30 bg-red-500/15 px-3 py-2 text-red-100 hover:bg-red-500/25 disabled:opacity-40"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+                    {tab.key === 'chat_macedo' ? <MessageCircle className="h-3 w-3" /> : null}
+                    {tab.key === 'novas_tarefas' ? <CheckSquare className="h-3 w-3" /> : null}
+                    {tab.key === 'atualizacoes_tarefas' ? <RefreshCcw className="h-3 w-3" /> : null}
+                    {tab.key === 'chat_cliente' ? <UsersRound className="h-3 w-3" /> : null}
+                    {tab.label}
+                    {tab.count > 0 ? <span className="ml-0.5 text-[10px] text-red-200">({tab.count})</span> : null}
+                  </button>
+                ))}
+              </div>
+              <div className="max-h-72 space-y-2 overflow-y-auto">
+                {renderAdminTab()}
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

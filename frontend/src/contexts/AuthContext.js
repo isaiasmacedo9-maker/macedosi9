@@ -24,6 +24,49 @@ const DEV_USER = {
 };
 
 const MODULE_OVERRIDES_KEY = 'mock_user_modules_overrides_v1';
+const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
+
+const tryClientPortalLogin = (email, password) => {
+  try {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedPassword = String(password || '').trim();
+    const portalUsers = JSON.parse(localStorage.getItem(CLIENT_PORTAL_USERS_KEY) || '[]');
+    if (!Array.isArray(portalUsers)) return null;
+
+    const match = portalUsers.find(
+      (item) =>
+        String(item.email || '').trim().toLowerCase() === normalizedEmail &&
+        String(item.senha || '').trim() === normalizedPassword,
+    );
+
+    if (!match) return null;
+
+    const linkedClientIds = [
+      ...(Array.isArray(match.linkedClientIds) ? match.linkedClientIds : []),
+      ...(Array.isArray(match.linkedClientRefs) ? match.linkedClientRefs : []),
+      ...(match.clienteId ? [match.clienteId] : []),
+      ...(match.clientRefId ? [match.clientRefId] : []),
+    ];
+
+    return {
+      id: match.id || `portal-${normalizedEmail}`,
+      email: normalizedEmail,
+      name: match.nome || normalizedEmail.split('@')[0],
+      role: 'cliente',
+      linked_client_ids: [...new Set(linkedClientIds.map((item) => String(item).trim()).filter(Boolean))],
+      allowed_cities: [],
+      allowed_sectors: [],
+      allowed_modules: ['dashboard', 'chat', 'documentos', 'servicos', 'financeiro', 'fiscal', 'trabalhista', 'atendimento', 'academy', 'macedogram'],
+      permissoes: [],
+      is_active: true,
+      is_online: true,
+      mock_client_login: true,
+      created_at: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+};
 
 const applyModulePermissions = (userData) => {
   if (!userData) return null;
@@ -81,7 +124,7 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    if (token) {
+    if (token && token !== DEV_BYPASS_TOKEN) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     } else {
       delete axios.defaults.headers.common['Authorization'];
@@ -95,6 +138,23 @@ export const AuthProvider = ({ children }) => {
     }
 
     const checkAuth = async () => {
+      if (token === DEV_BYPASS_TOKEN) {
+        const savedUserRaw = localStorage.getItem('user');
+        if (savedUserRaw) {
+          try {
+            const savedUser = JSON.parse(savedUserRaw);
+            if (savedUser?.mock_client_login) {
+              const userWithModules = applyModulePermissions(savedUser);
+              setUser(userWithModules);
+              setLoading(false);
+              return;
+            }
+          } catch {
+            // segue fluxo normal
+          }
+        }
+      }
+
       if (token) {
         try {
           const response = await axios.get(`${API_URL}/api/auth/me`);
@@ -145,6 +205,22 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
+      const localClientUser = tryClientPortalLogin(email, password);
+      if (localClientUser) {
+        const userWithModules = applyModulePermissions(localClientUser);
+        setToken(DEV_BYPASS_TOKEN);
+        setUser(userWithModules);
+        localStorage.setItem('token', DEV_BYPASS_TOKEN);
+        localStorage.setItem('user', JSON.stringify(userWithModules));
+        delete axios.defaults.headers.common['Authorization'];
+
+        toast.success('Login do cliente realizado com sucesso!', {
+          description: `Bem-vindo, ${userWithModules.name}!`,
+        });
+
+        return { success: true };
+      }
+
       const message = error.response?.data?.detail || 'Erro ao fazer login';
       toast.error('Erro no login', {
         description: message,

@@ -17,6 +17,7 @@ from models_chat_users import (
 from models_services import ServicoSQL, ComentarioServicoSQL
 from models_comercial import ServicoComercialSQL, OrdemServicoSQL, ContratoSQL, HistoricoContratoSQL
 from models_agendamentos import AgendamentoSQL, DisponibilidadeContadorSQL, BloqueioAgendaSQL, HistoricoAgendamentoSQL
+from models_academy_processes import AcademyProcessModelSQL, AcademyGeneratedProcessSQL
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')

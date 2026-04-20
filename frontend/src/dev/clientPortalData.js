@@ -65,6 +65,7 @@ export const clientPortalMenu = [...baseClientPortalMenu, simplesRegimeMenu, ...
 const MOCK_INTERNAL_SERVICES_KEY = 'mock_internal_services';
 const CLIENT_SETUP_STORAGE_KEY = 'mock_admin_client_setup_center_v2';
 const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
+const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
 
 export function getClientPortalMenu(tipoEmpresa, clientRefId = null) {
   const enabledModules = getClientEnabledModulesByClientRefId(clientRefId);
@@ -251,13 +252,22 @@ const getDynamicPortalUsers = () => {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((item) => item && item.email)
-      .map((item) => ({
-        id: item.id || `portal-${item.email}`,
-        authUserId: item.authUserId || item.id || item.email,
-        email: item.email,
-        nome: item.nome || item.email,
-        linkedClientIds: item.clienteId ? [item.clienteId] : [],
-      }));
+      .map((item) => {
+        const linkedClientIds = [
+          ...(Array.isArray(item.linkedClientIds) ? item.linkedClientIds : []),
+          ...(Array.isArray(item.linkedClientRefs) ? item.linkedClientRefs : []),
+          ...(item.clienteId ? [item.clienteId] : []),
+          ...(item.clientRefId ? [item.clientRefId] : []),
+        ];
+
+        return {
+          id: item.id || `portal-${item.email}`,
+          authUserId: item.authUserId || item.id || item.email,
+          email: item.email,
+          nome: item.nome || item.email,
+          linkedClientIds: [...new Set(linkedClientIds.map((value) => String(value || '').trim()).filter(Boolean))],
+        };
+      });
   } catch {
     return [];
   }
@@ -317,6 +327,106 @@ export const mockPortalClients = [
     },
   },
 ];
+
+const readJsonArray = (key) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const readJsonObject = (key) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const normalizeRegime = (value = '') =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const resolvePortalTipoEmpresa = (regimeRaw = '') => {
+  const regime = normalizeRegime(regimeRaw);
+  if (regime.includes('mei')) return 'mei';
+  return 'simples';
+};
+
+const resolveRegimeLabel = (regimeRaw = '') => {
+  const regime = normalizeRegime(regimeRaw);
+  if (regime === 'mei') return 'MEI';
+  if (regime === 'simples_nacional' || regime === 'simples nacional') return 'Simples Nacional';
+  if (regime === 'lucro_presumido' || regime === 'lucro presumido') return 'Lucro Presumido';
+  if (regime === 'lucro_real' || regime === 'lucro real') return 'Lucro Real';
+  return regimeRaw || 'Simples Nacional';
+};
+
+const buildDynamicPortalClients = () => {
+  const setupMap = readJsonObject(CLIENT_SETUP_STORAGE_KEY);
+  const localAdminClients = readJsonArray(MOCK_ADMIN_CLIENTS_KEY);
+  const catalog = [...mockClients, ...localAdminClients];
+
+  return catalog
+    .map((client) => {
+      const clientRefId = String(client?.id || client?.clientRefId || '').trim();
+      if (!clientRefId) return null;
+      const setup = setupMap?.[clientRefId] || {};
+      const setupEmpresa = setup?.setupEmpresa || setup?.empresa || {};
+      const regimeBase = setupEmpresa?.regimeTributario || client?.tipo_regime || client?.regime || 'simples_nacional';
+      const tipoEmpresa = resolvePortalTipoEmpresa(regimeBase);
+      const nomeEmpresa = client?.nome_empresa || setupEmpresa?.razaoSocial || setupEmpresa?.razao_social || client?.name || 'Empresa';
+      const nomeFantasia = client?.nome_fantasia || setupEmpresa?.nomeFantasia || setupEmpresa?.nome_fantasia || nomeEmpresa;
+      const cidade = client?.cidade || setupEmpresa?.enderecoCidade || 'Jacobina';
+      const clienteId = String(setup?.acessoCliente?.clienteId || client?.clienteId || clientRefId).trim();
+
+      return {
+        clienteId,
+        clientRefId,
+        nome_empresa: nomeEmpresa,
+        nome_fantasia: nomeFantasia,
+        cnpj: client?.cnpj || setupEmpresa?.cnpj || '',
+        tipo_empresa: tipoEmpresa,
+        atividade: setupEmpresa?.segmentoPrincipal || 'comercio',
+        regime_label: resolveRegimeLabel(regimeBase),
+        status_geral: String(client?.status || 'ativo').toLowerCase() === 'ativo' ? 'regular' : 'pendente',
+        responsavel_conta: client?.responsavel_empresa || 'Equipe Macedo SI',
+        email_responsavel: client?.email || 'atendimento@macedosi.com',
+        telefone_suporte: '(74) 3333-5000',
+        personalizacao: {
+          tema: tipoEmpresa === 'mei' ? 'mei' : 'comercio',
+          destaquePrimario: tipoEmpresa === 'mei' ? 'Portal MEI com foco em rotina simplificada' : 'Portal empresarial com visão fiscal e financeira',
+          destaqueSecundario: 'Acompanhamento integrado com a contabilidade',
+        },
+        perfil_macedogram: {
+          logo_sigla: String(nomeFantasia || 'CL').slice(0, 2).toUpperCase(),
+          descricao: `Perfil empresarial de ${nomeFantasia} no Macedogram.`,
+          cidade: `${cidade}, BA`,
+          tipo_atendimento: 'municipal',
+        },
+      };
+    })
+    .filter(Boolean);
+};
+
+const getAllPortalClients = () => {
+  const map = new Map();
+
+  [...mockPortalClients, ...buildDynamicPortalClients()].forEach((item) => {
+    if (!item) return;
+    const key = String(item.clientRefId || item.clienteId || '').trim();
+    if (!key) return;
+    if (!map.has(key)) map.set(key, item);
+  });
+
+  return Array.from(map.values());
+};
 
 const pageTemplates = {
   'das/guias': {
@@ -496,7 +606,10 @@ export function getPortalUserByAuthUser(authUser) {
 export function getAccessiblePortalClients(authUser) {
   const portalUser = getPortalUserByAuthUser(authUser);
   if (!portalUser) return [];
-  return mockPortalClients.filter((item) => portalUser.linkedClientIds.includes(item.clienteId));
+  const linkedSet = new Set((portalUser.linkedClientIds || []).map((value) => String(value || '').trim()));
+  return getAllPortalClients().filter(
+    (item) => linkedSet.has(String(item.clienteId || '').trim()) || linkedSet.has(String(item.clientRefId || '').trim()),
+  );
 }
 
 export function getPortalMacedogramProfiles(authUser) {
@@ -612,11 +725,17 @@ export function getConsolidatedPortalOverview(authUser) {
 }
 
 export function getPortalClientById(clienteId) {
-  return mockPortalClients.find((item) => item.clienteId === clienteId) || null;
+  return (
+    getAllPortalClients().find(
+      (item) => item.clienteId === clienteId || String(item.clientRefId) === String(clienteId),
+    ) || null
+  );
 }
 
 export function userHasAccessToPortalClient(authUser, clienteId) {
-  return getAccessiblePortalClients(authUser).some((item) => item.clienteId === clienteId);
+  return getAccessiblePortalClients(authUser).some(
+    (item) => item.clienteId === clienteId || String(item.clientRefId) === String(clienteId),
+  );
 }
 
 export function getPortalOverviewData(clienteId) {

@@ -21,6 +21,7 @@ import {
 import MacedoLogo from '../Brand/MacedoLogo';
 import ThemeToggle from '../ThemeToggle';
 import NotificationBell from '../NotificationBell';
+import { Z_LAYERS } from '../../constants/zLayers';
 
 const Layout = ({ children }) => {
   const { user, logout, hasModuleAccess } = useAuth();
@@ -61,7 +62,8 @@ const Layout = ({ children }) => {
   return (
     <div className="flex h-screen bg-futuristic">
       <div
-        className={`sidebar-futuristic fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+        style={{ zIndex: Z_LAYERS.appSidebar }}
+        className={`sidebar-futuristic fixed inset-y-0 left-0 w-64 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -160,7 +162,13 @@ const Layout = ({ children }) => {
               <div className="status-online h-3 w-3 rounded-full" />
               <span className="text-sm text-gray-300">Sistema Integrado Local</span>
             </div>
-            <NotificationBell mode="admin" userName={user?.name || 'Contabilidade'} />
+            <NotificationBell
+              mode="admin"
+              userName={user?.name || 'Contabilidade'}
+              user={user}
+              hasModuleAccess={hasModuleAccess}
+              onNavigate={(path) => navigate(path)}
+            />
             <ThemeToggle compact />
           </div>
         </header>
@@ -168,7 +176,7 @@ const Layout = ({ children }) => {
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">{children}</main>
       </div>
 
-      {sidebarOpen && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+      {sidebarOpen && <div style={{ zIndex: Z_LAYERS.appSidebar - 1 }} className="fixed inset-0 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
     </div>
   );
 };

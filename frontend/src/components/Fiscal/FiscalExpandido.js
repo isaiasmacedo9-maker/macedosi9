@@ -211,6 +211,8 @@ const FiscalExpandido = () => {
     responsavel: '',
     search: ''
   });
+  const [fiscalModuleView, setFiscalModuleView] = useState('obrigacoes_mensais');
+  const [fiscalAvulsoType, setFiscalAvulsoType] = useState('todos');
 
   // Filtros para Notas Fiscais
   const [notasFilters, setNotasFilters] = useState({
@@ -532,6 +534,37 @@ const FiscalExpandido = () => {
     }).format(value || 0);
   };
 
+  const classifyFiscalAvulsoType = (item = {}) => {
+    const text = normalizeText(`${item.tipo || ''} ${item.nome || ''} ${item.descricao || ''}`);
+    if (text.includes('parcelamento')) return 'parcelamento';
+    if (text.includes('retific')) return 'retificacao';
+    if (text.includes('regulariza') || text.includes('divida') || text.includes('pendenc')) return 'regularizacao';
+    return 'outros';
+  };
+
+  const obrigacoesMensais = useMemo(
+    () => obrigacoes.filter((item) => normalizeText(item.periodicidade || 'mensal') === 'mensal'),
+    [obrigacoes],
+  );
+
+  const obrigacoesAvulsas = useMemo(
+    () => obrigacoes.filter((item) => normalizeText(item.periodicidade || '') !== 'mensal'),
+    [obrigacoes],
+  );
+
+  const avulsoTypeCounts = useMemo(() => ({
+    parcelamento: obrigacoesAvulsas.filter((item) => classifyFiscalAvulsoType(item) === 'parcelamento').length,
+    retificacao: obrigacoesAvulsas.filter((item) => classifyFiscalAvulsoType(item) === 'retificacao').length,
+    regularizacao: obrigacoesAvulsas.filter((item) => classifyFiscalAvulsoType(item) === 'regularizacao').length,
+    outros: obrigacoesAvulsas.filter((item) => classifyFiscalAvulsoType(item) === 'outros').length,
+  }), [obrigacoesAvulsas]);
+
+  const obrigacoesVisiveis = useMemo(() => {
+    if (fiscalModuleView === 'obrigacoes_mensais') return obrigacoesMensais;
+    if (fiscalAvulsoType === 'todos') return obrigacoesAvulsas;
+    return obrigacoesAvulsas.filter((item) => classifyFiscalAvulsoType(item) === fiscalAvulsoType);
+  }, [fiscalModuleView, fiscalAvulsoType, obrigacoesMensais, obrigacoesAvulsas]);
+
   const fiscalClients = useMemo(() => {
     return clientes.map((client) => {
       const setup = fiscalSetup[client.id] || {};
@@ -793,6 +826,53 @@ const FiscalExpandido = () => {
       {/* Filtros e Ações */}
       {activeTab === 'clientes_fiscais' ? fiscalClientsView : activeTab === 'obrigacoes' ? (
         <>
+          <div className="glass rounded-xl p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setFiscalModuleView('obrigacoes_mensais')}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                  fiscalModuleView === 'obrigacoes_mensais'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-black/30 text-gray-300 hover:text-white'
+                }`}
+              >
+                Obrigações mensais
+              </button>
+              <button
+                onClick={() => setFiscalModuleView('servicos_avulsos')}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                  fiscalModuleView === 'servicos_avulsos'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-black/30 text-gray-300 hover:text-white'
+                }`}
+              >
+                Serviços avulsos
+              </button>
+            </div>
+            {fiscalModuleView === 'servicos_avulsos' ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { key: 'todos', label: `Todos (${obrigacoesAvulsas.length})` },
+                  { key: 'parcelamento', label: `Parcelamento (${avulsoTypeCounts.parcelamento})` },
+                  { key: 'retificacao', label: `Retificação (${avulsoTypeCounts.retificacao})` },
+                  { key: 'regularizacao', label: `Regularização (${avulsoTypeCounts.regularizacao})` },
+                  { key: 'outros', label: `Outros (${avulsoTypeCounts.outros})` },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setFiscalAvulsoType(item.key)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs ${
+                      fiscalAvulsoType === item.key
+                        ? 'border-red-500/35 bg-red-500/15 text-red-100'
+                        : 'border-white/15 bg-white/5 text-gray-300'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <div className="glass rounded-xl p-6">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
@@ -898,7 +978,7 @@ const FiscalExpandido = () => {
                         </div>
                       </td>
                     </tr>
-                  ) : obrigacoes.length === 0 ? (
+                  ) : obrigacoesVisiveis.length === 0 ? (
                     <tr>
                       <td colSpan="8" className="text-center p-8">
                         <div className="text-gray-400">
@@ -908,7 +988,7 @@ const FiscalExpandido = () => {
                       </td>
                     </tr>
                   ) : (
-                    obrigacoes.map((obrigacao) => (
+                    obrigacoesVisiveis.map((obrigacao) => (
                       <tr key={obrigacao.id} className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors">
                         <td className="p-4 text-white font-medium">{obrigacao.empresa}</td>
                         <td className="p-4 text-gray-300 uppercase">{obrigacao.tipo.replace('_', ' ')}</td>

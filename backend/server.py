@@ -28,6 +28,7 @@ from routes.services import router as services_router
 from routes.comercial import router as comercial_router
 from routes.agendamentos import router as agendamentos_router
 from routes.guias_fiscais import router as guias_fiscais_router
+from routes.academy_processes import router as academy_processes_router
 
 # Lifespan events
 @asynccontextmanager
@@ -124,6 +125,7 @@ api_router.include_router(comercial_router)
 api_router.include_router(tasks_router)
 api_router.include_router(agendamentos_router)
 api_router.include_router(guias_fiscais_router)
+api_router.include_router(academy_processes_router)
 
 # Include the API router in the main app
 app.include_router(api_router)
