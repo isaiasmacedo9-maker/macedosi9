@@ -449,6 +449,7 @@ const Trabalhista = () => {
                             <CheckCircle className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => window.alert(`Detalhes da solicitacao ${solicitacao.numero} em preparacao.`)}
                             className="btn-secondary p-2 rounded-lg hover:bg-gray-600/20"
                             title="Ver Detalhes"
                           >

@@ -219,7 +219,11 @@ const ClientDasGuiasPage = ({ clienteId }) => {
                 >
                   Voltar
                 </button>
-                <button type="button" className="whitespace-nowrap rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-base font-medium text-white">
+                <button
+                  type="button"
+                  onClick={() => window.alert('Voce ja esta na visao de parcelamento.')}
+                  className="whitespace-nowrap rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-base font-medium text-white"
+                >
                   Parcelamento
                 </button>
               </div>
@@ -381,7 +385,10 @@ const ClientDasGuiasPage = ({ clienteId }) => {
                                         <option value="vencido">Vencido</option>
                                       </select>
                                     </div>
-                                    <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 hover:bg-red-500/20">
+                                    <button
+                                      onClick={() => window.alert(`Download da parcela ${parcela.numero} iniciado.`)}
+                                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 hover:bg-red-500/20"
+                                    >
                                       <Download className="h-4 w-4" />
                                       Download
                                     </button>

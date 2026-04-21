@@ -109,10 +109,16 @@ const ClientNotasHistoricoPage = ({ clienteId }) => {
                 </div>
 
                 <div className="flex min-w-[210px] flex-col gap-2">
-                  <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                  <button
+                    onClick={() => window.alert(`Abrindo detalhes da nota ${nota.numero}`)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10"
+                  >
                     Ver detalhes
                   </button>
-                  <button className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-100 hover:bg-sky-500/20">
+                  <button
+                    onClick={() => window.alert(`Download XML/PDF iniciado para nota ${nota.numero}`)}
+                    className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-100 hover:bg-sky-500/20"
+                  >
                     Baixar XML/PDF
                   </button>
                 </div>

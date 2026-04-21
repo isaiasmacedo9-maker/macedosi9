@@ -45,7 +45,10 @@ const ClientsList = () => {
             Gerenciamento de clientes cadastrados
           </p>
         </div>
-        <button className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2">
+        <button
+          onClick={() => window.alert('Cadastro de novo cliente sera liberado neste modulo.')}
+          className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2"
+        >
           <Plus className="w-5 h-5" />
           <span>Novo Cliente</span>
         </button>
@@ -66,7 +69,10 @@ const ClientsList = () => {
               />
             </div>
           </div>
-          <button className="flex items-center space-x-2 px-4 py-3 rounded-xl border border-red-600/30 text-gray-300 hover:text-white hover:border-red-600/50 transition-colors">
+          <button
+            onClick={() => window.alert('Filtros avancados serao habilitados neste modulo.')}
+            className="flex items-center space-x-2 px-4 py-3 rounded-xl border border-red-600/30 text-gray-300 hover:text-white hover:border-red-600/50 transition-colors"
+          >
             <Filter className="w-5 h-5" />
             <span>Filtros</span>
           </button>

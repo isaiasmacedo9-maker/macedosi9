@@ -86,10 +86,16 @@ const ClientFinanceiroOrcamentosPage = ({ clienteId }) => {
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                  <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                  <button
+                    onClick={() => window.alert(`Abrindo proposta: ${item.titulo}`)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10"
+                  >
                     Ver proposta
                   </button>
-                  <button className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20">
+                  <button
+                    onClick={() => window.alert(`Compartilhamento iniciado para: ${item.titulo}`)}
+                    className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20"
+                  >
                     Compartilhar
                   </button>
                 </div>

@@ -56,7 +56,10 @@ const ClientNotasEmissaoPage = ({ clienteId }) => {
               <h2 className="text-lg font-semibold text-white">Rascunhos de emissão</h2>
               <p className="text-sm text-gray-400">Base visual para iniciar emissão com apoio do contador.</p>
             </div>
-            <button className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-100 hover:bg-sky-500/20">
+            <button
+              onClick={() => window.alert('Novo rascunho criado em modo assistido.')}
+              className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-100 hover:bg-sky-500/20"
+            >
               Novo rascunho
             </button>
           </div>
@@ -81,10 +84,16 @@ const ClientNotasEmissaoPage = ({ clienteId }) => {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                    <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                    <button
+                      onClick={() => window.alert(`Editando rascunho ${item.numero_sugerido}`)}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10"
+                    >
                       Editar rascunho
                     </button>
-                    <button className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-100 hover:bg-sky-500/20">
+                    <button
+                      onClick={() => window.alert(`Rascunho ${item.numero_sugerido} enviado para conferencia.`)}
+                      className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-medium text-sky-100 hover:bg-sky-500/20"
+                    >
                       Enviar para conferência
                     </button>
                   </div>

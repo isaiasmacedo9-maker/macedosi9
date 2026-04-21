@@ -12,7 +12,7 @@ from models.user import UserResponse
 from auth import get_current_user
 from database_compat import (
     get_contas_receber_collection, get_financial_clients_collection,
-    get_importacoes_extrato_collection
+    get_importacoes_extrato_collection, get_financial_settings_collection
 )
 from datetime import datetime, date, timedelta
 import json
@@ -21,6 +21,14 @@ import re
 from typing import Dict, Any
 
 router = APIRouter(prefix="/financial", tags=["Financial"])
+
+
+class FinancialHonorariosSettingsPayload(BaseModel):
+    items: List[Dict[str, Any]]
+
+
+def _is_official_locked(record: Dict[str, Any]) -> bool:
+    return bool((record or {}).get("official_locked"))
 
 def check_financial_access(user: UserResponse):
     """Check if user has access to financial module"""
@@ -1029,15 +1037,26 @@ async def create_financial_client(
         "id": str(uuid.uuid4()),
         "empresa_id": client_data.empresa_id,
         "empresa": client_data.empresa,
+        "client_id": client_data.client_id or client_data.empresa_id,
+        "empresa_nome": client_data.empresa_nome or client_data.empresa,
+        "cnpj": client_data.cnpj,
+        "cidade": client_data.cidade,
         "valor_com_desconto": client_data.valor_com_desconto,
         "valor_boleto": client_data.valor_boleto,
+        "valor_desconto": client_data.valor_desconto or 0.0,
+        "data_vencimento": client_data.data_vencimento,
         "dia_vencimento": client_data.dia_vencimento,
         "tipo_honorario": client_data.tipo_honorario.value if hasattr(client_data.tipo_honorario, 'value') else client_data.tipo_honorario,
         "empresa_individual_grupo": client_data.empresa_individual_grupo.value if hasattr(client_data.empresa_individual_grupo, 'value') else client_data.empresa_individual_grupo,
         "contas_pagamento": client_data.contas_pagamento,
         "tipo_pagamento": client_data.tipo_pagamento.value if hasattr(client_data.tipo_pagamento, 'value') else client_data.tipo_pagamento,
         "forma_pagamento_especial": client_data.forma_pagamento_especial,
+        "tipo_pagamento_especial": client_data.tipo_pagamento_especial,
         "tipo_empresa": client_data.tipo_empresa.value if hasattr(client_data.tipo_empresa, 'value') else client_data.tipo_empresa,
+        "responsavel_financeiro": client_data.responsavel_financeiro,
+        "quantidade_funcionarios": client_data.quantidade_funcionarios or 0,
+        "status_fiscal": client_data.status_fiscal or "sem_movimento",
+        "capacidade_pagamento": client_data.capacidade_pagamento or "paga_em_dia",
         "status_pagamento": client_data.status_pagamento.value if hasattr(client_data.status_pagamento, 'value') else client_data.status_pagamento,
         "observacoes": client_data.observacoes,
         "ultimo_pagamento": None,
@@ -1099,6 +1118,12 @@ async def update_financial_client(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Financial client not found"
         )
+
+    if _is_official_locked(client_data):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Official financial client is locked and cannot be edited"
+        )
     
     # Build update data
     update_data = {k: v for k, v in client_update.model_dump().items() if v is not None}
@@ -1118,6 +1143,19 @@ async def delete_financial_client(
     """Delete financial client"""
     check_financial_access(current_user)
     financial_clients_collection = await get_financial_clients_collection()
+
+    existing = await financial_clients_collection.find_one({"id": client_id})
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Financial client not found"
+        )
+
+    if _is_official_locked(existing):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Official financial client is locked and cannot be removed"
+        )
     
     result = await financial_clients_collection.delete_one({"id": client_id})
     if result.deleted_count == 0:
@@ -1145,6 +1183,39 @@ async def get_financial_client(
         )
     
     return FinancialClient(**client_data)
+
+
+@router.get("/settings/honorarios")
+async def get_financial_honorarios_settings(
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection = await get_financial_settings_collection()
+    row = await collection.find_one({"key": "honorarios"})
+    return {"items": (row or {}).get("items", [])}
+
+
+@router.put("/settings/honorarios")
+async def update_financial_honorarios_settings(
+    payload: FinancialHonorariosSettingsPayload,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection = await get_financial_settings_collection()
+    now_iso = datetime.utcnow().isoformat()
+    current = await collection.find_one({"key": "honorarios"})
+    base = {
+        "key": "honorarios",
+        "items": payload.items or [],
+        "updated_at": now_iso,
+        "updated_by_id": str(current_user.id),
+        "updated_by_name": str(current_user.name),
+    }
+    if current:
+        await collection.update_one({"key": "honorarios"}, {"$set": base})
+    else:
+        await collection.insert_one({"id": str(uuid.uuid4()), "created_at": now_iso, **base})
+    return {"message": "Financial honorarios settings saved", "items": payload.items or []}
 
 # Busca avançada com filtros
 @router.post("/contas-receber/search", response_model=List[ContaReceber])

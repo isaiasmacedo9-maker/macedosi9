@@ -14,7 +14,7 @@ from models_chat_users import (
     UserPermissionSQL, UserOnlineStatusSQL, ConversationSQL,
     ConversationMemberSQL, ChatMessageSQL, MessageReadStatusSQL
 )
-from models_services import ServicoSQL, ComentarioServicoSQL
+from models_services import ServicoSQL, ComentarioServicoSQL, ServicesConfigurationSQL
 from models_comercial import ServicoComercialSQL, OrdemServicoSQL, ContratoSQL, HistoricoContratoSQL
 from models_agendamentos import AgendamentoSQL, DisponibilidadeContadorSQL, BloqueioAgendaSQL, HistoricoAgendamentoSQL
 from models_academy_processes import AcademyProcessModelSQL, AcademyGeneratedProcessSQL

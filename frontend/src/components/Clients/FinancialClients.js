@@ -3,16 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../config/api';
 import { DollarSign, Eye, Filter, Plus, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { mockClients } from '../../dev/mockData';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
-const FINANCIAL_CLIENTS_KEY = 'mock_financial_clients_v2';
-const WORKFORCE_STORAGE_KEY = 'mock_trabalhista_workforce_v1';
-const FISCAL_CLIENT_SETUP_KEY = 'mock_fiscal_client_setup_v1';
-const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
-const FINANCIAL_SYNC_META_KEY = 'mock_financial_sync_meta_v1';
-const FINANCIAL_HONORARIOS_CONFIG_KEY = 'mock_financial_honorarios_config_v1';
 
 const normalizeText = (value = '') =>
   String(value)
@@ -20,6 +12,29 @@ const normalizeText = (value = '') =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+
+const canonicalCityKey = (city = '') => {
+  const normalized = normalizeText(city);
+  if (!normalized) return '';
+  if (normalized.startsWith('ouroland')) return 'ourolandia';
+  if (normalized.startsWith('uberland')) return 'uberlandia';
+  if (normalized.startsWith('jacobin')) return 'jacobina';
+  if (normalized.startsWith('umburan')) return 'umburanas';
+  return normalized;
+};
+
+const canonicalCityLabel = (city = '') => {
+  const key = canonicalCityKey(city);
+  if (key === 'ourolandia') return 'Ourolandia';
+  if (key === 'uberlandia') return 'Uberlandia';
+  if (key === 'jacobina') return 'Jacobina';
+  if (key === 'umburanas') return 'Umburanas';
+  if (!key) return 'Sem cidade';
+  return String(city || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
 
 const formatCurrency = (value) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -29,39 +44,22 @@ const toCsv = (headers, rows) => {
   return [headers.map(escapeCell).join(';'), ...rows.map((row) => row.map(escapeCell).join(';'))].join('\n');
 };
 
-const mergeClientsUnique = (...lists) => {
-  const map = new Map();
-  lists.flat().forEach((client) => {
-    if (!client) return;
-    const key = client.id || client.cnpj || `${client.nome_empresa}-${client.nome_fantasia}`;
-    if (!map.has(key)) map.set(key, client);
-  });
-  return Array.from(map.values());
-};
-
-const readJson = (key, fallback) => {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || '');
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const pushNotification = (message) => {
-  const current = readJson(NOTIFICATIONS_KEY, []);
-  const next = [
-    ...current,
-    {
-      id: `ntf-fin-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-      message,
-      createdAt: new Date().toISOString(),
-      read: false,
-      scope: 'financeiro',
-    },
-  ];
-  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(next));
-};
+const mapFinancialFromApi = (item = {}) => ({
+  ...item,
+  client_id: item.client_id || item.empresa_id || '',
+  empresa_nome: item.empresa_nome || item.empresa || '',
+  cnpj: item.cnpj || '',
+  cidade: item.cidade || '',
+  valor_boleto: Number(item.valor_boleto || 0),
+  valor_desconto: Number(item.valor_desconto || 0),
+  valor_com_desconto: Number(item.valor_com_desconto || (Number(item.valor_boleto || 0) - Number(item.valor_desconto || 0))),
+  quantidade_funcionarios: Number(item.quantidade_funcionarios || 0),
+  responsavel_financeiro: item.responsavel_financeiro || '',
+  status_fiscal: item.status_fiscal || 'sem_movimento',
+  capacidade_pagamento: item.capacidade_pagamento || 'paga_em_dia',
+  tipo_pagamento_especial: item.tipo_pagamento_especial || item.forma_pagamento_especial || '',
+  data_vencimento: item.data_vencimento || '',
+});
 
 const defaultForm = {
   clientId: '',
@@ -151,6 +149,8 @@ const FinancialClients = () => {
   const [filterColumn, setFilterColumn] = useState('empresa_nome');
   const [filterValue, setFilterValue] = useState('');
   const [capacidadeFilter, setCapacidadeFilter] = useState('');
+  const [activeCityGroup, setActiveCityGroup] = useState('todos');
+  const [financialListMode, setFinancialListMode] = useState('detalhado');
   const [categoryFilters, setCategoryFilters] = useState({
     isentos: true,
     permuta: true,
@@ -163,10 +163,6 @@ const FinancialClients = () => {
     if (!hasAccess([], ['financeiro'])) return;
     loadBaseClients();
     loadFinancialClients();
-    syncFromExternalModules();
-
-    const interval = setInterval(syncFromExternalModules, 15000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -176,82 +172,52 @@ const FinancialClients = () => {
   }, [location.search]);
 
   useEffect(() => {
-    const stored = readJson(FINANCIAL_HONORARIOS_CONFIG_KEY, defaultHonorariosConfig);
-    if (Array.isArray(stored) && stored.length) {
-      setHonorariosConfig(stored);
-    }
+    const loadHonorariosSettings = async () => {
+      try {
+        const response = await api.get('/financial/settings/honorarios');
+        const items = response.data?.items;
+        if (Array.isArray(items) && items.length) {
+          setHonorariosConfig(items);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar configuração de honorários do backend:', error);
+      }
+    };
+    loadHonorariosSettings();
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(FINANCIAL_HONORARIOS_CONFIG_KEY, JSON.stringify(honorariosConfig));
+    const persistHonorariosSettings = async () => {
+      try {
+        await api.put('/financial/settings/honorarios', { items: honorariosConfig });
+      } catch (error) {
+        console.error('Erro ao salvar configuração de honorários no backend:', error);
+      }
+    };
+    persistHonorariosSettings();
   }, [honorariosConfig]);
 
   const loadBaseClients = async () => {
-    let localClients = [];
-    try {
-      const localRaw = localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY);
-      const parsed = localRaw ? JSON.parse(localRaw) : [];
-      localClients = Array.isArray(parsed) ? parsed : [];
-    } catch {}
-
     try {
       const response = await api.get('/clients?limit=1000');
       const apiClients = response.data?.clients || response.data || [];
-      const merged = mergeClientsUnique(Array.isArray(apiClients) ? apiClients : [], localClients, mockClients);
-      setAllClients(merged);
+      setAllClients(Array.isArray(apiClients) ? apiClients : []);
     } catch {
-      setAllClients(mergeClientsUnique(localClients, mockClients));
+      setAllClients([]);
     }
   };
 
-  const loadFinancialClients = () => {
+  const loadFinancialClients = async () => {
     setLoading(true);
-    const stored = readJson(FINANCIAL_CLIENTS_KEY, []);
-    setFinancialClients(Array.isArray(stored) ? stored : []);
-    setLoading(false);
-  };
-
-  const syncFromExternalModules = () => {
-    const workforceMap = readJson(WORKFORCE_STORAGE_KEY, {});
-    const fiscalSetup = readJson(FISCAL_CLIENT_SETUP_KEY, {});
-    const syncMeta = readJson(FINANCIAL_SYNC_META_KEY, {});
-    const list = readJson(FINANCIAL_CLIENTS_KEY, []);
-
-    let changed = false;
-    const nextList = list.map((item) => {
-      const next = { ...item };
-      const workforce = workforceMap[item.client_id];
-      const nextQtd = Number(item.quantidade_funcionarios || 0);
-      const workforceQtd = Array.isArray(workforce?.funcionarios) ? workforce.funcionarios.length : null;
-
-      if (workforceQtd !== null && workforceQtd !== nextQtd) {
-        next.quantidade_funcionarios = workforceQtd;
-        changed = true;
-        pushNotification(
-          `Financeiro: quantidade de funcionarios da empresa ${item.empresa_nome} atualizada para ${workforceQtd} com base no Trabalhista.`,
-        );
-      }
-
-      const fiscalClient = fiscalSetup[item.client_id] || {};
-      const statusFiscal = fiscalClient.statusFiscal || (fiscalClient.temMovimento ? 'com_movimento' : 'sem_movimento');
-      const prevStatus = syncMeta[`fiscal-status-${item.client_id}`] || item.status_fiscal || 'sem_movimento';
-      next.status_fiscal = statusFiscal;
-
-      if (prevStatus === 'sem_movimento' && statusFiscal === 'com_movimento') {
-        pushNotification(
-          `Financeiro: empresa ${item.empresa_nome} saiu de "Sem movimento" para "Com movimento" no Fiscal.`,
-        );
-      }
-
-      syncMeta[`fiscal-status-${item.client_id}`] = statusFiscal;
-      return next;
-    });
-
-    if (changed || JSON.stringify(nextList) !== JSON.stringify(list)) {
-      localStorage.setItem(FINANCIAL_CLIENTS_KEY, JSON.stringify(nextList));
-      setFinancialClients(nextList);
+    try {
+      const response = await api.get('/financial/clients?limit=5000');
+      const apiItems = Array.isArray(response.data) ? response.data : [];
+      setFinancialClients(apiItems.map(mapFinancialFromApi));
+    } catch (error) {
+      console.error('Erro ao carregar clientes financeiros:', error);
+      setFinancialClients([]);
     }
-    localStorage.setItem(FINANCIAL_SYNC_META_KEY, JSON.stringify(syncMeta));
+    setLoading(false);
   };
 
   const openCreateModal = () => {
@@ -329,22 +295,26 @@ const FinancialClients = () => {
 
   useEffect(() => {
     if (!selectedClient) return;
-    const workforceMap = readJson(WORKFORCE_STORAGE_KEY, {});
-    const workforce = workforceMap[selectedClient.id];
-    const qtd = Array.isArray(workforce?.funcionarios) ? workforce.funcionarios.length : 0;
     setForm((prev) => ({
       ...prev,
-      quantidadeFuncionarios: String(qtd || prev.quantidadeFuncionarios || 0),
+      quantidadeFuncionarios: String(prev.quantidadeFuncionarios || 0),
     }));
   }, [form.clientId, selectedClient?.id]);
 
-  const saveFinancialClient = () => {
+  const mapRegimeToTipoEmpresa = (regime) => {
+    const key = normalizeText(regime || '');
+    if (key.includes('mei')) return 'mei';
+    if (key.includes('presumido')) return 'lucro_presumido';
+    if (key.includes('real')) return 'lucro_real';
+    return 'simples';
+  };
+
+  const saveFinancialClient = async () => {
     if (!selectedClient) {
       toast.error('Selecione um cliente da lista.');
       return;
     }
-    const current = readJson(FINANCIAL_CLIENTS_KEY, []);
-    const exists = current.some((item) => String(item.client_id) === String(selectedClient.id));
+    const exists = financialClients.some((item) => String(item.client_id) === String(selectedClient.id));
     if (exists) {
       toast.error('Este cliente ja esta cadastrado no financeiro.');
       return;
@@ -356,72 +326,81 @@ const FinancialClients = () => {
     const valorTotalDebito = Number(form.valorTotalDebito || 0);
     const valorAcordado = form.mesmoValorAcordado ? valorTotalDebito : Number(form.valorAcordado || 0);
 
-    const novo = {
-      id: `fin-${Date.now()}`,
-      client_id: selectedClient.id,
+    const payload = {
+      empresa_id: String(selectedClient.id),
+      client_id: String(selectedClient.id),
+      empresa: selectedClient.nome_empresa || selectedClient.nome_fantasia || 'Empresa',
       empresa_nome: selectedClient.nome_empresa || selectedClient.nome_fantasia || 'Empresa',
       cnpj: selectedClient.cnpj || '',
+      cidade: selectedClient.cidade || selectedClient.cidade_atendimento || '',
       valor_boleto: Number(form.valorBoleto || 0),
       valor_desconto: Number(form.valorDesconto || 0),
       valor_com_desconto: Math.max(0, Number(form.valorBoleto || 0) - Number(form.valorDesconto || 0)),
       data_vencimento: form.dataVencimento || '',
-      dia_vencimento: form.dataVencimento ? new Date(`${form.dataVencimento}T00:00:00`).getDate() : null,
-      quantidade_funcionarios: Number(form.quantidadeFuncionarios || 0),
-      responsavel_financeiro: form.responsavelFinanceiro || '',
-      tipo_honorario: form.tipoHonorario,
-      empresas_grupo: form.tipoHonorario === 'grupo' ? form.empresasGrupo : [],
-      forma_pagamento_especial: form.formaPagamentoEspecial,
+      dia_vencimento: form.dataVencimento ? new Date(`${form.dataVencimento}T00:00:00`).getDate() : 1,
+      tipo_honorario: 'mensal',
+      empresa_individual_grupo: form.tipoHonorario === 'grupo' ? 'grupo' : 'individual',
+      contas_pagamento: form.tipoHonorario === 'grupo' ? form.empresasGrupo : [],
+      tipo_pagamento: form.tipoPagamento === 'acordo' ? 'unico' : 'recorrente',
+      forma_pagamento_especial: form.formaPagamentoEspecial ? (form.tipoPagamentoEspecial || 'especial') : '',
       tipo_pagamento_especial: form.formaPagamentoEspecial ? form.tipoPagamentoEspecial : '',
-      capacidade_pagamento: form.capacidadePagamento,
-      tipo_pagamento: form.tipoPagamento,
-      data_primeiro_vencimento: form.tipoPagamento === 'acordo' ? form.dataPrimeiroVencimento : '',
-      acordo_ano: form.tipoPagamento === 'acordo' ? form.acordoAno : '',
-      acordo_meses: form.tipoPagamento === 'acordo' ? form.acordoMeses : [],
-      acordo_meses_tabela: mesesAcordoTabela,
-      valor_total_debito: form.tipoPagamento === 'acordo' ? valorTotalDebito : 0,
-      valor_acordado: form.tipoPagamento === 'acordo' ? valorAcordado : 0,
-      valor_parcela_acordo: form.tipoPagamento === 'acordo' ? Number(form.valorParcelaAcordo || 0) : 0,
-      observacoes_acordo: form.tipoPagamento === 'acordo' && form.incluirObservacoesAcordo ? form.observacoesAcordo : '',
-      status_fiscal: readJson(FISCAL_CLIENT_SETUP_KEY, {})[selectedClient.id]?.statusFiscal || 'sem_movimento',
+      tipo_empresa: mapRegimeToTipoEmpresa(selectedClient.tipo_regime || selectedClient.regime),
       status_pagamento: 'em_dia',
-      cidade: selectedClient.cidade || '',
-      assinatura: {
-        nome: form.assinaturaNome || 'Plano personalizado',
-        valor_mensal: Number(form.assinaturaValorMensal || form.valorBoleto || honorariosResultado.total || 0),
-        direitos: {
-          financeiro: Boolean(form.assinaturaDireitos?.financeiro),
-          atendimento: Boolean(form.assinaturaDireitos?.atendimento),
-          fiscal: Boolean(form.assinaturaDireitos?.fiscal),
-          trabalhista: Boolean(form.assinaturaDireitos?.trabalhista),
+      status_fiscal: 'sem_movimento',
+      responsavel_financeiro: form.responsavelFinanceiro || '',
+      quantidade_funcionarios: Number(form.quantidadeFuncionarios || 0),
+      capacidade_pagamento: form.capacidadePagamento,
+      observacoes: JSON.stringify({
+        data_primeiro_vencimento: form.tipoPagamento === 'acordo' ? form.dataPrimeiroVencimento : '',
+        acordo_ano: form.tipoPagamento === 'acordo' ? form.acordoAno : '',
+        acordo_meses: form.tipoPagamento === 'acordo' ? form.acordoMeses : [],
+        acordo_meses_tabela: mesesAcordoTabela,
+        valor_total_debito: form.tipoPagamento === 'acordo' ? valorTotalDebito : 0,
+        valor_acordado: form.tipoPagamento === 'acordo' ? valorAcordado : 0,
+        valor_parcela_acordo: form.tipoPagamento === 'acordo' ? Number(form.valorParcelaAcordo || 0) : 0,
+        observacoes_acordo: form.tipoPagamento === 'acordo' && form.incluirObservacoesAcordo ? form.observacoesAcordo : '',
+        assinatura: {
+          nome: form.assinaturaNome || 'Plano personalizado',
+          valor_mensal: Number(form.assinaturaValorMensal || form.valorBoleto || honorariosResultado.total || 0),
+          direitos: {
+            financeiro: Boolean(form.assinaturaDireitos?.financeiro),
+            atendimento: Boolean(form.assinaturaDireitos?.atendimento),
+            fiscal: Boolean(form.assinaturaDireitos?.fiscal),
+            trabalhista: Boolean(form.assinaturaDireitos?.trabalhista),
+          },
+          descricao_livre: form.assinaturaDescricaoLivre || '',
         },
-        descricao_livre: form.assinaturaDescricaoLivre || '',
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      }),
     };
 
-    const next = [novo, ...current];
-    localStorage.setItem(FINANCIAL_CLIENTS_KEY, JSON.stringify(next));
-    setFinancialClients(next);
-    setShowCreateModal(false);
-    toast.success('Cliente adicionado ao Financeiro.');
+    try {
+      const response = await api.post('/financial/clients', payload);
+      setFinancialClients((prev) => [mapFinancialFromApi(response.data), ...prev]);
+      setShowCreateModal(false);
+      toast.success('Cliente adicionado ao Financeiro.');
+    } catch (error) {
+      console.error('Erro ao criar cliente financeiro:', error);
+      toast.error('Não foi possível salvar no backend.');
+    }
   };
 
-  const updateField = (id, field, value) => {
-    const next = financialClients.map((item) => {
-      if (item.id !== id) return item;
-      const updated = { ...item, [field]: value, updated_at: new Date().toISOString() };
-      if (field === 'valor_boleto' || field === 'valor_desconto') {
-        updated.valor_com_desconto = Math.max(
-          0,
-          Number(field === 'valor_boleto' ? value : updated.valor_boleto || 0) -
-            Number(field === 'valor_desconto' ? value : updated.valor_desconto || 0),
-        );
-      }
-      return updated;
-    });
-    setFinancialClients(next);
-    localStorage.setItem(FINANCIAL_CLIENTS_KEY, JSON.stringify(next));
+  const updateField = async (id, field, value) => {
+    const item = financialClients.find((entry) => entry.id === id);
+    if (!item) return;
+    const patch = { [field]: value };
+    if (field === 'valor_boleto' || field === 'valor_desconto') {
+      const nextBoleto = Number(field === 'valor_boleto' ? value : item.valor_boleto || 0);
+      const nextDesconto = Number(field === 'valor_desconto' ? value : item.valor_desconto || 0);
+      patch.valor_com_desconto = Math.max(0, nextBoleto - nextDesconto);
+    }
+    try {
+      const response = await api.put(`/financial/clients/${id}`, patch);
+      const updated = mapFinancialFromApi(response.data);
+      setFinancialClients((prev) => prev.map((entry) => (entry.id === id ? updated : entry)));
+    } catch (error) {
+      console.error('Erro ao atualizar cliente financeiro:', error);
+      toast.error('Falha ao salvar alteração no backend.');
+    }
   };
 
   const filterOptions = [
@@ -462,13 +441,23 @@ const FinancialClients = () => {
     const totalComDesconto = filteredList.reduce((sum, item) => sum + Number(item.valor_com_desconto || 0), 0);
     const byCityMap = new Map();
     filteredList.forEach((item) => {
-      const city = item.cidade || cityByClientId.get(String(item.client_id)) || 'Sem cidade';
-      const current = byCityMap.get(city) || { totalReceber: 0, totalComDesconto: 0 };
+      const cityRaw = item.cidade || cityByClientId.get(String(item.client_id)) || 'Sem cidade';
+      const cityKey = canonicalCityKey(cityRaw) || 'sem-cidade';
+      const current = byCityMap.get(cityKey) || {
+        city: canonicalCityLabel(cityRaw),
+        totalReceber: 0,
+        totalComDesconto: 0,
+      };
       current.totalReceber += Number(item.valor_boleto || 0);
       current.totalComDesconto += Number(item.valor_com_desconto || 0);
-      byCityMap.set(city, current);
+      byCityMap.set(cityKey, current);
     });
-    const byCity = Array.from(byCityMap.entries()).map(([city, values]) => ({ city, ...values }));
+    const byCity = Array.from(byCityMap.entries()).map(([cityKey, values]) => ({
+      cityKey,
+      city: values.city,
+      totalReceber: values.totalReceber,
+      totalComDesconto: values.totalComDesconto,
+    }));
     return { totalReceber, totalComDesconto, byCity };
   }, [filteredList, cityByClientId]);
 
@@ -476,6 +465,40 @@ const FinancialClients = () => {
     () => filteredList.filter((item) => (item.status_pagamento || 'em_dia') !== 'pago'),
     [filteredList],
   );
+
+  const cityGroups = useMemo(() => {
+    const grouped = new Map();
+    filteredList.forEach((item) => {
+      const cityRaw = item.cidade || cityByClientId.get(String(item.client_id)) || 'Sem cidade';
+      const cityKey = canonicalCityKey(cityRaw) || 'sem-cidade';
+      const current = grouped.get(cityKey) || { key: cityKey, label: canonicalCityLabel(cityRaw), count: 0 };
+      current.count += 1;
+      grouped.set(cityKey, current);
+    });
+    return [{ key: 'todos', label: 'Todos', count: filteredList.length }, ...Array.from(grouped.values()).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))];
+  }, [filteredList, cityByClientId]);
+
+  const financialCardsByCity = useMemo(() => {
+    if (activeCityGroup === 'todos') return filteredList;
+    return filteredList.filter((item) => {
+      const cityRaw = item.cidade || cityByClientId.get(String(item.client_id)) || 'Sem cidade';
+      return (canonicalCityKey(cityRaw) || 'sem-cidade') === activeCityGroup;
+    });
+  }, [filteredList, activeCityGroup, cityByClientId]);
+
+  const financeRowsForList = useMemo(() => financialCardsByCity, [financialCardsByCity]);
+  const financeFullRows = useMemo(() => {
+    if (!allowedCitiesSet) return financialClients;
+    return financialClients.filter((item) =>
+      allowedCitiesSet.has(normalizeText(item.cidade || cityByClientId.get(String(item.client_id)) || '')),
+    );
+  }, [financialClients, allowedCitiesSet, cityByClientId]);
+
+  useEffect(() => {
+    if (!cityGroups.find((item) => item.key === activeCityGroup)) {
+      setActiveCityGroup('todos');
+    }
+  }, [cityGroups, activeCityGroup]);
 
   const selectedReportClient = useMemo(
     () => allClients.find((client) => String(client.id) === String(reportClientId)) || null,
@@ -601,7 +624,7 @@ const FinancialClients = () => {
             ))}
           </select>
         </div>
-        <div className="mt-3 flex flex-wrap gap-3 text-sm text-gray-200">
+      <div className="mt-3 flex flex-wrap gap-3 text-sm text-gray-200">
           <label className="inline-flex items-center gap-2">
             <input type="checkbox" checked={categoryFilters.isentos} onChange={(e) => setCategoryFilters((p) => ({ ...p, isentos: e.target.checked }))} />
             Clientes Isentos
@@ -618,6 +641,83 @@ const FinancialClients = () => {
             <input type="checkbox" checked={categoryFilters.semFuncionarios} onChange={(e) => setCategoryFilters((p) => ({ ...p, semFuncionarios: e.target.checked }))} />
             Clientes Sem Funcionarios
           </label>
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl border border-white/10 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">Lista de clientes financeiro</h2>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setFinancialListMode('detalhado')}
+                className={`rounded-md px-2.5 py-1 ${financialListMode === 'detalhado' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+              >
+                Detalhado
+              </button>
+              <button
+                type="button"
+                onClick={() => setFinancialListMode('resumido')}
+                className={`rounded-md px-2.5 py-1 ${financialListMode === 'resumido' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+              >
+                Resumido
+              </button>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-gray-300">
+              Ativa {financialCardsByCity.length}
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[180px,1fr]">
+          <aside className="space-y-1 rounded-xl border border-white/10 bg-black/20 p-2">
+            {cityGroups.map((group) => (
+              <button
+                key={group.key}
+                type="button"
+                onClick={() => setActiveCityGroup(group.key)}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                  activeCityGroup === group.key
+                    ? 'bg-red-600 text-white'
+                    : 'text-gray-200 hover:bg-white/10'
+                }`}
+              >
+                <span>{group.label}</span>
+                <span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[11px]">{group.count}</span>
+              </button>
+            ))}
+          </aside>
+
+          <div className="space-y-2">
+            {financialCardsByCity.map((item) => (
+              <button
+                key={`card-${item.id}`}
+                type="button"
+                onClick={() => {
+                  setFinancialViewTab('dados_financeiros');
+                  setSelectedFinancialClient(item);
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 text-left transition hover:border-white/20 hover:bg-white/10"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-white">{item.empresa_nome}</div>
+                  {financialListMode === 'detalhado' ? (
+                    <div className="mt-1 text-xs text-gray-400">{item.cnpj || 'Sem CNPJ'}</div>
+                  ) : null}
+                </div>
+                {financialListMode === 'detalhado' ? (
+                  <div className="ml-4 shrink-0 text-sm font-medium text-emerald-300">
+                    {formatCurrency(item.valor_com_desconto || 0)}
+                  </div>
+                ) : null}
+              </button>
+            ))}
+            {financialCardsByCity.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/15 bg-black/20 p-4 text-sm text-gray-400">
+                Nenhum cliente encontrado para esta cidade.
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -690,111 +790,192 @@ const FinancialClients = () => {
       </div>
 
       <div className="glass rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <p className="text-sm text-gray-300">
+            Lista principal do financeiro: <span className="font-semibold text-white">{financeRowsForList.length}</span> cliente(s)
+          </p>
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setFinancialListMode('detalhado')}
+              className={`rounded-md px-2.5 py-1 ${financialListMode === 'detalhado' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+            >
+              Detalhado
+            </button>
+            <button
+              type="button"
+              onClick={() => setFinancialListMode('resumido')}
+              className={`rounded-md px-2.5 py-1 ${financialListMode === 'resumido' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+            >
+              Resumido
+            </button>
+          </div>
+        </div>
         <div className="overflow-x-auto">
-          <table className="table-futuristic w-full min-w-[1600px]">
+          <table className={`table-futuristic w-full ${financialListMode === 'detalhado' ? 'min-w-[1600px]' : 'min-w-[520px]'}`}>
             <thead>
               <tr className="border-b border-red-600/30">
                 <th className="text-left p-4 text-gray-300 font-semibold">Empresa</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Valor boleto</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Valor desconto</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Valor com desconto</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Data vencimento</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Qtd. funcionarios</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Status fiscal</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Responsavel financeiro</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Tipo honorario</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Tipo pagamento</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Capacidade de pagamento</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Pagamento especial</th>
+                {financialListMode === 'detalhado' ? (
+                  <>
+                    <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Valor boleto</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Valor desconto</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Valor com desconto</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Data vencimento</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Qtd. funcionarios</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Status fiscal</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Responsavel financeiro</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Tipo honorario</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Tipo pagamento</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Capacidade de pagamento</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Pagamento especial</th>
+                  </>
+                ) : null}
                 <th className="text-left p-4 text-gray-300 font-semibold">Acoes</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="14" className="text-center p-8 text-gray-400">Carregando...</td>
+                  <td colSpan={financialListMode === 'detalhado' ? 14 : 2} className="text-center p-8 text-gray-400">Carregando...</td>
                 </tr>
-              ) : filteredList.length === 0 ? (
+              ) : financeRowsForList.length === 0 ? (
                 <tr>
-                  <td colSpan="14" className="text-center p-8 text-gray-400">Nenhum cliente financeiro encontrado.</td>
+                  <td colSpan={financialListMode === 'detalhado' ? 14 : 2} className="text-center p-8 text-gray-400">Nenhum cliente financeiro encontrado.</td>
                 </tr>
               ) : (
-                filteredList.map((item) => (
+                financeRowsForList.map((item) => (
                   <tr key={item.id} className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors">
                     <td className="p-4 text-white font-medium">{item.empresa_nome}</td>
-                    <td className="p-4 text-gray-300 text-xs font-mono">{item.cnpj || '-'}</td>
+                    {financialListMode === 'detalhado' ? (
+                      <>
+                        <td className="p-4 text-gray-300 text-xs font-mono">{item.cnpj || '-'}</td>
+                        <td className="p-4">
+                          <input
+                            type="number"
+                            value={item.valor_boleto || 0}
+                            onChange={(e) => updateField(item.id, 'valor_boleto', Number(e.target.value || 0))}
+                            className="w-28 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <input
+                            type="number"
+                            value={item.valor_desconto || 0}
+                            onChange={(e) => updateField(item.id, 'valor_desconto', Number(e.target.value || 0))}
+                            className="w-24 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                          />
+                        </td>
+                        <td className="p-4 text-emerald-300 text-sm font-semibold">{formatCurrency(item.valor_com_desconto || 0)}</td>
+                        <td className="p-4">
+                          <input
+                            type="date"
+                            value={item.data_vencimento || ''}
+                            onChange={(e) => updateField(item.id, 'data_vencimento', e.target.value)}
+                            className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <input
+                            type="number"
+                            value={item.quantidade_funcionarios || 0}
+                            onChange={(e) => updateField(item.id, 'quantidade_funcionarios', Number(e.target.value || 0))}
+                            className="w-20 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                            item.status_fiscal === 'com_movimento'
+                              ? 'bg-green-600/20 text-green-300 border-green-600/30'
+                              : 'bg-zinc-600/20 text-zinc-300 border-zinc-600/30'
+                          }`}>
+                            {item.status_fiscal === 'com_movimento' ? 'Com movimento' : 'Sem movimento'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <input
+                            value={item.responsavel_financeiro || ''}
+                            onChange={(e) => updateField(item.id, 'responsavel_financeiro', e.target.value)}
+                            className="w-40 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <span className="text-xs text-gray-200">
+                            {item.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-xs text-gray-200">{item.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorario'}</td>
+                        <td className="p-4">
+                          <select
+                            value={item.capacidade_pagamento || 'paga_em_dia'}
+                            onChange={(e) => updateField(item.id, 'capacidade_pagamento', e.target.value)}
+                            className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                          >
+                            {CAPACIDADE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-4">
+                          {item.forma_pagamento_especial
+                            ? <span className="text-xs text-amber-300">{item.tipo_pagamento_especial || 'Especial'}</span>
+                            : <span className="text-xs text-gray-400">Padrao</span>}
+                        </td>
+                      </>
+                    ) : null}
                     <td className="p-4">
-                      <input
-                        type="number"
-                        value={item.valor_boleto || 0}
-                        onChange={(e) => updateField(item.id, 'valor_boleto', Number(e.target.value || 0))}
-                        className="w-28 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      />
-                    </td>
-                    <td className="p-4">
-                      <input
-                        type="number"
-                        value={item.valor_desconto || 0}
-                        onChange={(e) => updateField(item.id, 'valor_desconto', Number(e.target.value || 0))}
-                        className="w-24 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      />
-                    </td>
-                    <td className="p-4 text-emerald-300 text-sm font-semibold">{formatCurrency(item.valor_com_desconto || 0)}</td>
-                    <td className="p-4">
-                      <input
-                        type="date"
-                        value={item.data_vencimento || ''}
-                        onChange={(e) => updateField(item.id, 'data_vencimento', e.target.value)}
-                        className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      />
-                    </td>
-                    <td className="p-4">
-                      <input
-                        type="number"
-                        value={item.quantidade_funcionarios || 0}
-                        onChange={(e) => updateField(item.id, 'quantidade_funcionarios', Number(e.target.value || 0))}
-                        className="w-20 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      />
-                    </td>
-                    <td className="p-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                        item.status_fiscal === 'com_movimento'
-                          ? 'bg-green-600/20 text-green-300 border-green-600/30'
-                          : 'bg-zinc-600/20 text-zinc-300 border-zinc-600/30'
-                      }`}>
-                        {item.status_fiscal === 'com_movimento' ? 'Com movimento' : 'Sem movimento'}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <input
-                        value={item.responsavel_financeiro || ''}
-                        onChange={(e) => updateField(item.id, 'responsavel_financeiro', e.target.value)}
-                        className="w-40 bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      />
-                    </td>
-                    <td className="p-4">
-                      <span className="text-xs text-gray-200">
-                        {item.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-xs text-gray-200">{item.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorario'}</td>
-                    <td className="p-4">
-                      <select
-                        value={item.capacidade_pagamento || 'paga_em_dia'}
-                        onChange={(e) => updateField(item.id, 'capacidade_pagamento', e.target.value)}
-                        className="bg-black/30 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFinancialViewTab('dados_financeiros');
+                          setSelectedFinancialClient(item);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-white/10"
                       >
-                        {CAPACIDADE_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                        <Eye className="w-3.5 h-3.5" />
+                        Dados
+                      </button>
                     </td>
-                    <td className="p-4">
-                      {item.forma_pagamento_especial
-                        ? <span className="text-xs text-amber-300">{item.tipo_pagamento_especial || 'Especial'}</span>
-                        : <span className="text-xs text-gray-400">Padrao</span>}
-                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <p className="text-sm text-gray-300">
+            Lista completa dos clientes do financeiro: <span className="font-semibold text-white">{financeFullRows.length}</span>
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="table-futuristic w-full min-w-[920px]">
+            <thead>
+              <tr className="border-b border-red-600/30">
+                <th className="text-left p-4 text-gray-300 font-semibold">Empresa</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Cidade</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Valor com desconto</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Responsável financeiro</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {financeFullRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center p-8 text-gray-400">Nenhum cliente financeiro cadastrado.</td>
+                </tr>
+              ) : (
+                financeFullRows.map((item) => (
+                  <tr key={`full-${item.id}`} className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors">
+                    <td className="p-4 text-white font-medium">{item.empresa_nome}</td>
+                    <td className="p-4 text-gray-300 text-xs font-mono">{item.cnpj || '-'}</td>
+                    <td className="p-4 text-gray-300">{item.cidade || cityByClientId.get(String(item.client_id)) || '-'}</td>
+                    <td className="p-4 text-emerald-300 text-sm font-semibold">{formatCurrency(item.valor_com_desconto || 0)}</td>
+                    <td className="p-4 text-gray-200 text-sm">{item.responsavel_financeiro || '-'}</td>
                     <td className="p-4">
                       <button
                         type="button"
@@ -1071,7 +1252,7 @@ const FinancialClients = () => {
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-gray-400">
-                  Referência de mercado digital por hora e escopo (base mock para desenvolvimento).
+                  Referência de mercado digital por hora e escopo.
                 </p>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <CalcField

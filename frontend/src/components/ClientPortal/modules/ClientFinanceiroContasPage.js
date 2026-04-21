@@ -99,10 +99,16 @@ const ClientFinanceiroContasPage = ({ clienteId }) => {
                   </div>
 
                   <div className="flex min-w-[220px] flex-col gap-2">
-                    <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                    <button
+                      onClick={() => window.alert(`Abrindo comprovantes de: ${conta.descricao}`)}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10"
+                    >
                       Ver comprovantes
                     </button>
-                    <button className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20">
+                    <button
+                      onClick={() => window.alert(`Solicitacao de atendimento criada para: ${conta.descricao}`)}
+                      className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-500/20"
+                    >
                       Solicitar atendimento
                     </button>
                   </div>

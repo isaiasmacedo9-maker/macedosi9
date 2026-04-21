@@ -89,10 +89,16 @@ const ClientDividaAtivaPage = ({ clienteId }) => {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                    <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                    <button
+                      onClick={() => window.alert(`Abrindo detalhamento da divida: ${divida.descricao}`)}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10"
+                    >
                       Ver detalhamento
                     </button>
-                    <button className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-100 hover:bg-rose-500/20">
+                    <button
+                      onClick={() => window.alert(`Solicitacao de regularizacao enviada para: ${divida.descricao}`)}
+                      className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-100 hover:bg-rose-500/20"
+                    >
                       Solicitar regularização
                     </button>
                   </div>

@@ -209,6 +209,10 @@ class FinancialClient(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     empresa_id: str
     empresa: str
+    client_id: Optional[str] = None
+    empresa_nome: Optional[str] = None
+    cnpj: Optional[str] = None
+    cidade: Optional[str] = None
     valor_com_desconto: float
     valor_boleto: float
     dia_vencimento: int = Field(..., ge=1, le=31)
@@ -217,7 +221,14 @@ class FinancialClient(BaseModel):
     contas_pagamento: List[str]
     tipo_pagamento: TipoPagamento
     forma_pagamento_especial: Optional[str] = None
+    tipo_pagamento_especial: Optional[str] = None
     tipo_empresa: TipoEmpresa
+    responsavel_financeiro: Optional[str] = None
+    quantidade_funcionarios: Optional[int] = 0
+    status_fiscal: Optional[str] = "sem_movimento"
+    capacidade_pagamento: Optional[str] = "paga_em_dia"
+    data_vencimento: Optional[str] = None
+    valor_desconto: Optional[float] = 0.0
     ultimo_pagamento: Optional[date] = None
     status_pagamento: StatusPagamento = StatusPagamento.EM_DIA
     observacoes: Optional[str] = None
@@ -227,6 +238,10 @@ class FinancialClient(BaseModel):
 class FinancialClientCreate(BaseModel):
     empresa_id: str
     empresa: str
+    client_id: Optional[str] = None
+    empresa_nome: Optional[str] = None
+    cnpj: Optional[str] = None
+    cidade: Optional[str] = None
     valor_com_desconto: float
     valor_boleto: float
     dia_vencimento: int = Field(..., ge=1, le=31)
@@ -235,20 +250,38 @@ class FinancialClientCreate(BaseModel):
     contas_pagamento: List[str]
     tipo_pagamento: TipoPagamento
     forma_pagamento_especial: Optional[str] = None
+    tipo_pagamento_especial: Optional[str] = None
     tipo_empresa: TipoEmpresa
+    responsavel_financeiro: Optional[str] = None
+    quantidade_funcionarios: Optional[int] = 0
+    status_fiscal: Optional[str] = "sem_movimento"
+    capacidade_pagamento: Optional[str] = "paga_em_dia"
+    data_vencimento: Optional[str] = None
+    valor_desconto: Optional[float] = 0.0
     observacoes: Optional[str] = None
 
 class FinancialClientUpdate(BaseModel):
+    client_id: Optional[str] = None
+    empresa_nome: Optional[str] = None
+    cnpj: Optional[str] = None
+    cidade: Optional[str] = None
     valor_com_desconto: Optional[float] = None
     valor_boleto: Optional[float] = None
+    valor_desconto: Optional[float] = None
+    data_vencimento: Optional[str] = None
     dia_vencimento: Optional[int] = Field(None, ge=1, le=31)
     tipo_honorario: Optional[TipoHonorario] = None
     empresa_individual_grupo: Optional[EmpresaTipo] = None
     contas_pagamento: Optional[List[str]] = None
     tipo_pagamento: Optional[TipoPagamento] = None
     forma_pagamento_especial: Optional[str] = None
+    tipo_pagamento_especial: Optional[str] = None
     tipo_empresa: Optional[TipoEmpresa] = None
     status_pagamento: Optional[StatusPagamento] = None
+    responsavel_financeiro: Optional[str] = None
+    quantidade_funcionarios: Optional[int] = None
+    status_fiscal: Optional[str] = None
+    capacidade_pagamento: Optional[str] = None
     observacoes: Optional[str] = None
 
 # Modelos para filtros e busca

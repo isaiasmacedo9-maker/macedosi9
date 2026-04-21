@@ -4,6 +4,18 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const OS_MODELS_KEY = 'mock_comercial_os_models_v1';
 const COMMERCIAL_LOCAL_ORDERS_KEY = 'mock_comercial_ordens_servico_v1';
+const COMMERCIAL_LOCAL_SERVICES_KEY = 'mock_comercial_servicos_v1';
+const COMMERCIAL_LOCAL_CONTRACTS_KEY = 'mock_comercial_contratos_v1';
+const SHARED_SERVICES_KEY = 'mock_internal_services';
+
+const readArray = (key) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const Comercial = () => {
   const { user } = useAuth();
@@ -83,9 +95,12 @@ const Comercial = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setClientes(data);
+      const backendClients = Array.isArray(data?.clients) ? data.clients : (Array.isArray(data) ? data : []);
+      const localClients = readArray('mock_admin_clients_v1');
+      setClientes([...backendClients, ...localClients]);
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
+      setClientes(readArray('mock_admin_clients_v1'));
     }
   };
 
@@ -96,13 +111,25 @@ const Comercial = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setUsuarios(data);
+      setUsuarios(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
+      setUsuarios(readArray('mock_users_management_v1'));
     }
   };
 
   const loadServicos = async () => {
+    const shared = readArray(SHARED_SERVICES_KEY).map((item) => ({
+      id: item.id,
+      numero: item.numero || `SVC-${String(item.id).slice(-6)}`,
+      empresa_nome: item.empresa_nome || '-',
+      tipo_servico: item.tipo_servico || item.titulo || '-',
+      valor_total: Number(item.valor_total || 0),
+      status: item.status || 'contratado',
+      data_contratacao: item.data_contratacao || item.created_at || new Date().toISOString(),
+      origem: 'shared',
+    }));
+    const localCommercial = readArray(COMMERCIAL_LOCAL_SERVICES_KEY);
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
@@ -110,9 +137,23 @@ const Comercial = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setServicos(data);
+      const backend = Array.isArray(data) ? data : [];
+      const merged = [...localCommercial, ...backend, ...shared];
+      const unique = new Map();
+      merged.forEach((item) => {
+        if (!item?.id) return;
+        if (!unique.has(String(item.id))) unique.set(String(item.id), item);
+      });
+      setServicos(Array.from(unique.values()));
     } catch (error) {
       console.error('Erro ao carregar serviços:', error);
+      const merged = [...localCommercial, ...shared];
+      const unique = new Map();
+      merged.forEach((item) => {
+        if (!item?.id) return;
+        if (!unique.has(String(item.id))) unique.set(String(item.id), item);
+      });
+      setServicos(Array.from(unique.values()));
     } finally {
       setLoading(false);
     }
@@ -147,6 +188,7 @@ const Comercial = () => {
   };
 
   const loadContratos = async () => {
+    const localContracts = readArray(COMMERCIAL_LOCAL_CONTRACTS_KEY);
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
@@ -154,24 +196,41 @@ const Comercial = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setContratos(data);
+      const backend = Array.isArray(data) ? data : [];
+      setContratos([...localContracts, ...backend]);
     } catch (error) {
       console.error('Erro ao carregar contratos:', error);
+      setContratos(localContracts);
     } finally {
       setLoading(false);
     }
   };
 
   const loadVencimentos = async () => {
+    const getLocalVencimentos = () => {
+      const base = readArray(COMMERCIAL_LOCAL_CONTRACTS_KEY);
+      const now = new Date();
+      const diffInDays = (dateString) => {
+        const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) return 9999;
+        return Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      };
+      return {
+        vencendo_30_dias: base.filter((item) => diffInDays(item.data_vencimento) <= 30 && diffInDays(item.data_vencimento) >= 0).length,
+        vencendo_90_dias: base.filter((item) => diffInDays(item.data_vencimento) <= 90 && diffInDays(item.data_vencimento) >= 0).length,
+        vencendo_180_dias: base.filter((item) => diffInDays(item.data_vencimento) <= 180 && diffInDays(item.data_vencimento) >= 0).length,
+      };
+    };
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/comercial/contratos/vencimentos`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setVencimentos(data);
+      setVencimentos(data || getLocalVencimentos());
     } catch (error) {
       console.error('Erro ao carregar vencimentos:', error);
+      setVencimentos(getLocalVencimentos());
     }
   };
 
@@ -268,6 +327,125 @@ const Comercial = () => {
     } catch (error) {
       console.error('Erro ao criar contrato:', error);
       alert('Erro ao criar contrato');
+    }
+  };
+
+  const handleCreateServicoLinked = async (e) => {
+    e.preventDefault();
+    const selectedClient = clientes.find((item) => String(item.id) === String(servicoForm.empresa_id));
+    const now = new Date();
+    const localId = `comercial-svc-${now.getTime()}`;
+    const numero = `SVC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getTime()).slice(-4)}`;
+    const valorTotal = Number(servicoForm.valor_servico || 0) - Number(servicoForm.valor_desconto || 0);
+
+    const commercialItem = {
+      id: localId,
+      numero,
+      empresa_id: servicoForm.empresa_id || '',
+      empresa_nome: selectedClient?.nome_empresa || selectedClient?.nome_fantasia || 'Sem empresa',
+      tipo_servico: servicoForm.tipo_servico,
+      descricao: servicoForm.descricao || '',
+      valor_servico: Number(servicoForm.valor_servico || 0),
+      valor_desconto: Number(servicoForm.valor_desconto || 0),
+      valor_total: Math.max(0, valorTotal),
+      responsavel_id: servicoForm.responsavel_id || '',
+      data_contratacao: servicoForm.data_contratacao || now.toISOString(),
+      status: 'contratado',
+      origem: 'comercial_local',
+      created_at: now.toISOString(),
+    };
+
+    const sharedService = {
+      id: localId,
+      numero,
+      titulo: servicoForm.tipo_servico,
+      empresa_id: commercialItem.empresa_id,
+      empresa_nome: commercialItem.empresa_nome,
+      tipo_servico: servicoForm.tipo_servico,
+      descricao: servicoForm.descricao || 'Criado pelo modulo comercial.',
+      setor: 'Comercial',
+      status: 'pendente',
+      prioridade: 'media',
+      created_at: now.toISOString(),
+      data_prazo: servicoForm.data_conclusao_prevista || servicoForm.data_inicio_previsto || now.toISOString(),
+      mock_origin: 'comercial_manual',
+      responsavel_id: servicoForm.responsavel_id || '',
+      valor_total: Math.max(0, valorTotal),
+      criado_por: {
+        id: user?.id || user?.email || 'comercial-user',
+        nome: user?.name || user?.email || 'Comercial',
+      },
+    };
+
+    const orderItem = {
+      id: `ordem-${now.getTime()}`,
+      numero: `OS-${String(now.getTime()).slice(-6)}`,
+      empresa_nome: commercialItem.empresa_nome,
+      tipo_servico: commercialItem.tipo_servico,
+      status: 'aberta',
+      executor_nome: '',
+      origem: 'auto_from_service',
+      servico_id: localId,
+      created_at: now.toISOString(),
+    };
+
+    localStorage.setItem(COMMERCIAL_LOCAL_SERVICES_KEY, JSON.stringify([commercialItem, ...readArray(COMMERCIAL_LOCAL_SERVICES_KEY)]));
+    localStorage.setItem(SHARED_SERVICES_KEY, JSON.stringify([sharedService, ...readArray(SHARED_SERVICES_KEY)]));
+    localStorage.setItem(COMMERCIAL_LOCAL_ORDERS_KEY, JSON.stringify([orderItem, ...readArray(COMMERCIAL_LOCAL_ORDERS_KEY)]));
+
+    setServicos((prev) => [commercialItem, ...prev]);
+    setOrdens((prev) => [orderItem, ...prev]);
+    setShowForm(false);
+    resetServicoForm();
+    alert('Serviço criado com sucesso e vinculado ao módulo de Processos/Serviços.');
+
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/api/comercial/servicos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(servicoForm)
+      });
+    } catch (error) {
+      console.error('Fallback local acionado para criação de serviço:', error);
+    }
+  };
+
+  const handleCreateContratoLinked = async (e) => {
+    e.preventDefault();
+    const selectedClient = clientes.find((item) => String(item.id) === String(contratoForm.empresa_id));
+    const now = new Date();
+    const contractItem = {
+      ...contratoForm,
+      id: `contrato-${now.getTime()}`,
+      numero: `CTR-${String(now.getTime()).slice(-6)}`,
+      empresa_nome: selectedClient?.nome_empresa || selectedClient?.nome_fantasia || 'Sem empresa',
+      status: 'ativo',
+      created_at: now.toISOString(),
+    };
+
+    localStorage.setItem(COMMERCIAL_LOCAL_CONTRACTS_KEY, JSON.stringify([contractItem, ...readArray(COMMERCIAL_LOCAL_CONTRACTS_KEY)]));
+    setContratos((prev) => [contractItem, ...prev]);
+    setShowForm(false);
+    resetContratoForm();
+    await loadVencimentos();
+    alert('Contrato criado com sucesso.');
+
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/api/comercial/contratos`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(contratoForm)
+      });
+    } catch (error) {
+      console.error('Fallback local acionado para criação de contrato:', error);
     }
   };
 
@@ -681,7 +859,7 @@ const Comercial = () => {
             </h2>
 
             {formType === 'servico' ? (
-              <form onSubmit={handleCreateServico} className="space-y-4">
+              <form onSubmit={handleCreateServicoLinked} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">Empresa *</label>
@@ -821,7 +999,7 @@ const Comercial = () => {
                 </div>
               </form>
             ) : (
-              <form onSubmit={handleCreateContrato} className="space-y-4">
+              <form onSubmit={handleCreateContratoLinked} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">Empresa *</label>

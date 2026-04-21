@@ -9,13 +9,32 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
 from database_sql import AsyncSessionLocal
 from models_sql import UserSQL, ClientSQL
-from models_services import ServicoSQL, ComentarioServicoSQL
+from models_services import ServicoSQL, ComentarioServicoSQL, ServicesConfigurationSQL
 from auth import get_current_user
 from crud_sql import convert_to_dict, json_dumps, json_loads
 from models.user import UserResponse
 import json
 
 router = APIRouter(prefix="/services", tags=["Services"])
+
+
+def _normalize_sector(value: Optional[str]) -> str:
+    raw = str(value or "").strip().lower()
+    if "todos" in raw:
+        return "todos"
+    if "fisc" in raw:
+        return "fiscal"
+    if "finan" in raw:
+        return "financeiro"
+    if "trabalh" in raw:
+        return "trabalhista"
+    if "comer" in raw:
+        return "comercial"
+    if "contad" in raw or "societ" in raw:
+        return "contadores"
+    if "atend" in raw:
+        return "atendimento"
+    return raw
 
 # ==================== MODELS ====================
 
@@ -69,6 +88,13 @@ class ServicoResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
+class ServicesConfigurationPayload(BaseModel):
+    departments: Optional[List[dict]] = []
+    membersByDepartment: Optional[dict] = {}
+    assignmentsByDepartment: Optional[dict] = {}
+    activityLogs: Optional[List[dict]] = []
+
 # ==================== HELPER FUNCTIONS ====================
 
 def gerar_numero_servico(ano: int, sequencia: int) -> str:
@@ -106,12 +132,83 @@ def user_can_access_service(user: UserResponse, servico: ServicoSQL) -> bool:
         return False
     
     # Verificar setor
-    if servico.setor not in [p['setor'] for p in user.permissoes]:
+    setores_permitidos = {_normalize_sector(p.get('setor')) for p in (user.permissoes or [])}
+    if 'todos' not in setores_permitidos and _normalize_sector(servico.setor) not in setores_permitidos:
         return False
     
     return True
 
 # ==================== ROUTES ====================
+
+@router.get("/configuration")
+async def get_services_configuration(
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Retorna configuração persistida do módulo de serviços."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(ServicesConfigurationSQL).where(ServicesConfigurationSQL.config_key == "default")
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return {
+                "departments": [],
+                "membersByDepartment": {},
+                "assignmentsByDepartment": {},
+                "activityLogs": [],
+            }
+
+        try:
+            payload = json.loads(row.payload_json or "{}")
+        except Exception:
+            payload = {}
+
+        return {
+            "departments": payload.get("departments", []),
+            "membersByDepartment": payload.get("membersByDepartment", {}),
+            "assignmentsByDepartment": payload.get("assignmentsByDepartment", {}),
+            "activityLogs": payload.get("activityLogs", []),
+        }
+
+
+@router.put("/configuration")
+async def update_services_configuration(
+    payload: ServicesConfigurationPayload,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Atualiza configuração persistida do módulo de serviços (admin)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar configurações de serviços")
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(ServicesConfigurationSQL).where(ServicesConfigurationSQL.config_key == "default")
+        )
+        row = result.scalar_one_or_none()
+        serialized = json_dumps(
+            {
+                "departments": payload.departments or [],
+                "membersByDepartment": payload.membersByDepartment or {},
+                "assignmentsByDepartment": payload.assignmentsByDepartment or {},
+                "activityLogs": payload.activityLogs or [],
+            }
+        )
+
+        if row is None:
+            row = ServicesConfigurationSQL(
+                config_key="default",
+                payload_json=serialized,
+                updated_by_id=current_user.id,
+                updated_by_name=current_user.name,
+            )
+            session.add(row)
+        else:
+            row.payload_json = serialized
+            row.updated_by_id = current_user.id
+            row.updated_by_name = current_user.name
+
+        await session.commit()
+        return {"message": "Configurações de serviços salvas com sucesso"}
 
 @router.get("/dashboard")
 async def get_dashboard(current_user: UserResponse = Depends(get_current_user)):
@@ -124,10 +221,14 @@ async def get_dashboard(current_user: UserResponse = Depends(get_current_user)):
         if 'Todas' not in current_user.allowed_cities:
             filters.append(ServicoSQL.cidade.in_(current_user.allowed_cities))
         
-        # Filtro por setor
-        setores_permitidos = [p['setor'] for p in current_user.permissoes]
-        if setores_permitidos:
-            filters.append(ServicoSQL.setor.in_(setores_permitidos))
+        # Filtro por setor (normalizado para evitar diferença de grafia/case)
+        setores_permitidos = {
+            _normalize_sector((p or {}).get("setor"))
+            for p in (current_user.permissoes or [])
+            if (p or {}).get("setor")
+        }
+        if setores_permitidos and "todos" not in setores_permitidos:
+            filters.append(func.lower(ServicoSQL.setor).in_(setores_permitidos))
         
         # Novas tarefas (últimas 7 dias)
         from datetime import timedelta
@@ -212,15 +313,18 @@ async def list_services(
         if 'Todas' not in current_user.allowed_cities:
             filters.append(ServicoSQL.cidade.in_(current_user.allowed_cities))
         
-        setores_permitidos = [p['setor'] for p in current_user.permissoes]
-        if setores_permitidos:
-            filters.append(ServicoSQL.setor.in_(setores_permitidos))
+        setores_permitidos = {
+            _normalize_sector(p.get('setor'))
+            for p in (current_user.permissoes or [])
+        }
+        if setores_permitidos and 'todos' not in setores_permitidos:
+            filters.append(func.lower(ServicoSQL.setor).in_(setores_permitidos))
         
         # Filtros da requisição
         if status:
             filters.append(ServicoSQL.status == status)
         if setor:
-            filters.append(ServicoSQL.setor == setor)
+            filters.append(func.lower(ServicoSQL.setor) == _normalize_sector(setor))
         if cidade:
             filters.append(ServicoSQL.cidade == cidade)
         if responsavel_id:

@@ -20,6 +20,7 @@ import {
   listAcademyModels,
   updateAcademyModel,
 } from './academyProcessService';
+import api from '../../config/api';
 import './MacedoAcademyDark.css';
 
 const MODELS_KEY = 'mock_macedo_academy_process_models_v1';
@@ -98,6 +99,7 @@ const normalizeSectorKey = (value = '') => {
 const getRegimeChip = (regimeId) => REGIME_OPTIONS.find((item) => item.id === regimeId)?.chip || regimeId;
 const getResponsibleLabel = (id) => RESPONSIBLE_OPTIONS.find((item) => item.id === id)?.label || 'Responsavel do cliente';
 const getPriorityLabel = (id) => PRIORITY_OPTIONS.find((item) => item.id === id)?.label || 'Todos';
+const getExceptionItemId = (item) => (typeof item === 'string' ? item : item?.id);
 const toIsoDate = (value) => {
   if (!value) return null;
   const parsed = new Date(value);
@@ -152,6 +154,7 @@ const toModelDraft = (model) => {
     deadline: {
       type: model?.prazoConfig?.tipo || 'data_mensal_fixa',
       fixedDay: Number(model?.prazoConfig?.diaFixo || 20),
+      estimatedDays: Number(model?.prazoConfig?.tempoEstimadoDias || 5),
       competence: model?.prazoConfig?.competencia || 'mes_prazo',
       useGoal: !!model?.prazoConfig?.usarPrazoMeta,
       goalDays: Number(model?.prazoConfig?.diasAntecedencia || 5),
@@ -218,6 +221,7 @@ const draftToModel = (draft, previousModel = null) => {
     prazoConfig: {
       tipo: draft.deadline.type,
       diaFixo: draft.deadline.fixedDay,
+      tempoEstimadoDias: Number(draft.deadline.estimatedDays || 0),
       competencia: draft.deadline.competence,
       usarPrazoMeta: draft.deadline.useGoal,
       diasAntecedencia: draft.deadline.goalDays,
@@ -238,6 +242,7 @@ const EmptyState = ({ text }) => (
 
 const MacedoAcademy = () => {
   const [models, setModels] = useState(() => hydrateProcessModels(accountingServiceProcessModels));
+  const [allClientsCatalog, setAllClientsCatalog] = useState(MOCK_CLIENTS);
   const [realProcesses, setRealProcesses] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -282,6 +287,34 @@ const MacedoAcademy = () => {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    const loadClients = async () => {
+      try {
+        const response = await api.get('/clients', { params: { limit: 5000 } });
+        const rows = Array.isArray(response.data?.clients) ? response.data.clients : Array.isArray(response.data) ? response.data : [];
+        const normalized = rows
+          .map((item, index) => ({
+            id: item.id || item.client_id || `client-${index}`,
+            nome: item.nome || item.name || item.razao_social || item.fantasy_name || '',
+            cnpj: item.cnpj || item.documento || '',
+            regime: item.regime || 'simples_nacional',
+          }))
+          .filter((item) => item.nome);
+        if (mounted && normalized.length) {
+          setAllClientsCatalog(normalized);
+        }
+      } catch {
+        if (mounted) setAllClientsCatalog(MOCK_CLIENTS);
+      }
+    };
+
+    loadClients();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(MODELS_KEY, JSON.stringify(models));
   }, [models]);
 
@@ -305,10 +338,47 @@ const MacedoAcademy = () => {
     });
   }, [models, search, regimeFilter, departmentFilter]);
 
+  const normalizeExceptionEntry = (entry) => {
+    if (!entry) return null;
+    if (typeof entry === 'string') {
+      const found = allClientsCatalog.find((client) => client.id === entry);
+      return found || { id: entry, nome: entry, cnpj: '' };
+    }
+    if (!entry.id) return null;
+    const found = allClientsCatalog.find((client) => client.id === entry.id);
+    return found || {
+      id: entry.id,
+      nome: entry.nome || entry.name || entry.id,
+      cnpj: entry.cnpj || '',
+      regime: entry.regime || 'simples_nacional',
+    };
+  };
+
+  const normalizeDraftExceptions = (incomingDraft) => {
+    if (!incomingDraft) return incomingDraft;
+    const added = Array.isArray(incomingDraft?.clientsExceptions?.added)
+      ? incomingDraft.clientsExceptions.added.map(normalizeExceptionEntry).filter(Boolean)
+      : [];
+    const removed = Array.isArray(incomingDraft?.clientsExceptions?.removed)
+      ? incomingDraft.clientsExceptions.removed
+          .map(normalizeExceptionEntry)
+          .filter((item) => item && !added.some((addedItem) => addedItem.id === item.id))
+      : [];
+
+    return {
+      ...incomingDraft,
+      clientsExceptions: {
+        ...(incomingDraft.clientsExceptions || {}),
+        added,
+        removed,
+      },
+    };
+  };
+
   const openEditor = (model) => {
     setSelectedId(model.id);
     setIsCreateMode(false);
-    setDraft(toModelDraft(model));
+    setDraft(normalizeDraftExceptions(toModelDraft(model)));
     setDrawerTab('regimes');
     setIsHeaderActionsOpen(false);
     setIsDrawerOpen(true);
@@ -339,7 +409,7 @@ const MacedoAcademy = () => {
     };
     setSelectedId('');
     setIsCreateMode(true);
-    setDraft(toModelDraft(draftModel));
+    setDraft(normalizeDraftExceptions(toModelDraft(draftModel)));
     setDrawerTab('regimes');
     setIsHeaderActionsOpen(false);
     setIsDrawerOpen(true);
@@ -425,16 +495,19 @@ const MacedoAcademy = () => {
     });
   };
 
-  const addClientException = (client) => {
+  const addClientException = (client, targetView = 'adicionados') => {
     setDraft((current) => {
       if (!current) return current;
-      const exists = current.clientsExceptions.added.some((item) => item.id === client.id);
+      const sourceList = Array.isArray(current.clientsExceptions[targetView]) ? current.clientsExceptions[targetView] : [];
+      const exists = sourceList.some((item) => getExceptionItemId(item) === client.id);
       if (exists) return current;
+      const oppositeView = targetView === 'adicionados' ? 'removidos' : 'adicionados';
       return {
         ...current,
         clientsExceptions: {
           ...current.clientsExceptions,
-          added: [...current.clientsExceptions.added, client],
+          [targetView]: [...sourceList, client],
+          [oppositeView]: (current.clientsExceptions[oppositeView] || []).filter((item) => getExceptionItemId(item) !== client.id),
         },
       };
     });
@@ -447,7 +520,7 @@ const MacedoAcademy = () => {
         ...current,
         clientsExceptions: {
           ...current.clientsExceptions,
-          [source]: current.clientsExceptions[source].filter((item) => item.id !== clientId),
+          [source]: (current.clientsExceptions[source] || []).filter((item) => getExceptionItemId(item) !== clientId),
         },
       };
     });
@@ -704,9 +777,16 @@ const MacedoAcademy = () => {
   const selectedImportPreview = importableTemplates.find((item) => item.id === importPreviewId) || null;
   const clientsForExceptionSearch = useMemo(() => {
     const term = normalizeText(draft?.clientsExceptions?.search || '');
-    if (!term) return MOCK_CLIENTS;
-    return MOCK_CLIENTS.filter((item) => normalizeText(item.nome).includes(term) || normalizeText(item.cnpj).includes(term));
-  }, [draft?.clientsExceptions?.search]);
+    if (!term) return allClientsCatalog;
+    return allClientsCatalog.filter((item) => normalizeText(item.nome).includes(term) || normalizeText(item.cnpj).includes(term));
+  }, [draft?.clientsExceptions?.search, allClientsCatalog]);
+  const activeExceptionIds = useMemo(() => {
+    const activeView = draft?.clientsExceptions?.activeView;
+    const list = Array.isArray(activeView ? draft?.clientsExceptions?.[activeView] : [])
+      ? draft.clientsExceptions[activeView]
+      : [];
+    return new Set(list.map((item) => getExceptionItemId(item)).filter(Boolean));
+  }, [draft?.clientsExceptions]);
 
   const canGenerateModel =
     !!draft &&
@@ -1443,17 +1523,27 @@ const MacedoAcademy = () => {
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => addClientException(client)}
-                            className="rounded-md border border-emerald-400 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700"
+                            onClick={() => addClientException(client, draft.clientsExceptions.activeView)}
+                            disabled={activeExceptionIds.has(client.id)}
+                            className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
+                              activeExceptionIds.has(client.id)
+                                ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400'
+                                : 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                            }`}
                           >
-                            Adicionar
+                            Adicionar a {draft.clientsExceptions.activeView === 'adicionados' ? 'adicionados' : 'removidos'}
                           </button>
                           <button
                             type="button"
                             onClick={() => removeClientException(client.id, draft.clientsExceptions.activeView)}
-                            className="rounded-md border border-rose-400 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700"
+                            disabled={!activeExceptionIds.has(client.id)}
+                            className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
+                              !activeExceptionIds.has(client.id)
+                                ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-400'
+                                : 'border-rose-400 bg-rose-50 text-rose-700'
+                            }`}
                           >
-                            Remover
+                            Remover da lista
                           </button>
                         </div>
                       </div>
@@ -1502,50 +1592,76 @@ const MacedoAcademy = () => {
                     </label>
                   </div>
 
-                  <div className="space-y-4 rounded-lg border border-slate-200 p-4">
-                    <h4 className="text-2xl font-bold">Configure a data mensal fixa</h4>
-                    <label className="block text-sm font-semibold text-slate-600">
-                      Data mensal fixa
-                      <div className="relative mt-1">
-                        <select
-                          value={draft.deadline.fixedDay}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              deadline: { ...current.deadline, fixedDay: Number(event.target.value) },
-                            }))
-                          }
-                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
-                        >
-                          {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
-                            <option key={day} value={day}>{`Dia ${day}`}</option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
-                      </div>
-                    </label>
+                  {draft.deadline.type === 'data_mensal_fixa' ? (
+                    <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+                      <h4 className="text-2xl font-bold">Configure a data mensal fixa</h4>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Data mensal fixa
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.fixedDay}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, fixedDay: Number(event.target.value) },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                          >
+                            {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                              <option key={day} value={day}>{`Dia ${day}`}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
 
-                    <label className="block text-sm font-semibold text-slate-600">
-                      Competencia
-                      <div className="relative mt-1">
-                        <select
-                          value={draft.deadline.competence}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              deadline: { ...current.deadline, competence: event.target.value },
-                            }))
-                          }
-                          className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
-                        >
-                          {COMPETENCE_OPTIONS.map((item) => (
-                            <option key={item.id} value={item.id}>{item.label}</option>
-                          ))}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
-                      </div>
-                    </label>
-                  </div>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Competencia
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.competence}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, competence: event.target.value },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                          >
+                            {COMPETENCE_OPTIONS.map((item) => (
+                              <option key={item.id} value={item.id}>{item.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+                      <h4 className="text-2xl font-bold">Configure o prazo estimado</h4>
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Tempo estimado de execucao
+                        <div className="relative mt-1">
+                          <select
+                            value={draft.deadline.estimatedDays}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                deadline: { ...current.deadline, estimatedDays: Number(event.target.value) },
+                              }))
+                            }
+                            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"
+                          >
+                            {Array.from({ length: 60 }, (_, i) => i + 1).map((day) => (
+                              <option key={day} value={day}>{`${day} dias`}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 h-4 w-4 text-slate-500" />
+                        </div>
+                      </label>
+                    </div>
+                  )}
 
                   <div className="space-y-4 rounded-lg border border-slate-200 p-4">
                     <h4 className="text-2xl font-bold">Quer estabelecer um prazo-meta?</h4>
@@ -1609,7 +1725,8 @@ const MacedoAcademy = () => {
                 <>
                   <div className="rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700">
                     <Info className="mr-2 inline h-4 w-4" />
-                    O prazo das tarefas sera baseado em <b>data mensal fixa</b>.
+                    O prazo das tarefas sera baseado em{' '}
+                    <b>{draft.deadline.type === 'tempo_estimado_execucao' ? 'tempo estimado de execucao' : 'data mensal fixa'}</b>.
                   </div>
                   <div className="space-y-4">
                     {draft.tasks.map((task, index) => (

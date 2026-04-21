@@ -47,7 +47,10 @@ const Atendimento = () => {
           </h1>
           <p className="text-gray-400 mt-2">Central de atendimento ao cliente</p>
         </div>
-        <button className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2">
+        <button
+          onClick={() => window.alert('Abertura de novo ticket sera disponibilizada nesta tela.')}
+          className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2"
+        >
           <Plus className="w-5 h-5" />
           <span>Novo Ticket</span>
         </button>

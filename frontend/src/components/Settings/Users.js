@@ -1,20 +1,30 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Building2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Building2, History, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ALL_INTERNAL_MODULE_KEYS, deriveAllowedModules, getEmailFromName, INTERNAL_MODULES } from '../../config/modules';
-import { mockClients } from '../../dev/mockData';
+import api from '../../config/api';
 
-const MOCK_USERS_KEY = 'mock_users_management_v1';
 const MODULE_OVERRIDES_KEY = 'mock_user_modules_overrides_v1';
-const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
-const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
-const CLIENT_SETUP_STORAGE_KEY = 'mock_admin_client_setup_center_v2';
 
 const DEFAULT_CONFIG = {
   cidades: ['Todas', 'Jacobina', 'Ourolândia', 'Umburanas', 'Uberlândia'],
   setores: {
     Todos: ['Todos'],
-    financeiro: ['Contas a pagar', 'Contas a receber', 'Fluxo de caixa'],
+    Clientes: [
+      'Adicionar',
+      'Remover',
+      'Editar',
+      'Setup Empresa',
+      'Setup Config',
+      'Login Cliente',
+      'Dados da empresa',
+      'Modulos',
+      'Servicos vinculados',
+      'Documentos',
+      'Financeiro',
+      'Senhas',
+    ],
+    Financeiro: ['Contas a pagar', 'Contas a receber', 'Fluxo de caixa'],
     fiscal: ['Guias', 'Apurações', 'Obrigações acessórias'],
     trabalhista: ['Folha', 'Admissões', 'Rescisões'],
     comercial: ['Leads', 'Propostas', 'Pipeline'],
@@ -22,6 +32,15 @@ const DEFAULT_CONFIG = {
     contadores: ['Serviços Sara', 'Serviços Florivaldo', 'Agendamentos Sara', 'Agendamentos Florivaldo'],
   },
 };
+
+const SENHAS_PARENT_VIEW = 'Senhas';
+const SENHAS_CHILD_VIEWS = [
+  'Certificado digital',
+  'Senha gov',
+  'Senha do simples nacional',
+  'Senha do emissor nacional',
+  'Senha portal prefeitura',
+];
 
 const MODULE_TO_SETOR = {
   financeiro: 'financeiro',
@@ -100,6 +119,38 @@ const resolveExplicitModules = (user = {}) => {
   return normalized.includes('dashboard') ? normalized : ['dashboard', ...normalized];
 };
 
+const mergeConfigWithDefaults = (incomingConfig = {}) => {
+  const incomingSetores = incomingConfig?.setores && typeof incomingConfig.setores === 'object'
+    ? incomingConfig.setores
+    : {};
+
+  const canonicalKeyMap = new Map(
+    Object.keys(DEFAULT_CONFIG.setores).map((setor) => [normalizeText(setor), setor]),
+  );
+  const normalizedIncomingSetores = {};
+  Object.entries(incomingSetores).forEach(([setor, visualizacoes]) => {
+    const canonicalSetor = canonicalKeyMap.get(normalizeText(setor)) || setor;
+    normalizedIncomingSetores[canonicalSetor] = Array.isArray(visualizacoes) ? visualizacoes : [];
+  });
+
+  const mergedSetores = {
+    ...DEFAULT_CONFIG.setores,
+    ...normalizedIncomingSetores,
+  };
+
+  const clientesBase = Array.isArray(mergedSetores.Clientes) ? mergedSetores.Clientes : [];
+  mergedSetores.Clientes = [...new Set([...DEFAULT_CONFIG.setores.Clientes, ...clientesBase])];
+
+  return {
+    ...DEFAULT_CONFIG,
+    ...incomingConfig,
+    cidades: Array.isArray(incomingConfig?.cidades) && incomingConfig.cidades.length
+      ? incomingConfig.cidades
+      : DEFAULT_CONFIG.cidades,
+    setores: mergedSetores,
+  };
+};
+
 const Users = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
@@ -116,7 +167,14 @@ const Users = () => {
   const [showClientForm, setShowClientForm] = useState(false);
   const [editingClientUser, setEditingClientUser] = useState(null);
   const [showClientPassword, setShowClientPassword] = useState(false);
+  const [clientActivityLogs, setClientActivityLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState('');
+  const [logsActionFilter, setLogsActionFilter] = useState('todos');
+  const [logsSearch, setLogsSearch] = useState('');
+  const [selectedClientLog, setSelectedClientLog] = useState(null);
   const [clientCatalog, setClientCatalog] = useState([]);
+  const [setupMap, setSetupMap] = useState({});
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [clientFormData, setClientFormData] = useState({
@@ -146,7 +204,20 @@ const Users = () => {
     loadConfig();
     loadClientUsers();
     loadClientCatalog();
+    loadSetupMap();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'logs_clientes') {
+      loadClientActivityLogs();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'logs_clientes') {
+      loadClientActivityLogs();
+    }
+  }, [logsActionFilter]);
 
   const safeParse = (value, fallback) => {
     try {
@@ -200,10 +271,10 @@ const Users = () => {
 
       if (!response.ok) throw new Error('Config indisponível');
       const data = await response.json();
-      setConfig(data);
+      setConfig(mergeConfigWithDefaults(data));
     } catch (error) {
       console.warn('Usando configuração mockada de usuários.');
-      setConfig(DEFAULT_CONFIG);
+      setConfig(mergeConfigWithDefaults(DEFAULT_CONFIG));
     }
   };
 
@@ -219,38 +290,67 @@ const Users = () => {
       const data = await response.json();
       setUsers(applyModuleOverrideToUsers(data));
     } catch (error) {
-      const mockUsers = safeParse(localStorage.getItem(MOCK_USERS_KEY) || '[]', []);
-      setUsers(applyModuleOverrideToUsers(mockUsers));
+      console.error('Erro ao carregar usuários internos:', error);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadClientUsers = () => {
-    const parsed = safeParse(localStorage.getItem(CLIENT_PORTAL_USERS_KEY) || '[]', []);
-    setClientUsers(Array.isArray(parsed) ? parsed : []);
+  const loadClientUsers = async () => {
+    try {
+      const response = await api.get('/clients/portal-users');
+      const list = Array.isArray(response.data) ? response.data : [];
+      setClientUsers(list);
+    } catch (error) {
+      console.error('Erro ao carregar usuários de portal:', error);
+      setClientUsers([]);
+    }
+  };
+
+  const loadSetupMap = async () => {
+    try {
+      const response = await api.get('/clients/setup-map');
+      const map = response.data?.setup_map;
+      setSetupMap(map && typeof map === 'object' ? map : {});
+    } catch (error) {
+      console.error('Erro ao carregar setup map de clientes:', error);
+      setSetupMap({});
+    }
   };
 
   const loadClientCatalog = async () => {
-    let backendClients = [];
     try {
+      const response = await api.get('/clients?limit=1000');
+      const payload = response.data?.clients || response.data || [];
+      setClientCatalog(Array.isArray(payload) ? payload : []);
+    } catch (error) {
+      console.error('Erro ao carregar catálogo de clientes:', error);
+      setClientCatalog([]);
+    }
+  };
+
+  const loadClientActivityLogs = async () => {
+    try {
+      setLogsLoading(true);
+      setLogsError('');
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/clients?limit=1000`, {
+      const actionQuery = logsActionFilter !== 'todos' ? `&action=${encodeURIComponent(logsActionFilter)}` : '';
+      const response = await fetch(`${API_URL}/api/clients/activity-logs/list?limit=200${actionQuery}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.ok) {
-        const payload = await response.json();
-        backendClients = payload?.clients || payload || [];
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Falha ao carregar auditoria de clientes');
       }
-    } catch {}
-
-    const localClients = safeParse(localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY) || '[]', []);
-    const merged = mergeClientsUnique(
-      Array.isArray(backendClients) ? backendClients : [],
-      Array.isArray(localClients) ? localClients : [],
-      Array.isArray(mockClients) ? mockClients : [],
-    );
-    setClientCatalog(merged);
+      const payload = await response.json();
+      setClientActivityLogs(Array.isArray(payload?.items) ? payload.items : []);
+    } catch (error) {
+      setClientActivityLogs([]);
+      setLogsError('Nao foi possivel carregar os logs de atividade de clientes.');
+    } finally {
+      setLogsLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -347,12 +447,37 @@ const Users = () => {
       ...prev,
       permissoes: prev.permissoes.map((perm) => {
         if (perm.setor !== setor) return perm;
-        const exists = perm.visualizacoes.includes(vis);
+        const visualizacoesAtuais = Array.isArray(perm.visualizacoes) ? perm.visualizacoes : [];
+
+        if (setor === 'Clientes' && vis === SENHAS_PARENT_VIEW) {
+          const parentExists = visualizacoesAtuais.includes(SENHAS_PARENT_VIEW);
+          return {
+            ...perm,
+            visualizacoes: parentExists
+              ? visualizacoesAtuais.filter((item) => item !== SENHAS_PARENT_VIEW && !SENHAS_CHILD_VIEWS.includes(item))
+              : [...visualizacoesAtuais, SENHAS_PARENT_VIEW],
+          };
+        }
+
+        if (setor === 'Clientes' && SENHAS_CHILD_VIEWS.includes(vis)) {
+          const childExists = visualizacoesAtuais.includes(vis);
+          if (childExists) {
+            return {
+              ...perm,
+              visualizacoes: visualizacoesAtuais.filter((item) => item !== vis),
+            };
+          }
+          const next = [...visualizacoesAtuais, vis];
+          if (!next.includes(SENHAS_PARENT_VIEW)) next.push(SENHAS_PARENT_VIEW);
+          return { ...perm, visualizacoes: next };
+        }
+
+        const exists = visualizacoesAtuais.includes(vis);
         return {
           ...perm,
           visualizacoes: exists
-            ? perm.visualizacoes.filter((item) => item !== vis)
-            : [...perm.visualizacoes, vis],
+            ? visualizacoesAtuais.filter((item) => item !== vis)
+            : [...visualizacoesAtuais, vis],
         };
       }),
     }));
@@ -386,26 +511,6 @@ const Users = () => {
         permissoes: nextPermissoes,
       };
     });
-  };
-
-  const saveMockUser = (payload, currentEditingUser, emailOverride) => {
-    const currentUsers = safeParse(localStorage.getItem(MOCK_USERS_KEY) || '[]', []);
-    const email = currentEditingUser?.email || emailOverride || getEmailFromName(payload.name);
-    const userRecord = {
-      ...(currentEditingUser || {}),
-      ...payload,
-      email,
-      id: currentEditingUser?.id || `mock-user-${Date.now()}`,
-      is_active: true,
-      is_online: false,
-    };
-
-    const nextUsers = currentEditingUser
-      ? currentUsers.map((item) => (item.id === currentEditingUser.id ? userRecord : item))
-      : [userRecord, ...currentUsers];
-
-    localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(nextUsers));
-    saveModuleOverride(email, payload.role, payload.allowed_modules || []);
   };
 
   const handleSubmit = async (e) => {
@@ -453,10 +558,8 @@ const Users = () => {
       resetForm();
       alert(editingUser ? 'Usuário atualizado!' : 'Usuário criado!');
     } catch (error) {
-      saveMockUser(payload, editingUser, emailFromForm);
-      await loadUsers();
-      resetForm();
-      alert(editingUser ? 'Usuário atualizado (modo mock)!' : 'Usuário criado (modo mock)!');
+      console.error('Falha ao salvar usuário no backend:', error);
+      alert('Não foi possível salvar o usuário no backend.');
     }
   };
 
@@ -477,12 +580,8 @@ const Users = () => {
       await loadUsers();
       alert('Usuário deletado com sucesso!');
     } catch (error) {
-      const currentUsers = safeParse(localStorage.getItem(MOCK_USERS_KEY) || '[]', []);
-      const nextUsers = currentUsers.filter((item) => item.id !== userId);
-      localStorage.setItem(MOCK_USERS_KEY, JSON.stringify(nextUsers));
-      if (target?.email) saveModuleOverride(target.email, 'admin', []);
-      await loadUsers();
-      alert('Usuário deletado com sucesso (modo mock)!');
+      console.error('Falha ao deletar usuário no backend:', error);
+      alert('Não foi possível deletar o usuário no backend.');
     }
   };
 
@@ -522,11 +621,15 @@ const Users = () => {
     setShowClientForm(true);
   };
 
-  const handleDeleteClientUser = (clientUserId) => {
+  const handleDeleteClientUser = async (clientUserId) => {
     if (!window.confirm('Tem certeza que deseja remover este usuario cliente?')) return;
-    const next = clientUsers.filter((item) => item.id !== clientUserId);
-    localStorage.setItem(CLIENT_PORTAL_USERS_KEY, JSON.stringify(next));
-    setClientUsers(next);
+    try {
+      await api.delete(`/clients/portal-users/by-id/${clientUserId}`);
+      await loadClientUsers();
+    } catch (error) {
+      console.error('Erro ao remover usuário cliente no backend:', error);
+      alert('Não foi possível remover o usuário cliente.');
+    }
   };
 
   const handleToggleLinkedClient = (clientId, isChecked) => {
@@ -564,7 +667,7 @@ const Users = () => {
     setSelectedClientId(nextOption ? String(nextOption.id) : '');
   };
 
-  const handleSubmitClientUser = (event) => {
+  const handleSubmitClientUser = async (event) => {
     event.preventDefault();
     const senha = String(clientFormData.senha || '').trim();
     const normalizedSelectedClientIds = [...new Set(
@@ -588,32 +691,23 @@ const Users = () => {
     const linkedClientRefs = [...new Set(selectedClients.map((item) => String(item.clientRefId || '').trim()).filter(Boolean))];
     const linkedClientIds = [...new Set(selectedClients.map((item) => String(item.clienteId || '').trim()).filter(Boolean))];
 
-    const record = {
-      id: editingClientUser?.id || `portal-user-${Date.now()}`,
-      nome,
-      email,
-      senha,
-      clientRefId: String(clientRefId || '').trim(),
-      clienteId: String(clienteId || '').trim(),
-      linkedClientRefs,
-      linkedClientIds,
-      updatedAt: new Date().toISOString(),
-      createdAt: editingClientUser?.createdAt || new Date().toISOString(),
-    };
-
-    const next = editingClientUser
-      ? clientUsers.map((item) => (item.id === editingClientUser.id ? record : item))
-      : [record, ...clientUsers.filter((item) => item.email !== record.email)];
-
-    localStorage.setItem(CLIENT_PORTAL_USERS_KEY, JSON.stringify(next));
-    setClientUsers(next);
-    resetClientForm();
+    try {
+      await api.put(`/clients/portal-users/${clientRefId}`, {
+        id: editingClientUser?.id || null,
+        nome,
+        email,
+        senha,
+        clienteId: String(clienteId || '').trim(),
+        linkedClientRefs,
+        linkedClientIds,
+      });
+      await loadClientUsers();
+      resetClientForm();
+    } catch (error) {
+      console.error('Erro ao salvar usuário cliente no backend:', error);
+      alert('Não foi possível salvar o usuário cliente.');
+    }
   };
-
-  const setupMap = useMemo(
-    () => safeParse(localStorage.getItem(CLIENT_SETUP_STORAGE_KEY) || '{}', {}),
-    [clientUsers, clientCatalog.length],
-  );
 
   const availableClientOptions = useMemo(() => {
     const linkedToOtherUsers = new Set(
@@ -725,6 +819,18 @@ const Users = () => {
     editingClientUser,
   ]);
 
+  const filteredClientLogs = useMemo(() => {
+    const term = normalizeText(logsSearch);
+    if (!term) return clientActivityLogs;
+    return clientActivityLogs.filter((item) => {
+      const actor = normalizeText(item?.actor_name || '');
+      const actorEmail = normalizeText(item?.actor_email || '');
+      const clientName = normalizeText(item?.client_name || '');
+      const action = normalizeText(item?.action || '');
+      return actor.includes(term) || actorEmail.includes(term) || clientName.includes(term) || action.includes(term);
+    });
+  }, [clientActivityLogs, logsSearch]);
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -750,43 +856,54 @@ const Users = () => {
         >
           Voltar
         </button>
-        <button
-          onClick={() => {
-            if (activeTab === 'internos') {
-              setEditingUser(null);
-              setShowPassword(false);
-              setShowCurrentPassword(false);
-              setIsEditingName(false);
-              setIsChangingPassword(false);
-              setFormData({
-                name: '',
-                password: '',
-                role: 'colaborador',
-                allowed_cities: [],
-                permissoes: [],
-                allowed_modules: ['dashboard'],
-              });
-              setShowForm(true);
-              return;
-            }
+        {activeTab !== 'logs_clientes' ? (
+          <button
+            onClick={() => {
+              if (activeTab === 'internos') {
+                setEditingUser(null);
+                setShowPassword(false);
+                setShowCurrentPassword(false);
+                setIsEditingName(false);
+                setIsChangingPassword(false);
+                setFormData({
+                  name: '',
+                  password: '',
+                  role: 'colaborador',
+                  allowed_cities: [],
+                  permissoes: [],
+                  allowed_modules: ['dashboard'],
+                });
+                setShowForm(true);
+                return;
+              }
 
-            setEditingClientUser(null);
-            setClientFormData({
-              email: '',
-              senha: '',
-              fixedClientRefId: '',
-              fixedClienteId: '',
-            });
-            setSelectedClientId('');
-            setSelectedClientIds([]);
-            setShowClientPassword(false);
-            setShowClientForm(true);
-          }}
-          className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
-        >
-          <Plus size={20} />
-          {activeTab === 'internos' ? 'Novo Usuario Interno' : 'Novo Usuario Cliente'}
-        </button>
+              setEditingClientUser(null);
+              setClientFormData({
+                email: '',
+                senha: '',
+                fixedClientRefId: '',
+                fixedClienteId: '',
+              });
+              setSelectedClientId('');
+              setSelectedClientIds([]);
+              setShowClientPassword(false);
+              setShowClientForm(true);
+            }}
+            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
+          >
+            <Plus size={20} />
+            {activeTab === 'internos' ? 'Novo Usuario Interno' : 'Novo Usuario Cliente'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={loadClientActivityLogs}
+            className="flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-white transition-colors hover:bg-white/10"
+          >
+            <RefreshCw size={16} />
+            Atualizar logs
+          </button>
+        )}
       </div>
 
       <div className="glass rounded-xl border border-white/10 p-3">
@@ -812,6 +929,20 @@ const Users = () => {
             }`}
           >
             Usuarios de clientes
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('logs_clientes')}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'logs_clientes'
+                ? 'bg-red-600 text-white'
+                : 'bg-white/5 text-gray-200 hover:bg-white/10'
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <History size={14} />
+              Logs de clientes
+            </span>
           </button>
         </div>
       </div>
@@ -1035,21 +1166,45 @@ const Users = () => {
 
                         {isSelected ? (
                           <div className="ml-6 grid grid-cols-2 gap-2">
-                            {config.setores[setor].map((vis) => (
-                              <label
-                                key={vis}
-                                className={`flex items-center gap-2 ${setorDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={permissao.visualizacoes.includes(vis)}
-                                  disabled={setorDisabled}
-                                  onChange={() => toggleVisualizacao(setor, vis)}
-                                  className="text-red-600 focus:ring-red-500"
-                                />
-                                <span className="text-sm text-gray-300">{vis}</span>
-                              </label>
-                            ))}
+                            {config.setores[setor].map((vis) => {
+                              const isSenhasParent = setor === 'Clientes' && vis === SENHAS_PARENT_VIEW;
+                              const showSenhasChildren = isSenhasParent && permissao.visualizacoes.includes(SENHAS_PARENT_VIEW);
+                              return (
+                                <div key={vis} className="space-y-2">
+                                  <label
+                                    className={`flex items-center gap-2 ${setorDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={permissao.visualizacoes.includes(vis)}
+                                      disabled={setorDisabled}
+                                      onChange={() => toggleVisualizacao(setor, vis)}
+                                      className="text-red-600 focus:ring-red-500"
+                                    />
+                                    <span className="text-sm text-gray-300">{vis}</span>
+                                  </label>
+                                  {showSenhasChildren ? (
+                                    <div className="ml-6 space-y-1 rounded-lg border border-white/10 bg-black/20 p-2">
+                                      {SENHAS_CHILD_VIEWS.map((senhaVis) => (
+                                        <label
+                                          key={senhaVis}
+                                          className={`flex items-center gap-2 ${setorDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={permissao.visualizacoes.includes(senhaVis)}
+                                            disabled={setorDisabled}
+                                            onChange={() => toggleVisualizacao(setor, senhaVis)}
+                                            className="text-red-600 focus:ring-red-500"
+                                          />
+                                          <span className="text-xs text-gray-300">{senhaVis}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : null}
                       </div>
@@ -1310,7 +1465,7 @@ const Users = () => {
           </table>
         </div>
       </div>
-      ) : (
+      ) : activeTab === 'clientes' ? (
         <div className="space-y-4">
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-gray-300">
             Usuarios de clientes configurados para acesso ao portal.
@@ -1348,6 +1503,145 @@ const Users = () => {
               </div>
             ) : null}
           </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={logsActionFilter}
+                onChange={(e) => setLogsActionFilter(e.target.value)}
+                className="rounded-lg bg-gray-700 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value="todos">Todas as acoes</option>
+                <option value="create">Criacao</option>
+                <option value="update">Edicao</option>
+                <option value="delete">Remocao</option>
+              </select>
+              <input
+                value={logsSearch}
+                onChange={(e) => setLogsSearch(e.target.value)}
+                placeholder="Buscar por cliente, usuario ou acao..."
+                className="min-w-[280px] flex-1 rounded-lg bg-gray-700 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+          </div>
+
+          {logsError ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+              {logsError}
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-white/10 bg-gray-800">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1020px]">
+                <thead className="bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs uppercase text-gray-300">Data/Hora</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase text-gray-300">Acao</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase text-gray-300">Cliente</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase text-gray-300">Usuario</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase text-gray-300">Email</th>
+                    <th className="px-4 py-3 text-left text-xs uppercase text-gray-300">Detalhe</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {logsLoading ? (
+                    <tr>
+                      <td colSpan="6" className="px-4 py-10 text-center text-sm text-gray-400">Carregando logs...</td>
+                    </tr>
+                  ) : filteredClientLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="px-4 py-10 text-center text-sm text-gray-400">Nenhuma atividade encontrada.</td>
+                    </tr>
+                  ) : (
+                    filteredClientLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-gray-700/30">
+                        <td className="px-4 py-3 text-sm text-gray-200">
+                          {log.created_at ? new Date(log.created_at).toLocaleString('pt-BR') : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span
+                            className={`rounded px-2 py-1 text-xs ${
+                              log.action === 'create'
+                                ? 'bg-emerald-900/50 text-emerald-300'
+                                : log.action === 'update'
+                                  ? 'bg-amber-900/50 text-amber-300'
+                                  : 'bg-red-900/50 text-red-300'
+                            }`}
+                          >
+                            {log.action === 'create' ? 'Criacao' : log.action === 'update' ? 'Edicao' : 'Remocao'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white">{log.client_name || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-200">{log.actor_name || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400">{log.actor_email || '-'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedClientLog(log)}
+                            className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/5 px-2 py-1 text-xs text-gray-100 hover:bg-white/10"
+                          >
+                            <Eye size={13} />
+                            Ver
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {selectedClientLog ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+              <div className="w-full max-w-4xl rounded-xl border border-white/15 bg-gray-900 p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Detalhe da atividade</h3>
+                    <p className="text-xs text-gray-400">
+                      {selectedClientLog.created_at ? new Date(selectedClientLog.created_at).toLocaleString('pt-BR') : '-'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedClientLog(null)}
+                    className="rounded-md border border-white/20 bg-white/5 px-3 py-1.5 text-sm text-white hover:bg-white/10"
+                  >
+                    Fechar
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs uppercase text-gray-400">Ação</div>
+                    <div className="mt-1 text-sm text-white">{selectedClientLog.action || '-'}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs uppercase text-gray-400">Cliente</div>
+                    <div className="mt-1 text-sm text-white">{selectedClientLog.client_name || '-'}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs uppercase text-gray-400">Usuário</div>
+                    <div className="mt-1 text-sm text-white">{selectedClientLog.actor_name || '-'}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <div className="text-xs uppercase text-gray-400">Email</div>
+                    <div className="mt-1 text-sm text-white">{selectedClientLog.actor_email || '-'}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3">
+                  <div className="mb-2 text-xs uppercase text-gray-400">Payload detalhado</div>
+                  <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded bg-black/30 p-3 text-xs text-gray-200">
+                    {JSON.stringify(selectedClientLog.details || {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

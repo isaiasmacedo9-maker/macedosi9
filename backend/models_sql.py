@@ -66,6 +66,10 @@ class ClientSQL(Base):
     empresa_grupo = Column(String(255))
     
     # Metadados
+    external_task_id = Column(String(64), index=True, unique=True)
+    official_locked = Column(Boolean, default=False, nullable=False)
+    official_source = Column(String(50))
+    official_imported_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -88,8 +92,26 @@ class FinancialClientSQL(Base):
     ultimo_pagamento = Column(Date)
     status_pagamento = Column(String(50), default="em_dia")  # em_dia, atrasado, renegociado, cancelado
     observacoes = Column(Text)
+    external_task_id = Column(String(64), index=True)
+    official_locked = Column(Boolean, default=False, nullable=False)
+    official_source = Column(String(50))
+    official_imported_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ClientActivityLogSQL(Base):
+    __tablename__ = "client_activity_logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    client_id = Column(String(36), nullable=False, index=True)
+    client_name = Column(String(255), nullable=False)
+    action = Column(String(50), nullable=False, index=True)  # create, update, delete
+    actor_id = Column(String(36), nullable=False, index=True)
+    actor_name = Column(String(255), nullable=False)
+    actor_email = Column(String(255))
+    details = Column(Text)  # JSON string
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 # ==================== CONTAS A RECEBER ====================
 class ContaReceberSQL(Base):

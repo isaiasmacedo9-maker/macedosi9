@@ -16,6 +16,8 @@ import { Z_LAYERS } from '../constants/zLayers';
 
 const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
 const CHAT_INTERNAL_SEEN_KEY = 'mock_chat_internal_seen_ids_v1';
+const VIEWED_ITEMS_KEY = 'mock_notification_viewed_items_v1';
+const VIEWED_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 const readJsonArray = (key) => {
   try {
@@ -33,6 +35,23 @@ const readJsonObject = (key) => {
   } catch {
     return {};
   }
+};
+
+const writeJsonArray = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
+};
+
+const writeJsonObject = (key, value) => {
+  localStorage.setItem(key, JSON.stringify(value && typeof value === 'object' ? value : {}));
+};
+
+const purgeExpiredNotifications = (items = []) => {
+  const now = Date.now();
+  return items.filter((item) => {
+    const viewedAt = item?.viewed_at ? new Date(item.viewed_at).getTime() : null;
+    if (!viewedAt || Number.isNaN(viewedAt)) return true;
+    return now - viewedAt <= VIEWED_RETENTION_MS;
+  });
 };
 
 const formatDateTime = (value) => {
@@ -86,7 +105,9 @@ const NotificationBell = ({
   const audience = mode === 'client' ? 'cliente' : 'contabilidade';
 
   const reloadData = () => {
-    setNotifications(readJsonArray(NOTIFICATIONS_KEY));
+    const cleanedNotifications = purgeExpiredNotifications(readJsonArray(NOTIFICATIONS_KEY));
+    writeJsonArray(NOTIFICATIONS_KEY, cleanedNotifications);
+    setNotifications(cleanedNotifications);
     setSupportThreads(listSupportThreadsForAccounting());
   };
 
@@ -116,11 +137,26 @@ const NotificationBell = ({
     const unread = notifications.filter(
       (item) =>
         item?.scope === 'chat_macedo' &&
-        item?.messageId &&
-        !seenMap[item.messageId],
+        !item?.viewed_at &&
+        !seenMap[item.messageId || item.id],
     );
     return unread.length;
   }, [notifications, mode]);
+
+  const viewedItemsMap = useMemo(() => {
+    const map = readJsonObject(VIEWED_ITEMS_KEY);
+    const now = Date.now();
+    const cleaned = Object.fromEntries(
+      Object.entries(map).filter(([, value]) => {
+        const timestamp = new Date(value).getTime();
+        return !Number.isNaN(timestamp) && now - timestamp <= VIEWED_RETENTION_MS;
+      }),
+    );
+    if (Object.keys(cleaned).length !== Object.keys(map).length) {
+      writeJsonObject(VIEWED_ITEMS_KEY, cleaned);
+    }
+    return cleaned;
+  }, [notifications, supportThreads, open]);
 
   const tasks = useMemo(() => {
     if (mode === 'client' || !user) return [];
@@ -140,10 +176,19 @@ const NotificationBell = ({
     );
   }, [mode, tasks]);
 
+  const unreadNewTasks = useMemo(
+    () => newTasks.filter((task) => !viewedItemsMap[`task_new:${task.id}`]),
+    [newTasks, viewedItemsMap],
+  );
+  const unreadTaskUpdates = useMemo(
+    () => taskUpdates.filter((task) => !viewedItemsMap[`task_update:${task.id}`]),
+    [taskUpdates, viewedItemsMap],
+  );
+
   const unreadInternalCount = useMemo(() => {
     if (mode === 'client') return 0;
-    return unseenInternalChatCount + newTasks.length + taskUpdates.length + unreadSupportCount;
-  }, [mode, unseenInternalChatCount, newTasks.length, taskUpdates.length, unreadSupportCount]);
+    return unseenInternalChatCount + unreadNewTasks.length + unreadTaskUpdates.length + unreadSupportCount;
+  }, [mode, unseenInternalChatCount, unreadNewTasks.length, unreadTaskUpdates.length, unreadSupportCount]);
 
   const totalUnread = mode === 'client' ? unreadSupportCount : unreadInternalCount;
 
@@ -179,16 +224,33 @@ const NotificationBell = ({
     };
   }, [open]);
 
-  const markAllAsRead = () => {
-    if (mode === 'client') {
-      if (clientId) markSupportThreadRead({ clientId, audience: 'cliente' });
-      return;
-    }
-    const seenMap = readJsonObject(CHAT_INTERNAL_SEEN_KEY);
-    notifications.forEach((item) => {
-      if (item?.messageId) seenMap[item.messageId] = true;
+  const markNotificationViewed = (item) => {
+    if (!item) return;
+    const list = readJsonArray(NOTIFICATIONS_KEY);
+    const nowIso = new Date().toISOString();
+    const next = list.map((entry) => {
+      const sameId = entry.id && item.id && entry.id === item.id;
+      const sameMsg = entry.messageId && item.messageId && entry.messageId === item.messageId;
+      if (sameId || sameMsg) {
+        return { ...entry, viewed_at: entry.viewed_at || nowIso };
+      }
+      return entry;
     });
-    localStorage.setItem(CHAT_INTERNAL_SEEN_KEY, JSON.stringify(seenMap));
+    writeJsonArray(NOTIFICATIONS_KEY, next);
+    const seenMap = readJsonObject(CHAT_INTERNAL_SEEN_KEY);
+    const key = item.messageId || item.id;
+    if (key) {
+      seenMap[key] = nowIso;
+      writeJsonObject(CHAT_INTERNAL_SEEN_KEY, seenMap);
+    }
+    setNotifications(purgeExpiredNotifications(next));
+  };
+
+  const markGenericViewed = (key) => {
+    if (!key) return;
+    const map = readJsonObject(VIEWED_ITEMS_KEY);
+    map[key] = new Date().toISOString();
+    writeJsonObject(VIEWED_ITEMS_KEY, map);
   };
 
   const chatClienteSummary = useMemo(
@@ -212,6 +274,8 @@ const NotificationBell = ({
         .reverse()
         .map((item) => ({
           id: item.id,
+          messageId: item.messageId,
+          raw: item,
           title: item.title || 'Chat interno',
           subtitle: item.message,
           date: formatDateTime(item.createdAt),
@@ -223,8 +287,8 @@ const NotificationBell = ({
     ? [{ key: 'chat_cliente', label: 'Chat Cliente', count: unreadSupportCount }]
     : [
         { key: 'chat_macedo', label: 'Chat Macedo', count: unseenInternalChatCount },
-        { key: 'novas_tarefas', label: 'Novas Tarefas', count: newTasks.length },
-        { key: 'atualizacoes_tarefas', label: 'Atualizações de Tarefas', count: taskUpdates.length },
+        { key: 'novas_tarefas', label: 'Novas Tarefas', count: unreadNewTasks.length },
+        { key: 'atualizacoes_tarefas', label: 'Atualizações de Tarefas', count: unreadTaskUpdates.length },
         { key: 'chat_cliente', label: 'Chat Cliente', count: unreadSupportCount },
       ];
 
@@ -242,7 +306,10 @@ const NotificationBell = ({
         <button
           key={item.id}
           type="button"
-          onClick={() => goTo('/chat')}
+          onClick={() => {
+            markNotificationViewed(item.raw || item);
+            goTo('/chat');
+          }}
           className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
         >
           <p className="text-xs font-medium text-white">{item.title}</p>
@@ -260,7 +327,10 @@ const NotificationBell = ({
         <button
           key={task.id}
           type="button"
-          onClick={() => goTo('/dashboard/novas-tarefas')}
+          onClick={() => {
+            markGenericViewed(`task_new:${task.id}`);
+            goTo('/dashboard/novas-tarefas');
+          }}
           className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
         >
           <p className="text-xs font-medium text-white">{task.titulo}</p>
@@ -277,7 +347,10 @@ const NotificationBell = ({
         <button
           key={task.id}
           type="button"
-          onClick={() => goTo('/dashboard/tarefas-pendentes')}
+          onClick={() => {
+            markGenericViewed(`task_update:${task.id}`);
+            goTo('/dashboard/tarefas-pendentes');
+          }}
           className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
         >
           <p className="text-xs font-medium text-white">{task.titulo}</p>
@@ -293,7 +366,10 @@ const NotificationBell = ({
       <button
         key={item.id}
         type="button"
-        onClick={() => goTo('/chat')}
+        onClick={() => {
+          if (item.id) markSupportThreadRead({ clientId: item.id, audience: 'contabilidade' });
+          goTo('/chat');
+        }}
         className="w-full rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"
       >
         <p className="text-xs font-medium text-white">{item.title}</p>
@@ -309,9 +385,7 @@ const NotificationBell = ({
         ref={buttonRef}
         type="button"
         onClick={() => {
-          const next = !open;
-          setOpen(next);
-          if (next) markAllAsRead();
+          setOpen((prev) => !prev);
         }}
         className="top-action-btn"
         aria-label="Notificações"
@@ -337,6 +411,7 @@ const NotificationBell = ({
                   key={item.id}
                   type="button"
                   onClick={() => {
+                    if (item.id) markSupportThreadRead({ clientId: item.id, audience: mode === 'client' ? 'cliente' : 'contabilidade' });
                     setOpen(false);
                     if (onOpenClientChat) onOpenClientChat();
                   }}

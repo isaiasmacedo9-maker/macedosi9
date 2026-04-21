@@ -69,10 +69,16 @@ const ClientGestaoEstoquePage = ({ clienteId }) => {
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                  <button className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+                  <button
+                    onClick={() => window.alert(`Abrindo item de estoque: ${item.item}`)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white hover:bg-white/10"
+                  >
                     Ver item
                   </button>
-                  <button className="rounded-2xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm font-medium text-violet-100 hover:bg-violet-500/20">
+                  <button
+                    onClick={() => window.alert(`Planejamento de reposicao iniciado para: ${item.item}`)}
+                    className="rounded-2xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm font-medium text-violet-100 hover:bg-violet-500/20"
+                  >
                     Planejar reposição
                   </button>
                 </div>

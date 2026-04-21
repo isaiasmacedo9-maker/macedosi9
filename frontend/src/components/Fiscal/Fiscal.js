@@ -47,7 +47,10 @@ const Fiscal = () => {
           </h1>
           <p className="text-gray-400 mt-2">Gestão de obrigações fiscais</p>
         </div>
-        <button className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2">
+        <button
+          onClick={() => window.alert('Cadastro de nova obrigacao sera disponibilizado em seguida.')}
+          className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2"
+        >
           <Plus className="w-5 h-5" />
           <span>Nova Obrigação</span>
         </button>

@@ -105,3 +105,16 @@ class ComentarioServicoSQL(Base):
     
     servico = relationship("ServicoSQL", foreign_keys=[servico_id])
     usuario = relationship("UserSQL", foreign_keys=[usuario_id])
+
+
+class ServicesConfigurationSQL(Base):
+    """Configurações do módulo de serviços."""
+    __tablename__ = "services_configuration"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_key = Column(String(100), unique=True, nullable=False, index=True, default="default")
+    payload_json = Column(Text, nullable=False, default="{}")
+    updated_by_id = Column(String(36))
+    updated_by_name = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

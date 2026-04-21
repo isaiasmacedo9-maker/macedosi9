@@ -30,7 +30,7 @@ import ChangePassword from "./components/Settings/ChangePassword";
 import Services from "./components/Services/Services";
 import DocumentsCenter from "./components/Documents/DocumentsCenter";
 import Comercial from "./components/Comercial/Comercial";
-import MacedoAcademy from "./components/Ourolandia/MacedoAcademy";
+import MacedoAcademyManuais from "./components/Ourolandia/MacedoAcademyManuais";
 import ProtectedRoute, { AdminGuard, ColaboradorGuard, ModuleGuard } from "./components/ProtectedRoute";
 import Layout from "./components/Layout/Layout";
 import { Toaster } from "sonner";
@@ -93,7 +93,7 @@ function AppContent() {
                       <Route path="/fiscal" element={<ModuleGuard moduleKey="fiscal"><FiscalExpandido /></ModuleGuard>} />
                       <Route path="/atendimento" element={<ModuleGuard moduleKey="atendimento"><AtendimentoAgendamento /></ModuleGuard>} />
                       <Route path="/contadores" element={<ModuleGuard moduleKey="contadores"><PainelContadores /></ModuleGuard>} />
-                      <Route path="/ourolandia" element={<ModuleGuard moduleKey="ourolandia"><MacedoAcademy /></ModuleGuard>} />
+                      <Route path="/ourolandia" element={<ModuleGuard moduleKey="ourolandia"><MacedoAcademyManuais /></ModuleGuard>} />
                       <Route path="/chat" element={<ModuleGuard moduleKey="chat"><ChatHub /></ModuleGuard>} />
                       <Route path="/meus-dados" element={<ColaboradorGuard><MeusDados /></ColaboradorGuard>} />
                       <Route path="/configuracoes" element={<AdminGuard><ModuleGuard moduleKey="configuracoes"><Configuracoes /></ModuleGuard></AdminGuard>} />

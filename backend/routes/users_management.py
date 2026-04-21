@@ -20,6 +20,20 @@ ONLINE_WINDOW_SECONDS = 90
 CIDADES_DISPONIVEIS = ["Todas", "Jacobina", "Ourolândia", "Umburanas", "Uberlândia"]
 SETORES_DISPONIVEIS = {
     "Todos": ["Todos"],
+    "Clientes": [
+        "Adicionar",
+        "Remover",
+        "Editar",
+        "Setup Empresa",
+        "Setup Config",
+        "Login Cliente",
+        "Dados da empresa",
+        "Modulos",
+        "Servicos vinculados",
+        "Documentos",
+        "Financeiro",
+        "Senhas",
+    ],
     "Atendimento": ["Tickets", "Base de Conhecimento", "Relatórios"],
     "Contadores": ["Solicitações", "Relatórios", "Dashboard"],
     "Comercial": ["Clientes", "Propostas", "Relatórios"],
@@ -27,6 +41,23 @@ SETORES_DISPONIVEIS = {
     "Financeiro": ["Clientes", "Clientes Financeiro", "Contas a Receber", "Relatórios"],
     "Trabalhista": ["Solicitações", "Funcionários", "Obrigações", "Relatórios"]
 }
+
+CLIENTES_SENHAS_VIEWS = {
+    "Certificado digital",
+    "Senha gov",
+    "Senha do simples nacional",
+    "Senha do emissor nacional",
+    "Senha portal prefeitura",
+}
+
+
+def _is_visualizacao_valida(setor: str, visualizacao: str) -> bool:
+    if visualizacao in SETORES_DISPONIVEIS.get(setor, []):
+        return True
+    if setor == "Clientes" and visualizacao in CLIENTES_SENHAS_VIEWS:
+        return True
+    return False
+
 
 # ==================== MODELS ====================
 
@@ -202,9 +233,8 @@ async def create_user(user_data: UserCreate, current_user = Depends(get_admin_us
         for perm in user_data.permissoes:
             if perm.setor not in SETORES_DISPONIVEIS:
                 raise HTTPException(status_code=400, detail=f"Setor inválido: {perm.setor}")
-            visualizacoes_validas = SETORES_DISPONIVEIS[perm.setor]
             for vis in perm.visualizacoes:
-                if vis not in visualizacoes_validas:
+                if not _is_visualizacao_valida(perm.setor, vis):
                     raise HTTPException(
                         status_code=400,
                         detail=f"Visualização inválida '{vis}' para setor {perm.setor}"
@@ -297,9 +327,8 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user = Depend
             for perm in user_data.permissoes:
                 if perm.setor not in SETORES_DISPONIVEIS:
                     raise HTTPException(status_code=400, detail=f"Setor inválido: {perm.setor}")
-                visualizacoes_validas = SETORES_DISPONIVEIS[perm.setor]
                 for vis in perm.visualizacoes:
-                    if vis not in visualizacoes_validas:
+                    if not _is_visualizacao_valida(perm.setor, vis):
                         raise HTTPException(
                             status_code=400,
                             detail=f"Visualização inválida '{vis}' para setor {perm.setor}"

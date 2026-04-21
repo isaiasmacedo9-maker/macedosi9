@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 # Import database connection - Using adapter for SQL/MongoDB
 from database_adapter import startup_database, shutdown_database
+from services.official_data_sync import import_official_csv_data
 
 # Import routes
 from routes.auth import router as auth_router
@@ -29,12 +30,18 @@ from routes.comercial import router as comercial_router
 from routes.agendamentos import router as agendamentos_router
 from routes.guias_fiscais import router as guias_fiscais_router
 from routes.academy_processes import router as academy_processes_router
+from routes.documents import router as documents_router
 
 # Lifespan events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup - Initialize database (SQL or MongoDB based on env)
     await startup_database()
+    try:
+        await import_official_csv_data()
+        logging.getLogger(__name__).info("Official CSV sync executed on startup.")
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Official CSV sync skipped/failed: %s", exc)
     yield
     # Shutdown
     await shutdown_database()
@@ -126,6 +133,7 @@ api_router.include_router(tasks_router)
 api_router.include_router(agendamentos_router)
 api_router.include_router(guias_fiscais_router)
 api_router.include_router(academy_processes_router)
+api_router.include_router(documents_router)
 
 # Include the API router in the main app
 app.include_router(api_router)

@@ -1,18 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Building2, Eye, Search, Settings, SlidersHorizontal, UploadCloud } from 'lucide-react';
 import api from '../../config/api';
-import { mockClients } from '../../dev/mockData';
 import { getMockInternalServices } from '../../dev/clientPortalData';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-const CLIENT_SETUP_STORAGE_KEY = 'mock_admin_client_setup_center_v2';
-const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
-const CLIENT_PORTAL_USERS_KEY = 'mock_client_portal_users_v1';
-const FINANCIAL_CLIENTS_KEY = 'mock_financial_clients_v2';
-const WORKFORCE_STORAGE_KEY = 'mock_trabalhista_workforce_v1';
-const FISCAL_CLIENT_SETUP_KEY = 'mock_fiscal_client_setup_v1';
 const CITY_ORDER = ['Jacobina', 'Ourolandia', 'Umburanas', 'Uberlandia'];
 
 const normalizeText = (value = '') =>
@@ -22,24 +15,34 @@ const normalizeText = (value = '') =>
     .toLowerCase()
     .trim();
 
-const formatCityLabel = (city = '') => {
+const canonicalCityKey = (city = '') => {
   const normalized = normalizeText(city);
-  if (normalized === 'ourolandia') return 'Ourolandia';
-  if (normalized === 'uberlandia') return 'Uberlandia';
-  if (normalized === 'jacobina') return 'Jacobina';
-  if (normalized === 'umburanas') return 'Umburanas';
-  return city;
+  if (!normalized) return '';
+  if (normalized.startsWith('ouroland')) return 'ourolandia';
+  if (normalized.startsWith('uberland')) return 'uberlandia';
+  if (normalized.startsWith('jacobin')) return 'jacobina';
+  if (normalized.startsWith('umburan')) return 'umburanas';
+  return normalized;
 };
 
-const mergeClientsUnique = (...lists) => {
-  const map = new Map();
-  lists.flat().forEach((client) => {
-    if (!client) return;
-    const key = client.id || client.cnpj || `${client.nome_empresa}-${client.nome_fantasia}`;
-    if (!map.has(key)) map.set(key, client);
-  });
-  return Array.from(map.values());
+const canonicalCityLabel = (city = '') => {
+  const key = canonicalCityKey(city);
+  if (key === 'ourolandia') return 'Ourolandia';
+  if (key === 'uberlandia') return 'Uberlandia';
+  if (key === 'jacobina') return 'Jacobina';
+  if (key === 'umburanas') return 'Umburanas';
+  if (!key) return '';
+  return String(city || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 };
+
+const formatCityLabel = (city = '') => {
+  return canonicalCityLabel(city);
+};
+
+const getClientCity = (client) => canonicalCityLabel(client?.cidade || client?.cidade_atendimento || client?.endereco?.cidade || '');
 
 const sectionTabs = [
   { id: 'setup_empresa', label: 'Setup Empresa' },
@@ -49,6 +52,7 @@ const sectionTabs = [
   { id: 'modulos_liberados', label: 'Modulos' },
   { id: 'servicos_vinculados', label: 'Servicos vinculados' },
   { id: 'documentos', label: 'Documentos' },
+  { id: 'senhas', label: 'Senhas' },
   { id: 'financeiro', label: 'Financeiro' },
 ];
 
@@ -154,19 +158,6 @@ const formatRegimeLabel = (value = '') =>
     .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : ''))
     .join(' ');
 
-const readPortalUsers = () => {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CLIENT_PORTAL_USERS_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const savePortalUsers = (list) => {
-  localStorage.setItem(CLIENT_PORTAL_USERS_KEY, JSON.stringify(list));
-};
-
 const enforceSocioAdminRule = (socios = []) => {
   if (!Array.isArray(socios) || socios.length === 0) return [];
   if (socios.length === 1) {
@@ -224,15 +215,12 @@ const ClientesExpandido = () => {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [activeSection, setActiveSection] = useState('setup_empresa');
   const [clientSetupMap, setClientSetupMap] = useState({});
+  const [portalUsers, setPortalUsers] = useState([]);
+  const [financialByClientId, setFinancialByClientId] = useState({});
   const [novoSocio, setNovoSocio] = useState({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [selectedCityFilter, setSelectedCityFilter] = useState('Todas as Cidades');
-  const [categoryChecks, setCategoryChecks] = useState({
-    isentos: true,
-    permuta: true,
-    semMovimento: true,
-    semFuncionarios: true,
-  });
+  const [clientListMode, setClientListMode] = useState('detalhado');
   const [newClientForm, setNewClientForm] = useState({
     nome_empresa: '',
     nome_fantasia: '',
@@ -243,87 +231,98 @@ const ClientesExpandido = () => {
   });
   const [showPortalPassword, setShowPortalPassword] = useState(false);
   const canAccessClientesAvulso = hasModuleAccess('comercial') || hasModuleAccess('financeiro');
+  const setupLoadedRef = useRef(false);
+  const setupSyncTimerRef = useRef(null);
 
   useEffect(() => {
     loadClients();
     loadSetupMap();
+    loadPortalUsers();
+    loadFinancialClientsMap();
   }, []);
 
   const loadClients = async () => {
-    let localMockClients = [];
-    try {
-      const localRaw = localStorage.getItem(MOCK_ADMIN_CLIENTS_KEY);
-      const parsed = localRaw ? JSON.parse(localRaw) : [];
-      localMockClients = Array.isArray(parsed) ? parsed : [];
-    } catch {}
-
     try {
       setLoading(true);
       const response = await api.get('/clients?limit=1000');
       const apiClients = response.data?.clients || response.data || [];
-      const baseClients = Array.isArray(apiClients) && apiClients.length ? apiClients : mockClients;
-      setClients(mergeClientsUnique(baseClients, localMockClients));
+      setClients(Array.isArray(apiClients) ? apiClients : []);
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
-      setClients(mergeClientsUnique(mockClients, localMockClients));
+      setClients([]);
+      toast.error('Não foi possível carregar clientes no backend.');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadSetupMap = () => {
+  const loadSetupMap = async () => {
     try {
-      const raw = localStorage.getItem(CLIENT_SETUP_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        setClientSetupMap(parsed);
-      }
+      const response = await api.get('/clients/setup-map');
+      const setupMap = response.data?.setup_map || {};
+      setClientSetupMap(setupMap && typeof setupMap === 'object' ? setupMap : {});
     } catch (error) {
-      console.error('Erro ao carregar setup map:', error);
+      console.error('Erro ao carregar setup map do backend:', error);
+      setClientSetupMap({});
+    } finally {
+      setupLoadedRef.current = true;
+    }
+  };
+
+  const loadPortalUsers = async () => {
+    try {
+      const response = await api.get('/clients/portal-users');
+      setPortalUsers(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Erro ao carregar usuários de portal dos clientes:', error);
+      setPortalUsers([]);
+    }
+  };
+
+  const loadFinancialClientsMap = async () => {
+    try {
+      const response = await api.get('/financial/clients?limit=5000');
+      const list = Array.isArray(response.data) ? response.data : [];
+      const map = {};
+      list.forEach((item) => {
+        const key = String(item.client_id || item.empresa_id || '');
+        if (!key) return;
+        map[key] = item;
+      });
+      setFinancialByClientId(map);
+    } catch (error) {
+      console.error('Erro ao carregar mapa financeiro dos clientes:', error);
+      setFinancialByClientId({});
     }
   };
 
   const saveSetupMap = (nextValueOrFn) => {
     setClientSetupMap((current) => {
       const next = typeof nextValueOrFn === 'function' ? nextValueOrFn(current) : nextValueOrFn;
-      localStorage.setItem(CLIENT_SETUP_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
   };
 
-  const getClientRegime = (client) => client?.tipo_regime || client?.regime || 'nao_definido';
-
-  const financialMap = useMemo(() => {
-    try {
-      const list = JSON.parse(localStorage.getItem(FINANCIAL_CLIENTS_KEY) || '[]');
-      const map = new Map();
-      if (Array.isArray(list)) {
-        list.forEach((item) => map.set(String(item.client_id), item));
+  useEffect(() => {
+    if (!setupLoadedRef.current) return;
+    if (!selectedClient?.id) return;
+    const clientId = String(selectedClient.id);
+    const payload = clientSetupMap?.[clientId];
+    if (!payload) return;
+    if (setupSyncTimerRef.current) window.clearTimeout(setupSyncTimerRef.current);
+    setupSyncTimerRef.current = window.setTimeout(async () => {
+      try {
+        await api.put(`/clients/setup/${clientId}`, { payload });
+      } catch (error) {
+        console.error('Erro ao salvar setup do cliente no backend:', error);
       }
-      return map;
-    } catch {
-      return new Map();
-    }
-  }, [showConfigModal, clients.length]);
+    }, 500);
+    return () => {
+      if (setupSyncTimerRef.current) window.clearTimeout(setupSyncTimerRef.current);
+    };
+  }, [clientSetupMap, selectedClient?.id]);
 
-  const workforceMap = useMemo(() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(WORKFORCE_STORAGE_KEY) || '{}');
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  }, [showConfigModal, clients.length]);
-
-  const fiscalSetupMap = useMemo(() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(FISCAL_CLIENT_SETUP_KEY) || '{}');
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
-  }, [showConfigModal, clients.length]);
+  const getClientRegime = (client) => client?.tipo_regime || client?.regime || 'nao_definido';
 
   const allowedCitiesSet = useMemo(() => {
     if (user?.role === 'admin') return null;
@@ -338,24 +337,8 @@ const ClientesExpandido = () => {
     let base = [...clients];
 
     if (allowedCitiesSet) {
-      base = base.filter((client) => allowedCitiesSet.has(normalizeText(client.cidade || '')));
+      base = base.filter((client) => allowedCitiesSet.has(normalizeText(getClientCity(client))));
     }
-
-    base = base.filter((client) => {
-      const fin = financialMap.get(String(client.id));
-      const workforce = workforceMap[String(client.id)];
-      const fiscal = fiscalSetupMap[String(client.id)] || {};
-
-      if (!categoryChecks.isentos && fin?.tipo_pagamento_especial === 'isento') return false;
-      if (!categoryChecks.permuta && fin?.tipo_pagamento_especial === 'permuta') return false;
-      const statusFiscal = fiscal.statusFiscal || (fiscal.temMovimento ? 'com_movimento' : 'sem_movimento');
-      if (!categoryChecks.semMovimento && statusFiscal === 'sem_movimento') return false;
-      const qtdFuncionarios = Array.isArray(workforce?.funcionarios)
-        ? workforce.funcionarios.length
-        : Number(fin?.quantidade_funcionarios || 0);
-      if (!categoryChecks.semFuncionarios && qtdFuncionarios === 0) return false;
-      return true;
-    });
 
     if (!term) return base;
     return base.filter((client) => (
@@ -363,35 +346,42 @@ const ClientesExpandido = () => {
       client.nome_fantasia?.toLowerCase().includes(term) ||
       client.cnpj?.toLowerCase().includes(term)
     ));
-  }, [clients, search, categoryChecks, allowedCitiesSet, financialMap, workforceMap, fiscalSetupMap]);
+  }, [clients, search, allowedCitiesSet]);
 
   const filteredClients = useMemo(() => {
     if (selectedCityFilter === 'Todas as Cidades') return clientsBaseFiltered;
-    return clientsBaseFiltered.filter((client) => normalizeText(client.cidade || '') === normalizeText(selectedCityFilter));
+    return clientsBaseFiltered.filter((client) => canonicalCityKey(getClientCity(client)) === canonicalCityKey(selectedCityFilter));
   }, [clientsBaseFiltered, selectedCityFilter]);
 
   const cityCounts = useMemo(() => {
     const countMap = new Map();
     clientsBaseFiltered.forEach((client) => {
-      const city = client.cidade || '';
-      if (!city) return;
-      countMap.set(city, (countMap.get(city) || 0) + 1);
+      const city = getClientCity(client);
+      const cityKey = canonicalCityKey(city);
+      if (!cityKey) return;
+      const current = countMap.get(cityKey) || { city: canonicalCityLabel(city), count: 0 };
+      current.count += 1;
+      if (!current.city && city) current.city = canonicalCityLabel(city);
+      countMap.set(cityKey, current);
     });
     const citiesOrdered = Array.from(countMap.keys()).sort((a, b) => {
-      const ai = CITY_ORDER.findIndex((x) => normalizeText(x) === normalizeText(a));
-      const bi = CITY_ORDER.findIndex((x) => normalizeText(x) === normalizeText(b));
+      const ai = CITY_ORDER.findIndex((x) => canonicalCityKey(x) === canonicalCityKey(a));
+      const bi = CITY_ORDER.findIndex((x) => canonicalCityKey(x) === canonicalCityKey(b));
       if (ai !== -1 && bi !== -1) return ai - bi;
       if (ai !== -1) return -1;
       if (bi !== -1) return 1;
       return a.localeCompare(b, 'pt-BR');
     });
-    return citiesOrdered.map((city) => ({ city, count: countMap.get(city) || 0 }));
+    return citiesOrdered.map((cityKey) => ({
+      city: countMap.get(cityKey)?.city || canonicalCityLabel(cityKey),
+      count: countMap.get(cityKey)?.count || 0,
+    }));
   }, [clientsBaseFiltered]);
 
   const selectedSetup = useMemo(() => {
     if (!selectedClient) return null;
     const base = clientSetupMap[selectedClient.id] || createDefaultClientSetup(selectedClient);
-    const portalUser = readPortalUsers().find((item) => String(item.clientRefId) === String(selectedClient.id));
+    const portalUser = portalUsers.find((item) => String(item.clientRefId) === String(selectedClient.id));
     return {
       ...base,
       acessoCliente: {
@@ -404,23 +394,18 @@ const ClientesExpandido = () => {
         atualizadoEm: base.acessoCliente?.atualizadoEm || portalUser?.updatedAt || '',
       },
     };
-  }, [clientSetupMap, selectedClient]);
+  }, [clientSetupMap, selectedClient, portalUsers]);
 
   const selectedFinancialData = useMemo(() => {
     if (!selectedClient) return null;
-    try {
-      const list = JSON.parse(localStorage.getItem(FINANCIAL_CLIENTS_KEY) || '[]');
-      if (!Array.isArray(list)) return null;
-      return list.find((item) => String(item.client_id) === String(selectedClient.id)) || null;
-    } catch {
-      return null;
-    }
-  }, [selectedClient]);
+    return financialByClientId[String(selectedClient.id)] || null;
+  }, [selectedClient, financialByClientId]);
 
   const cityOptions = useMemo(() => {
     const base = new Set(['Jacobina', 'Ourolandia', 'Umburanas', 'Uberlandia']);
     clients.forEach((client) => {
-      if (client?.cidade) base.add(client.cidade);
+      const city = getClientCity(client);
+      if (city) base.add(city);
     });
     Object.values(clientSetupMap || {}).forEach((cfg) => {
       const city = cfg?.setupEmpresa?.enderecoCidade;
@@ -463,6 +448,35 @@ const ClientesExpandido = () => {
     setNovoSocio({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
     setActiveSection('dados_empresa');
     setShowConfigModal(true);
+  };
+
+  const deleteSelectedClient = async () => {
+    if (!selectedClient?.id) return;
+    if (user?.role !== 'admin') {
+      toast.error('Apenas administradores podem excluir clientes.');
+      return;
+    }
+    const confirmed = window.confirm(`Deseja realmente excluir o cliente "${selectedClient.nome_empresa}"?`);
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/clients/${selectedClient.id}`);
+    } catch (error) {
+      console.warn('Falha ao excluir cliente no backend.', error);
+      toast.error('Não foi possível excluir o cliente no backend.');
+      return;
+    }
+
+    setClients((prev) => prev.filter((item) => String(item.id) !== String(selectedClient.id)));
+    saveSetupMap((current) => {
+      const next = { ...current };
+      delete next[selectedClient.id];
+      return next;
+    });
+
+    setShowConfigModal(false);
+    setSelectedClient(null);
+    toast.success('Cliente excluído com sucesso.');
   };
 
   const updateSetupEmpresa = (field, value) => {
@@ -730,7 +744,24 @@ const ClientesExpandido = () => {
     });
   };
 
-  const saveClientPortalLogin = () => {
+  const updateSetupSenha = (field, value) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          senhas: {
+            ...base.senhas,
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const saveClientPortalLogin = async () => {
     if (!selectedClient || !selectedSetup) return;
 
     const nome = String(selectedSetup.acessoCliente?.nome || '').trim();
@@ -742,27 +773,19 @@ const ClientesExpandido = () => {
       return;
     }
 
-    const currentPortalUsers = readPortalUsers();
-    const existingByClient = currentPortalUsers.find((item) => String(item.clientRefId) === String(selectedClient.id));
-    const existingByEmail = currentPortalUsers.find((item) => String(item.email).toLowerCase() === email);
-
-    const nextUser = {
-      id: existingByClient?.id || existingByEmail?.id || `portal-user-${Date.now()}`,
-      clientRefId: selectedClient.id,
-      clienteId: selectedSetup.acessoCliente?.clienteId || selectedClient.id,
-      nome,
-      email,
-      senha,
-      createdAt: existingByClient?.createdAt || existingByEmail?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    const filtered = currentPortalUsers.filter(
-      (item) =>
-        String(item.clientRefId) !== String(selectedClient.id) &&
-        String(item.email).toLowerCase() !== email,
-    );
-    savePortalUsers([nextUser, ...filtered]);
+    try {
+      await api.put(`/clients/portal-users/${selectedClient.id}`, {
+        nome,
+        email,
+        senha,
+        clienteId: selectedSetup.acessoCliente?.clienteId || selectedClient.id,
+      });
+      await loadPortalUsers();
+    } catch (error) {
+      console.error('Erro ao salvar login do cliente no backend:', error);
+      toast.error('Não foi possível salvar login do cliente no backend.');
+      return;
+    }
 
     saveSetupMap((current) => {
       const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
@@ -794,36 +817,55 @@ const ClientesExpandido = () => {
     setActiveSection(tabId);
   };
 
-  const handleCreateClientMock = () => {
+  const handleCreateClient = async () => {
     if (!newClientForm.nome_empresa || !newClientForm.cnpj) {
       toast.error('Informe ao menos nome da empresa e CNPJ.');
       return;
     }
-    const item = {
-      id: `mock-client-${Date.now()}`,
-      nome_empresa: newClientForm.nome_empresa,
-      nome_fantasia: newClientForm.nome_fantasia || newClientForm.nome_empresa,
-      cnpj: newClientForm.cnpj,
-      tipo_regime: newClientForm.tipo_regime,
-      status: newClientForm.status,
-      cidade: newClientForm.cidade,
-      created_at: new Date().toISOString(),
-    };
-    setClients((prev) => {
-      const next = mergeClientsUnique([item], prev);
-      localStorage.setItem(MOCK_ADMIN_CLIENTS_KEY, JSON.stringify(next));
-      return next;
-    });
-    setShowNewClientModal(false);
-    setNewClientForm({
-      nome_empresa: '',
-      nome_fantasia: '',
-      cnpj: '',
-      tipo_regime: 'simples_nacional',
-      status: 'ativo',
-      cidade: 'Jacobina',
-    });
-    toast.success('Cliente mock adicionado.');
+    try {
+      await api.post('/clients', {
+        nome_empresa: newClientForm.nome_empresa,
+        nome_fantasia: newClientForm.nome_fantasia || newClientForm.nome_empresa,
+        status_empresa: newClientForm.status || 'ativa',
+        cidade_atendimento: newClientForm.cidade,
+        telefone: '',
+        whatsapp: '',
+        email: '',
+        responsavel_empresa: '',
+        cnpj: newClientForm.cnpj,
+        codigo_iob: '',
+        novo_cliente: true,
+        tipo_empresa: 'matriz',
+        tipo_regime: newClientForm.tipo_regime,
+        endereco: {
+          logradouro: '-',
+          numero: '',
+          complemento: '',
+          bairro: '-',
+          distrito: '',
+          cep: '00000-000',
+          cidade: newClientForm.cidade,
+          estado: 'BA',
+        },
+        forma_envio: 'email',
+        empresa_grupo: '',
+      });
+
+      setShowNewClientModal(false);
+      setNewClientForm({
+        nome_empresa: '',
+        nome_fantasia: '',
+        cnpj: '',
+        tipo_regime: 'simples_nacional',
+        status: 'ativo',
+        cidade: 'Jacobina',
+      });
+      await loadClients();
+      toast.success('Cliente adicionado no backend.');
+    } catch (error) {
+      console.error('Erro ao criar cliente:', error);
+      toast.error('Não foi possível criar cliente no backend.');
+    }
   };
 
   return (
@@ -837,6 +879,15 @@ const ClientesExpandido = () => {
           <p className="text-gray-400 mt-2">Centro de configuracao do cliente no sistema.</p>
         </div>
         <div className="flex items-center gap-2">
+          {hasModuleAccess('financeiro') ? (
+            <button
+              type="button"
+              onClick={() => navigate('/clientes-financeiro')}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-emerald-100 hover:bg-emerald-500/25"
+            >
+              Ir para Lista do Financeiro
+            </button>
+          ) : null}
           {canAccessClientesAvulso ? (
             <button
               type="button"
@@ -866,24 +917,6 @@ const ClientesExpandido = () => {
             className="w-full bg-black/30 border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-white"
             placeholder="Buscar por empresa, fantasia ou CNPJ..."
           />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-200">
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={categoryChecks.isentos} onChange={(e) => setCategoryChecks((p) => ({ ...p, isentos: e.target.checked }))} />
-            Clientes Isentos
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={categoryChecks.permuta} onChange={(e) => setCategoryChecks((p) => ({ ...p, permuta: e.target.checked }))} />
-            Clientes Permuta
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={categoryChecks.semMovimento} onChange={(e) => setCategoryChecks((p) => ({ ...p, semMovimento: e.target.checked }))} />
-            Clientes Sem Movimento
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={categoryChecks.semFuncionarios} onChange={(e) => setCategoryChecks((p) => ({ ...p, semFuncionarios: e.target.checked }))} />
-            Clientes Sem Funcionarios
-          </label>
         </div>
       </div>
 
@@ -919,79 +952,120 @@ const ClientesExpandido = () => {
           </div>
         </aside>
 
-        <div className="glass rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="table-futuristic w-full">
-              <thead>
-                <tr className="border-b border-red-600/30">
-                  <th className="text-left p-4 text-gray-300 font-semibold">Nome da empresa</th>
-                  <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
-                  <th className="text-left p-4 text-gray-300 font-semibold">Cidade</th>
-                  <th className="text-left p-4 text-gray-300 font-semibold">Regime</th>
-                  <th className="text-left p-4 text-gray-300 font-semibold">Status</th>
-                  <th className="text-left p-4 text-gray-300 font-semibold">Tipo de configuracao</th>
-                  <th className="text-left p-4 text-gray-300 font-semibold">Acoes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="7" className="text-center p-8 text-gray-400">Carregando clientes...</td>
-                  </tr>
-                ) : filteredClients.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="text-center p-8 text-gray-400">Nenhum cliente encontrado.</td>
-                  </tr>
-                ) : (
-                  filteredClients.map((client) => {
-                    const setupLabel = setupTypeLabel(client);
-                    return (
-                      <tr
-                        key={client.id}
-                        onClick={() => openClientData(client)}
-                        className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors cursor-pointer"
-                      >
-                        <td className="p-4">
-                          <p className="text-white font-semibold">{client.nome_empresa}</p>
-                          {client.nome_fantasia ? <p className="text-xs text-gray-400">{client.nome_fantasia}</p> : null}
-                        </td>
-                        <td className="p-4 text-gray-300 font-mono text-sm">{client.cnpj || '-'}</td>
-                        <td className="p-4 text-gray-200 text-sm">{client.cidade ? formatCityLabel(client.cidade) : '-'}</td>
-                        <td className="p-4">
-                          <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-300 border border-blue-600/30 capitalize">
-                            {getClientRegime(client).replaceAll('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className="px-3 py-1 rounded-full text-xs font-medium bg-zinc-600/20 text-zinc-300 border border-zinc-600/30 capitalize">
-                            {client.status || 'ativo'}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${setupTypeClass(setupLabel)}`}>
-                            {setupLabel}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openConfig(client);
-                            }}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-600/20 border border-red-600/30 text-red-200 hover:bg-red-600/30"
-                          >
-                            <Eye className="w-4 h-4" />
-                            Configurar
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+        <div className="glass rounded-2xl p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-gray-300">
+              Lista de clientes: <span className="font-semibold text-white">{filteredClients.length}</span>
+            </p>
+            <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setClientListMode('detalhado')}
+                className={`rounded-md px-2.5 py-1 ${clientListMode === 'detalhado' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+              >
+                Detalhado
+              </button>
+              <button
+                type="button"
+                onClick={() => setClientListMode('resumido')}
+                className={`rounded-md px-2.5 py-1 ${clientListMode === 'resumido' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+              >
+                Resumido
+              </button>
+            </div>
           </div>
+          {loading ? (
+            <div className="rounded-xl border border-gray-700 bg-black/20 p-8 text-center text-gray-400">
+              Carregando clientes...
+            </div>
+          ) : filteredClients.length === 0 ? (
+            <div className="rounded-xl border border-gray-700 bg-black/20 p-8 text-center text-gray-400">
+              Nenhum cliente encontrado.
+            </div>
+          ) : clientListMode === 'resumido' ? (
+            <div className="space-y-2">
+              {filteredClients.map((client) => (
+                <article
+                  key={client.id}
+                  onClick={() => openClientData(client)}
+                  className="group cursor-pointer rounded-xl border border-gray-700 bg-black/20 px-4 py-3 transition-colors hover:border-red-500/35 hover:bg-red-600/5"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-white">{client.nome_empresa}</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openConfig(client);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-600/30 bg-red-600/20 px-2.5 py-1.5 text-xs text-red-200 hover:bg-red-600/30"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Configurar
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {filteredClients.map((client) => {
+                const setupLabel = setupTypeLabel(client);
+                return (
+                  <article
+                    key={client.id}
+                    onClick={() => openClientData(client)}
+                    className="group cursor-pointer rounded-xl border border-gray-700 bg-black/20 p-4 transition-colors hover:border-red-500/35 hover:bg-red-600/5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-white">{client.nome_empresa}</h3>
+                        {client.nome_fantasia ? (
+                          <p className="truncate text-xs text-gray-400">{client.nome_fantasia}</p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openConfig(client);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-600/30 bg-red-600/20 px-2.5 py-1.5 text-xs text-red-200 hover:bg-red-600/30"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Configurar
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-gray-700 bg-black/20 p-2.5">
+                        <p className="text-[10px] uppercase tracking-wide text-gray-400">CNPJ</p>
+                        <p className="mt-1 font-mono text-xs text-gray-200">{client.cnpj || '-'}</p>
+                      </div>
+                      <div className="rounded-lg border border-gray-700 bg-black/20 p-2.5">
+                        <p className="text-[10px] uppercase tracking-wide text-gray-400">Cidade</p>
+                        <p className="mt-1 text-xs text-gray-200">{getClientCity(client) ? formatCityLabel(getClientCity(client)) : '-'}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-blue-600/30 bg-blue-600/20 px-3 py-1 text-[11px] font-medium capitalize text-blue-300">
+                        {getClientRegime(client).replaceAll('_', ' ')}
+                      </span>
+                      <span className="rounded-full border border-zinc-600/30 bg-zinc-600/20 px-3 py-1 text-[11px] font-medium capitalize text-zinc-300">
+                        {client.status || 'ativo'}
+                      </span>
+                      <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${setupTypeClass(setupLabel)}`}>
+                        {setupLabel}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1003,13 +1077,24 @@ const ClientesExpandido = () => {
                 <h2 className="text-2xl font-bold text-white">{selectedClient.nome_fantasia || selectedClient.nome_empresa}</h2>
                 <p className="text-sm text-gray-400">Centro de configuracao do cliente</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowConfigModal(false)}
-                className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                {user?.role === 'admin' ? (
+                  <button
+                    type="button"
+                    onClick={deleteSelectedClient}
+                    className="px-4 py-2 rounded-lg border border-red-500/40 bg-red-500/20 text-red-100 hover:bg-red-500/30"
+                  >
+                    Excluir cliente
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6">
@@ -1275,7 +1360,7 @@ const ClientesExpandido = () => {
                   <InputField label="WhatsApp" value={selectedSetup.setupEmpresa.contatoWhatsapp} onChange={(v) => updateSetupEmpresa('contatoWhatsapp', v)} />
                   <InputField label="URL da logo" value={selectedSetup.setupEmpresa.logoUrl} onChange={(v) => updateSetupEmpresa('logoUrl', v)} />
                   <div>
-                    <label className="block text-sm text-gray-300 mb-2">Logo da empresa (mock)</label>
+                    <label className="block text-sm text-gray-300 mb-2">Logo da empresa</label>
                     <label className="w-full inline-flex items-center gap-2 justify-center bg-black/30 border border-gray-700 rounded-lg px-4 py-2 text-white cursor-pointer hover:bg-black/40">
                       <UploadCloud className="w-4 h-4" />
                       {selectedSetup.setupEmpresa.logoFileName || 'Selecionar arquivo'}
@@ -1687,7 +1772,7 @@ const ClientesExpandido = () => {
               <SectionCard title="Servicos vinculados" icon={<Settings className="w-5 h-5 text-red-300" />}>
                 {(() => {
                   const services = getMockInternalServices().filter((item) => item.empresa_id === selectedClient.id);
-                  if (!services.length) return <p className="text-gray-400">Nenhum servico vinculado no mock.</p>;
+                  if (!services.length) return <p className="text-gray-400">Nenhum serviço vinculado.</p>;
                   return (
                     <div className="space-y-2">
                       {services.map((service) => (
@@ -1718,6 +1803,45 @@ const ClientesExpandido = () => {
                 </div>
               </SectionCard>
             ) : null}
+
+            {activeSection === 'senhas' ? (
+              <SectionCard title="Senhas" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <InputField
+                    label="Certificado digital"
+                    value={selectedSetup?.senhas?.certificadoDigital || ''}
+                    onChange={(v) => updateSetupSenha('certificadoDigital', v)}
+                    placeholder="Senha / observação"
+                  />
+                  <InputField
+                    label="Senha gov"
+                    value={selectedSetup?.senhas?.senhaGov || ''}
+                    onChange={(v) => updateSetupSenha('senhaGov', v)}
+                    placeholder="Senha / observação"
+                  />
+                  <InputField
+                    label="Senha do simples nacional"
+                    value={selectedSetup?.senhas?.senhaSimplesNacional || ''}
+                    onChange={(v) => updateSetupSenha('senhaSimplesNacional', v)}
+                    placeholder="Senha / observação"
+                  />
+                  <InputField
+                    label="Senha portal prefeitura"
+                    value={selectedSetup?.senhas?.senhaPortalPrefeitura || ''}
+                    onChange={(v) => updateSetupSenha('senhaPortalPrefeitura', v)}
+                    placeholder="Senha / observação"
+                  />
+                  <div className="md:col-span-2">
+                    <InputField
+                      label="Senha do emissor nacional (somente empresas de serviço)"
+                      value={selectedSetup?.senhas?.senhaEmissorNacional || ''}
+                      onChange={(v) => updateSetupSenha('senhaEmissorNacional', v)}
+                      placeholder="Senha / observação"
+                    />
+                  </div>
+                </div>
+              </SectionCard>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1726,7 +1850,7 @@ const ClientesExpandido = () => {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="glass rounded-2xl p-6 w-full max-w-xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white">Novo Cliente (mock)</h2>
+              <h2 className="text-xl font-bold text-white">Novo Cliente</h2>
               <button type="button" onClick={() => setShowNewClientModal(false)} className="px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">Fechar</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1749,7 +1873,7 @@ const ClientesExpandido = () => {
               </div>
             </div>
             <div className="mt-4 flex justify-end">
-              <button type="button" onClick={handleCreateClientMock} className="btn-futuristic px-5 py-2 rounded-lg text-white font-medium">
+              <button type="button" onClick={handleCreateClient} className="btn-futuristic px-5 py-2 rounded-lg text-white font-medium">
                 Salvar cliente
               </button>
             </div>
@@ -1869,6 +1993,13 @@ function createDefaultClientSetup(client) {
       clienteId: client?.id || '',
       salvo: false,
       atualizadoEm: '',
+    },
+    senhas: {
+      certificadoDigital: '',
+      senhaGov: '',
+      senhaSimplesNacional: '',
+      senhaEmissorNacional: '',
+      senhaPortalPrefeitura: '',
     },
     modulosLiberados: [
       'Financeiro',

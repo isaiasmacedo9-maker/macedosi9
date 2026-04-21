@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ClipboardList, Eye, Filter, Plus, RefreshCw, Search } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, ClipboardList, Copy, Eye, MinusCircle, Plus, RefreshCw, RotateCcw, Search, Trash2, Users } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { getMockInternalServices } from '../../dev/clientPortalData';
 import { mockClients } from '../../dev/mockData';
@@ -7,6 +7,8 @@ import { accountingServiceProcessModels } from '../../dev/accountingProcessTempl
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'sonner';
 import { createProcessModelFromDraft, hydrateProcessModels } from '../Ourolandia/processModelUtils';
+import MacedoAcademy from '../Ourolandia/MacedoAcademy';
+import ServicesSettingsPanel from './ServicesSettingsPanel';
 import './ServicesDark.css';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
@@ -17,10 +19,10 @@ const MODELS_KEY = 'mock_macedo_academy_process_models_v1';
 const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
 
 const statusOptions = [
-  { value: 'novo', label: 'Novo', className: 'bg-blue-500/15 text-blue-200 border border-blue-500/30' },
-  { value: 'em_andamento', label: 'Em andamento', className: 'bg-amber-500/15 text-amber-200 border border-amber-500/30' },
-  { value: 'concluido', label: 'Concluido', className: 'bg-emerald-500/15 text-emerald-200 border border-emerald-500/30' },
-  { value: 'cancelado', label: 'Cancelado', className: 'bg-rose-500/15 text-rose-200 border border-rose-500/30' },
+  { value: 'novo', label: 'A fazer', className: 'border border-white/10 bg-[#2a3446] text-white' },
+  { value: 'em_andamento', label: 'Em progresso', className: 'border border-cyan-500/40 bg-cyan-500/15 text-cyan-100' },
+  { value: 'concluido', label: 'Concluido', className: 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-100' },
+  { value: 'cancelado', label: 'Dispensada', className: 'border border-amber-500/40 bg-amber-500/15 text-amber-100' },
 ];
 
 const normalizeStatus = (status) => {
@@ -179,9 +181,25 @@ const Services = () => {
   const [selectedServico, setSelectedServico] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
-  const [topViewTab, setTopViewTab] = useState('servicos');
+  const [showBatchEditModal, setShowBatchEditModal] = useState(false);
+  const [showBatchSendModal, setShowBatchSendModal] = useState(false);
+  const [topViewTab, setTopViewTab] = useState('processos');
+  const [processViewMode, setProcessViewMode] = useState('tabela');
   const [scopeTab, setScopeTab] = useState('cliente');
+  const [teamPerformanceScope, setTeamPerformanceScope] = useState('equipe');
+  const [selectedPeriodo, setSelectedPeriodo] = useState('all');
+  const [selectedPrazo, setSelectedPrazo] = useState('all');
+  const [selectedResponsavel, setSelectedResponsavel] = useState('all');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
+  const [selectedUrgencyFilter, setSelectedUrgencyFilter] = useState('all');
+  const [showResponsibleSelector, setShowResponsibleSelector] = useState(false);
+  const [createMode, setCreateMode] = useState('modelo');
+  const [expandedProcessRows, setExpandedProcessRows] = useState({});
+  const [selectedProcessService, setSelectedProcessService] = useState(null);
+  const [batchStatus, setBatchStatus] = useState('novo');
   const [quickSearch, setQuickSearch] = useState('');
+  const [quickSearchDate, setQuickSearchDate] = useState('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState([]);
   const [showCustomServiceInput, setShowCustomServiceInput] = useState(false);
   const [customServiceName, setCustomServiceName] = useState('');
   const [serviceTypeSearchTerm, setServiceTypeSearchTerm] = useState('');
@@ -208,6 +226,10 @@ const Services = () => {
   const [accessDeniedBySector, setAccessDeniedBySector] = useState(false);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [showBatchGenerateModal, setShowBatchGenerateModal] = useState(false);
+  const [batchGenerateServiceName, setBatchGenerateServiceName] = useState('');
+  const [batchGenerateModelId, setBatchGenerateModelId] = useState('');
+  const [batchGenerateSectorKey, setBatchGenerateSectorKey] = useState('atendimento');
   const [newService, setNewService] = useState({
     empresa_id: '',
     empresa_nome: '',
@@ -216,6 +238,11 @@ const Services = () => {
     descricao: '',
     setor_key: 'atendimento',
     cidade: '',
+    urgencia: 'normal',
+    data_inicio: '',
+    canal_atendimento: 'interno',
+    vincular_ordem_servico: false,
+    gerar_cobranca: false,
   });
   const [processModels, setProcessModels] = useState(() => hydrateProcessModels(accountingServiceProcessModels));
   const [processDraft, setProcessDraft] = useState({
@@ -227,12 +254,26 @@ const Services = () => {
       { nome: 'Execucao tecnica', setorResponsavelKey: 'atendimento', tarefasTexto: 'Executar servico\nRevisar entrega final' },
     ],
   });
+  const clientDropdownRef = useRef(null);
+  const responsibleDropdownRef = useRef(null);
 
   const isDashboardTab = topViewTab === 'dashboard';
-  const isServicosTab = topViewTab === 'servicos';
   const isProcessosTab = topViewTab === 'processos';
+  const isOrdemServicoTab = topViewTab === 'ordem_servico';
+  const isModelosTab = topViewTab === 'modelos';
   const isConfiguracoesTab = topViewTab === 'configuracoes';
-  const isTableLikeTab = isServicosTab || isProcessosTab;
+  const isProcessWorkspaceTab = isProcessosTab;
+
+  const getServiceResponsibleName = (service) => {
+    if (!service) return 'Nao atribuido';
+    const directName = service.responsavel_nome || service.responsavel_conta || service.colaborador_responsavel || service.colaborador_lancamento_nome;
+    if (directName) return directName;
+    const assigned = Array.isArray(service.assigned_to) ? service.assigned_to : [];
+    const firstAssigned = assigned[0];
+    if (!firstAssigned) return 'Nao atribuido';
+    const byId = allUsers.find((userItem) => getUserIdentifier(userItem) === firstAssigned);
+    return byId?.name || byId?.email || 'Nao atribuido';
+  };
 
   useEffect(() => {
     loadServicos();
@@ -414,6 +455,35 @@ const Services = () => {
       .sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR'));
   }, [servicos]);
 
+  const periodoOptions = useMemo(() => {
+    const map = new Map();
+    userVisibleServicos.forEach((item) => {
+      const rawDate = item.data_prazo || item.created_at;
+      if (!rawDate) return;
+      const date = new Date(rawDate);
+      if (Number.isNaN(date.getTime())) return;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      map.set(key, label);
+    });
+    return Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => b.value.localeCompare(a.value));
+  }, [userVisibleServicos]);
+
+  const responsavelOptions = useMemo(() => {
+    const map = new Map();
+    userVisibleServicos.forEach((item) => {
+      const name = getServiceResponsibleName(item);
+      if (!name) return;
+      const key = normalizeText(name);
+      if (!map.has(key)) map.set(key, name);
+    });
+    return Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR'));
+  }, [userVisibleServicos, allUsers]);
+
   const rankedClienteOptions = useMemo(() => {
     const term = normalizeText(clientSearchTerm);
     if (!term) return clienteOptions;
@@ -587,6 +657,30 @@ const Services = () => {
       const itemIsOrderService = isOrderService(item);
       const matchOrdensServico = !appliedFilters.ordensServico || itemIsOrderService;
       const matchServicosPadrao = !appliedFilters.servicosPadrao || !itemIsOrderService;
+      const rawDate = item.data_prazo || item.created_at;
+      const parsedDate = rawDate ? new Date(rawDate) : null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selectedPeriodMatch = (() => {
+        if (selectedPeriodo === 'all') return true;
+        if (!parsedDate || Number.isNaN(parsedDate.getTime())) return false;
+        const key = `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}`;
+        return key === selectedPeriodo;
+      })();
+      const prazoMatch = (() => {
+        if (selectedPrazo === 'all') return true;
+        if (!parsedDate || Number.isNaN(parsedDate.getTime())) return false;
+        const baseDate = new Date(parsedDate);
+        baseDate.setHours(0, 0, 0, 0);
+        if (selectedPrazo === 'late') return baseDate < today;
+        if (selectedPrazo === 'on_time') return baseDate >= today;
+        return true;
+      })();
+      const responsibleName = normalizeText(getServiceResponsibleName(item));
+      const responsibleMatch = selectedResponsavel === 'all' || responsibleName === selectedResponsavel;
+      const statusMatch = selectedStatusFilter === 'all' || item.status_ui === selectedStatusFilter;
+      const urgencyRaw = normalizeText(item.urgencia || item.prioridade || 'normal');
+      const urgencyMatch = selectedUrgencyFilter === 'all' || urgencyRaw === selectedUrgencyFilter;
 
       return (
         matchCliente
@@ -595,20 +689,16 @@ const Services = () => {
         && matchVinculados
         && matchOrdensServico
         && matchServicosPadrao
+        && selectedPeriodMatch
+        && prazoMatch
+        && responsibleMatch
+        && statusMatch
+        && urgencyMatch
       );
     });
-  }, [userVisibleServicos, appliedFilters, accessDeniedBySector, user?.id, user?.email]);
+  }, [userVisibleServicos, appliedFilters, accessDeniedBySector, user?.id, user?.email, selectedPeriodo, selectedPrazo, selectedResponsavel, selectedStatusFilter, selectedUrgencyFilter, allUsers]);
 
-  const canSearch = Boolean(
-    draftFilters.cliente
-    || draftFilters.setor
-    || draftFilters.cadastradosPorVoce
-    || draftFilters.vinculados
-    || draftFilters.ordensServico
-    || draftFilters.servicosPadrao,
-  );
-
-  const handleSearch = () => {
+  useEffect(() => {
     if (
       draftFilters.setor &&
       !hasAtendimentoAccess &&
@@ -620,23 +710,29 @@ const Services = () => {
     }
     setAccessDeniedBySector(false);
     setAppliedFilters(draftFilters);
-  };
+  }, [draftFilters, hasAtendimentoAccess, user]);
 
-  const handleClearFilters = () => {
-    const cleared = {
-      cliente: '',
-      setor: '',
-      cadastradosPorVoce: false,
-      vinculados: false,
-      ordensServico: false,
-      servicosPadrao: false,
+  useEffect(() => {
+    if (selectedPeriodo !== 'all') return;
+    if (!periodoOptions.length) return;
+    setSelectedPeriodo(periodoOptions[0].value);
+  }, [periodoOptions, selectedPeriodo]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target)) {
+        setClientDropdownOpen(false);
+      }
+      if (responsibleDropdownRef.current && !responsibleDropdownRef.current.contains(event.target)) {
+        setShowResponsibleSelector(false);
+      }
     };
-    setDraftFilters(cleared);
-    setAppliedFilters(cleared);
-    setAccessDeniedBySector(false);
-    setClientSearchTerm('');
-    setClientDropdownOpen(false);
-  };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, []);
 
   const resumo = useMemo(() => {
     return {
@@ -649,13 +745,17 @@ const Services = () => {
 
   const visibleServicos = useMemo(() => {
     const term = normalizeText(quickSearch);
-    if (!term) return filteredServicos;
-    return filteredServicos.filter((item) =>
-      normalizeText(item.empresa_nome).includes(term)
-      || normalizeText(item.tipo_servico).includes(term)
-      || normalizeText(item.titulo).includes(term),
-    );
-  }, [filteredServicos, quickSearch]);
+    return filteredServicos.filter((item) => {
+      const textMatch = !term
+        || normalizeText(item.empresa_nome).includes(term)
+        || normalizeText(item.tipo_servico).includes(term)
+        || normalizeText(item.titulo).includes(term);
+      if (!textMatch) return false;
+      if (!quickSearchDate) return true;
+      const itemDate = String(item.data_prazo || item.created_at || '').slice(0, 10);
+      return itemDate === quickSearchDate;
+    });
+  }, [filteredServicos, quickSearch, quickSearchDate]);
 
   const groupedByClient = useMemo(() => {
     const grouped = new Map();
@@ -672,35 +772,82 @@ const Services = () => {
     visibleServicos.forEach((item) => {
       const key = item.tipo_servico || item.titulo || 'Processo sem nome';
       if (!grouped.has(key)) {
-        grouped.set(key, { clients: new Set(), total: 0, setor: item.setor || '-' });
+        grouped.set(key, { clients: new Set(), total: 0, setor: item.setor || '-', items: [] });
       }
       const row = grouped.get(key);
       row.total += 1;
       if (item.empresa_nome) row.clients.add(item.empresa_nome);
+      row.items.push(item);
     });
     return Array.from(grouped.entries()).map(([name, data]) => ({
       name,
       clients: data.clients.size,
       total: data.total,
       setor: data.setor,
+      items: data.items,
     }));
   }, [visibleServicos]);
 
   const taskRows = useMemo(() => {
     const rows = [];
     visibleServicos.forEach((item) => {
+      const deptKey = normalizeSectorKey(item.setor || '');
+      const deptBadge =
+        deptKey === 'financeiro' ? 'F' :
+        deptKey === 'atendimento' ? 'A' :
+        deptKey === 'comercial' ? 'C' :
+        deptKey === 'trabalhista' ? 'T' :
+        deptKey === 'fiscal' ? 'P' : 'P';
+      const deptClass =
+        deptBadge === 'F' ? 'bg-green-600' :
+        deptBadge === 'A' ? 'bg-red-500' :
+        deptBadge === 'C' ? 'bg-amber-500' :
+        deptBadge === 'T' ? 'bg-blue-500' : 'bg-yellow-500';
       rows.push({
         key: `${item.id}-task`,
         tarefa: item.tipo_servico || item.titulo || 'Tarefa',
         situacao: getStatusMeta(item.status_ui).label,
+        statusUi: item.status_ui,
         cliente: item.empresa_nome || '-',
         processo: item.tipo_servico || '-',
         prazo: formatDate(item.data_prazo || item.created_at),
         departamento: item.setor || '-',
+        deptBadge,
+        deptClass,
+        sourceId: item.id,
       });
     });
     return rows;
   }, [visibleServicos]);
+
+  const selectedTargetServicos = useMemo(
+    () => visibleServicos.filter((item) => selectedServiceIds.includes(String(item.id))),
+    [visibleServicos, selectedServiceIds],
+  );
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleServicos.map((item) => String(item.id)));
+    setSelectedServiceIds((prev) => prev.filter((id) => visibleIds.has(String(id))));
+  }, [visibleServicos]);
+
+  const toggleServiceSelection = (serviceId, checked) => {
+    const id = String(serviceId);
+    setSelectedServiceIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((item) => item !== id);
+    });
+  };
+
+  const toggleAllVisibleSelection = (checked) => {
+    if (!checked) {
+      setSelectedServiceIds([]);
+      return;
+    }
+    setSelectedServiceIds(visibleServicos.map((item) => String(item.id)));
+  };
 
 
   const updateMockStatus = (serviceId, nextStatus) => {
@@ -756,6 +903,130 @@ const Services = () => {
     }
   };
 
+  const applyBatchStatus = (nextStatus) => {
+    const targets = selectedTargetServicos.length ? selectedTargetServicos : filteredServicos;
+    targets.forEach((item) => {
+      handleStatusChange(item.id, nextStatus);
+    });
+    setShowBatchEditModal(false);
+    toast.success(`Status atualizado em lote para ${targets.length} processos.`);
+  };
+
+  const handleBatchSend = () => {
+    const targets = selectedTargetServicos.length ? selectedTargetServicos : filteredServicos;
+    setShowBatchSendModal(false);
+    toast.success(`${targets.length} processos enviados para fila de envio em lote.`);
+  };
+
+  const removeServicesFromStorage = (idsToRemove = []) => {
+    if (!idsToRemove.length) return;
+    try {
+      const raw = JSON.parse(localStorage.getItem(MOCK_INTERNAL_SERVICES_KEY) || '[]');
+      if (!Array.isArray(raw)) return;
+      const blocked = new Set(idsToRemove.map((id) => String(id)));
+      const next = raw.filter((item) => !blocked.has(String(item.id)));
+      localStorage.setItem(MOCK_INTERNAL_SERVICES_KEY, JSON.stringify(next));
+    } catch {}
+  };
+
+  const handleDeleteSelected = async () => {
+    const targets = selectedTargetServicos;
+    if (!targets.length) {
+      toast.error('Selecione ao menos um processo.');
+      return;
+    }
+    const ids = targets.map((item) => String(item.id));
+    setServicos((current) => current.filter((item) => !ids.includes(String(item.id))));
+    removeServicesFromStorage(ids);
+    setSelectedServiceIds([]);
+
+    const token = localStorage.getItem('token');
+    await Promise.all(
+      targets
+        .filter((item) => !item.mock_origin)
+        .map((item) =>
+          fetch(`${API_URL}/api/services/${item.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => null),
+        ),
+    );
+    toast.success(`${targets.length} processo(s) removido(s).`);
+  };
+
+  const handleDuplicateSelected = () => {
+    const targets = selectedTargetServicos;
+    if (!targets.length) {
+      toast.error('Selecione ao menos um processo.');
+      return;
+    }
+    const now = Date.now();
+    const clones = targets.map((item, index) => {
+      const createdAt = new Date(now + index * 1000).toISOString();
+      return {
+        ...item,
+        id: `mock-dup-${now}-${index}`,
+        numero: `${item.numero || 'SVC'}-DUP-${index + 1}`,
+        status: 'pendente',
+        status_ui: 'novo',
+        created_at: createdAt,
+        updated_at: createdAt,
+        titulo: item.titulo || item.tipo_servico || 'Processo duplicado',
+        mock_origin: 'manual_admin',
+      };
+    });
+    setServicos((current) => [...clones, ...current]);
+    const current = getMockInternalServices();
+    localStorage.setItem(MOCK_INTERNAL_SERVICES_KEY, JSON.stringify([...clones, ...current]));
+    setSelectedServiceIds(clones.map((item) => String(item.id)));
+    toast.success(`${clones.length} processo(s) duplicado(s).`);
+  };
+
+  const handleGenerateBatch = () => {
+    const selectedServiceLabel = batchGenerateServiceName.trim()
+      || processModels.find((item) => item.id === batchGenerateModelId)?.nome
+      || '';
+    if (!selectedServiceLabel) {
+      toast.error('Selecione o servico para geracao em lote.');
+      return;
+    }
+    const companies = Array.from(
+      new Map(
+        selectedTargetServicos.map((item) => [String(item.empresa_id || item.empresa_nome), item]),
+      ).values(),
+    );
+    if (!companies.length) {
+      toast.error('Selecione processos com as empresas alvo.');
+      return;
+    }
+    const now = Date.now();
+    const generated = companies.map((company, index) => ({
+      id: `mock-batch-${now}-${index}`,
+      numero: `SVC-BATCH-${String(now + index).slice(-6)}`,
+      titulo: selectedServiceLabel,
+      empresa_id: company.empresa_id || '',
+      empresa_nome: company.empresa_nome || 'Sem empresa',
+      tipo_servico: selectedServiceLabel,
+      process_model_id: batchGenerateModelId || '',
+      descricao: `Geracao em lote para ${company.empresa_nome || 'empresa'}.`,
+      setor: sectorLabelMap[batchGenerateSectorKey] || 'Atendimento',
+      cidade: company.cidade || '',
+      urgencia: 'normal',
+      status: 'pendente',
+      status_ui: 'novo',
+      prioridade: 'media',
+      created_at: new Date(now + index * 1000).toISOString(),
+      mock_origin: 'manual_admin',
+      criado_por: { id: creatorId, nome: creatorName },
+    }));
+    setServicos((current) => [...generated, ...current]);
+    localStorage.setItem(MOCK_INTERNAL_SERVICES_KEY, JSON.stringify([...generated, ...getMockInternalServices()]));
+    setShowBatchGenerateModal(false);
+    setBatchGenerateServiceName('');
+    setBatchGenerateModelId('');
+    toast.success(`${generated.length} processo(s) gerado(s) em lote.`);
+  };
+
   const handleOpenCreate = () => {
     const initialCity = cityOptions[0] || '';
     setNewService({
@@ -766,6 +1037,11 @@ const Services = () => {
       descricao: '',
       setor_key: 'atendimento',
       cidade: initialCity,
+      urgencia: 'normal',
+      data_inicio: '',
+      canal_atendimento: 'interno',
+      vincular_ordem_servico: false,
+      gerar_cobranca: false,
     });
     setShowCustomServiceInput(false);
     setCustomServiceName('');
@@ -773,6 +1049,7 @@ const Services = () => {
     setEnableAdditionalCollaborators(false);
     setServiceTypeSearchTerm('');
     setAssignedBySector({ atendimento: [creatorId] });
+    setCreateMode('modelo');
     setShowCreateModal(true);
   };
 
@@ -850,6 +1127,7 @@ const Services = () => {
         { nome: 'Execucao tecnica', setorResponsavelKey: newService.setor_key || 'atendimento', tarefasTexto: 'Executar servico\nRevisar entrega final' },
       ],
     });
+    setShowCreateModal(false);
     setShowProcessModal(true);
   };
 
@@ -967,6 +1245,11 @@ const Services = () => {
       descricao: newService.descricao || 'Servico criado manualmente pelo painel interno.',
       setor: sectorLabelMap[newService.setor_key] || 'Atendimento',
       cidade: newService.cidade || '',
+      urgencia: newService.urgencia || 'normal',
+      data_inicio: newService.data_inicio || now.toISOString(),
+      canal_atendimento: newService.canal_atendimento || 'interno',
+      vincular_ordem_servico: Boolean(newService.vincular_ordem_servico),
+      gerar_cobranca: Boolean(newService.gerar_cobranca),
       setores_responsaveis: responsibleSectors,
       colaboradores_por_setor: assignedBySector,
       status: 'pendente',
@@ -988,35 +1271,8 @@ const Services = () => {
   };
 
   return (
-    <div className="services-dark space-y-6 p-6">
-      <div className="glass-intense rounded-[24px] border border-white/10 p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-white">Servicos</h1>
-            <p className="mt-1 text-sm text-gray-400">Painel administrativo para visualizar e gerenciar todos os servicos do sistema.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleOpenCreate}
-              className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25"
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar novo servico
-            </button>
-            <button
-              type="button"
-              onClick={loadServicos}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200 hover:bg-white/10"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Atualizar
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="glass rounded-[24px] border border-white/10 p-4">
+    <div className="services-dark space-y-4 p-4">
+      <div className="glass border-x-0 border-t-0 border-b border-white/10 rounded-none px-2 pb-0 pt-2">
         <div className="mb-4 flex items-center gap-4">
           <button
             type="button"
@@ -1026,16 +1282,6 @@ const Services = () => {
             }`}
           >
             Dashboard
-          </button>
-          <button
-            type="button"
-            onClick={() => setTopViewTab('servicos')}
-            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
-              isServicosTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
-            }`}
-          >
-            Serviços
-            
           </button>
           <button
             type="button"
@@ -1049,18 +1295,36 @@ const Services = () => {
           </button>
           <button
             type="button"
+            onClick={() => setTopViewTab('ordem_servico')}
+            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
+              isOrdemServicoTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
+            }`}
+          >
+            Ordem de servico
+          </button>
+          <button
+            type="button"
+            onClick={() => setTopViewTab('modelos')}
+            className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
+              isModelosTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
+            }`}
+          >
+            Modelos
+          </button>
+          <button
+            type="button"
             onClick={() => setTopViewTab('configuracoes')}
             className={`inline-flex items-center gap-2 border-b-2 px-2 py-1 text-sm font-semibold ${
               isConfiguracoesTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
             }`}
           >
-            Configurações
+            Configuracoes
           </button>
         </div>
 
-        {isTableLikeTab ? (
+        {isProcessWorkspaceTab ? (
           <>
-            <div className="mb-3 inline-flex rounded-lg border border-white/10 bg-white/5 p-1">
+            <div className="mb-5 inline-flex rounded-lg border border-white/10 bg-[#2a3446] p-1">
               {[
                 ['cliente', 'Cliente'],
                 ['processo', 'Processo'],
@@ -1071,141 +1335,344 @@ const Services = () => {
                   type="button"
                   onClick={() => setScopeTab(key)}
                   className={`rounded-md px-4 py-1.5 text-sm font-semibold ${
-                    scopeTab === key ? 'bg-white text-slate-900' : 'text-gray-300'
+                    scopeTab === key ? 'bg-slate-100 text-slate-900' : 'text-gray-300'
                   }`}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <div className="flex items-center rounded-xl border border-white/15 bg-zinc-900 px-3 py-2">
-              <Search className="h-4 w-4 text-gray-500" />
-              <input
-                value={quickSearch}
-                onChange={(e) => setQuickSearch(e.target.value)}
-                placeholder={scopeTab === 'tarefa' ? 'Busque por cliente ou tarefa...' : 'Busque por cliente ou processo...'}
-                className="w-full bg-transparent px-2 text-sm text-white outline-none placeholder:text-gray-500"
-              />
-            </div>
-            <div className="mt-2 text-xs text-gray-400">
-              Cliente: {groupedByClient.length} grupos | Processo: {groupedByProcess.length} grupos | Tarefa: {taskRows.length} itens
-            </div>
           </>
-        ) : isConfiguracoesTab ? (
-          <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-center text-gray-300">
-            Configurações do módulo em preparação.
+        ) : isOrdemServicoTab ? (
+          <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-gray-200">
+            Ordem de servico em preparacao.
           </div>
+        ) : isModelosTab ? (
+          <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-gray-200">
+            Area de Modelos carregada a partir do modulo Macedo Academy.
+          </div>
+        ) : isConfiguracoesTab ? (
+          <ServicesSettingsPanel allUsers={allUsers} allClients={allClients} currentUser={user} />
         ) : null}
       </div>
 
+      {isModelosTab ? (
+        <div className="rounded-[24px] border border-white/10 bg-transparent p-0">
+          <MacedoAcademy />
+        </div>
+      ) : null}
+
       {isDashboardTab ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-            <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
-              <h3 className="text-2xl font-semibold text-white">Performance geral</h3>
-              <p className="mt-1 text-sm text-gray-400">Acompanhe o resumo dos processos e tarefas do periodo selecionado.</p>
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <MiniCard title="A fazer" value={resumo.novo} tone="border-white/10 bg-white/5 text-white" />
-                <MiniCard title="Em progresso" value={resumo.emAndamento} tone="border-blue-500/30 bg-blue-500/10 text-blue-100" />
-                <MiniCard title="Concluidas" value={resumo.concluidos} tone="border-emerald-500/30 bg-emerald-500/10 text-emerald-100" />
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-4xl font-semibold text-white">Bem-vindo de volta, Sara Macedo</h2>
+              <p className="mt-1 text-sm text-gray-400">Confira abaixo um panorama da sua performance e da sua equipe.</p>
+            </div>
+            <div className="flex items-end gap-2">
+              <div>
+                <div className="mb-1 text-xs text-gray-400">Selecione o periodo</div>
+                <select className="rounded-lg border border-white/20 bg-[#0f1728] px-3 py-2 text-sm text-white outline-none">
+                  <option>dezembro 2025</option>
+                  <option>novembro 2025</option>
+                  <option>outubro 2025</option>
+                </select>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-3">
-                <MiniCard title="Em atraso" value={Math.max(0, resumo.total - resumo.concluidos)} tone="border-amber-500/30 bg-amber-500/10 text-amber-100" />
-                <MiniCard title="Proximo da multa" value={0} tone="border-orange-500/30 bg-orange-500/10 text-orange-100" />
-                <MiniCard title="Em multa" value={0} tone="border-rose-500/30 bg-rose-500/10 text-rose-100" />
+              <button
+                type="button"
+                onClick={() => {
+                  loadServicos();
+                  toast.success('Dados atualizados com sucesso.');
+                }}
+                className="rounded-lg border border-white/20 bg-[#0f1728] px-3 py-2 text-gray-300"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-semibold text-white">Performance geral</h3>
+                  <p className="mt-1 text-sm text-gray-400">Acompanhe o resumo dos processos e tarefas no periodo selecionado.</p>
+                </div>
+                <div className="rounded-lg border border-amber-500/60 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-200">
+                  0 processo(s) dispensado(s)
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                <div className="flex items-center gap-4">
+                  <div className="relative h-40 w-40 rounded-full border-[14px] border-slate-400">
+                    <div className="absolute inset-[28px] rounded-full bg-[#0f1728]" />
+                  </div>
+                  <div>
+                    <div className="text-3xl font-semibold text-white">Processos concluidos</div>
+                    <div className="mt-2 text-5xl font-bold text-emerald-400">{resumo.concluidos}</div>
+                    <div className="text-lg text-gray-400">de {resumo.total}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="mb-2 text-sm font-semibold text-gray-300">Situacao das tarefas</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <MiniCard title="A fazer" value={resumo.novo} tone="border-white/20 bg-white/5 text-white" />
+                      <MiniCard title="Em Progresso" value={resumo.emAndamento} tone="border-cyan-500/40 bg-cyan-500/10 text-cyan-100" />
+                      <MiniCard title="Concluidas" value={resumo.concluidos} tone="border-emerald-500/40 bg-emerald-500/10 text-emerald-100" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-2 text-sm font-semibold text-gray-300">Requer atencao</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <MiniCard title="Em atraso" value={Math.max(0, resumo.total - resumo.concluidos)} tone="border-amber-500/40 bg-amber-500/10 text-amber-100" />
+                      <MiniCard title="Proximo da multa" value={0} tone="border-orange-500/40 bg-orange-500/10 text-orange-100" />
+                      <MiniCard title="Em multa" value={0} tone="border-rose-500/40 bg-rose-500/10 text-rose-100" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+              <h3 className="text-4xl font-semibold text-white">Nivel de desempenho geral</h3>
+              <div className="mt-5 flex justify-center">
+                <div className="relative h-44 w-80">
+                  <div className="absolute inset-x-8 top-0 h-40 rounded-t-full border-[10px] border-b-0 border-slate-100/90" />
+                  <div className="absolute inset-x-0 top-16 text-center text-6xl font-bold text-rose-500">0%</div>
+                  <div className="absolute inset-x-0 top-44 border-t border-slate-300/30" />
+                </div>
+              </div>
+              <p className="mt-2 text-center text-xl text-gray-200">
+                Faltam <span className="font-semibold text-rose-400">{Math.max(0, resumo.total - resumo.concluidos)} processos</span> para avancar de nivel.
+                Priorize os mais urgentes e comece agora!
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2.1fr_0.9fr]">
+            <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-2xl font-semibold text-white">Performance da equipe</h3>
+                  <p className="mt-1 text-sm text-gray-400">Clique em um colaborador para ver seus processos.</p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-300">dezembro 2025</div>
+              </div>
+
+              <div className="mb-3 inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setTeamPerformanceScope('equipe')}
+                  className={`rounded-md px-3 py-1 font-semibold ${teamPerformanceScope === 'equipe' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+                >
+                  Equipe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeamPerformanceScope('departamento')}
+                  className={`rounded-md px-3 py-1 font-semibold ${teamPerformanceScope === 'departamento' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+                >
+                  Departamento
+                </button>
+              </div>
+
+              <div className="overflow-auto rounded-xl border border-white/10">
+                <table className="w-full min-w-[980px]">
+                  <thead className="bg-white/10 text-xs text-gray-300">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Colaborador</th>
+                      <th className="px-3 py-2 text-left">Departamentos</th>
+                      <th className="px-3 py-2 text-left">Situacao das tarefas</th>
+                      <th className="px-3 py-2 text-left">Desempenho</th>
+                      <th className="px-3 py-2 text-left">Relatorio</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10 text-sm">
+                    {[
+                      { nome: 'Galileu', departamentos: ['P'], pendente: 1, progresso: 0, concluidas: 2, desempenho: 67 },
+                      { nome: 'Sara Macedo', departamentos: ['F', 'A', 'C', 'P'], pendente: 215, progresso: 0, concluidas: 0, desempenho: 0 },
+                    ].map((row) => (
+                      <tr key={row.nome} className="hover:bg-white/5">
+                        <td className="px-3 py-3 text-white">{row.nome}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex gap-1">
+                            {row.departamentos.map((dep) => (
+                              <span
+                                key={dep}
+                                className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1.5 text-xs font-semibold text-white ${
+                                  dep === 'F'
+                                    ? 'bg-lime-500'
+                                    : dep === 'A'
+                                      ? 'bg-rose-500'
+                                      : dep === 'C'
+                                        ? 'bg-amber-500'
+                                        : dep === 'P'
+                                          ? 'bg-yellow-500'
+                                          : 'bg-white/15'
+                                }`}
+                              >
+                                {dep}
+                              </span>
+                            ))}
+                            {row.departamentos.length > 3 ? <span className="px-1 text-gray-400">...</span> : null}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex gap-2 text-xs">
+                            <span className="min-w-[74px] rounded-md border border-white/10 bg-white/5 px-2 py-1 text-center text-white">{row.pendente}</span>
+                            <span className="min-w-[74px] rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-center text-cyan-100">{row.progresso}</span>
+                            <span className="min-w-[74px] rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-center text-emerald-100">{row.concluidas}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="h-3 w-32 overflow-hidden rounded bg-slate-700">
+                            <div className="h-full bg-emerald-400" style={{ width: `${row.desempenho}%` }} />
+                          </div>
+                          <div className="mt-1 text-xs font-semibold text-emerald-300">{row.desempenho}%</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <button
+                            type="button"
+                            onClick={() => toast.info(`Abrindo relatorio de ${row.nome}.`)}
+                            className="rounded-lg border border-slate-200/20 bg-slate-100 px-4 py-1.5 text-xs font-semibold text-slate-900"
+                          >
+                            Ver
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="space-y-4">
               <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
                 <h3 className="text-3xl font-semibold text-white">Envio em lote</h3>
                 <p className="text-sm text-gray-400">Confira a quantidade de processos na fila.</p>
-                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-lg font-semibold text-white">0 na fila de envio</div>
+                <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-2xl font-semibold text-white">0 na fila de envio</div>
               </div>
+
               <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
                 <h3 className="text-3xl font-semibold text-white">Ordem de servico</h3>
-                <p className="text-sm text-gray-400">Acompanhe o resumo das solicitacoes.</p>
+                <p className="text-sm text-gray-400">Acompanhe o resumo das solicitacoes de servico.</p>
                 <div className="mt-4 space-y-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-gray-200">A fazer: {resumo.novo}</div>
-                  <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-cyan-100">Em progresso: {resumo.emAndamento}</div>
+                  <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-cyan-100">Em Progresso: {resumo.emAndamento}</div>
                   <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-100">Concluidas: {resumo.concluidos}</div>
                 </div>
               </div>
             </div>
           </div>
-
-          <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-2xl font-semibold text-white">Performance do departamento</h3>
-              <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-sm">
-                <button type="button" className="rounded-md bg-white px-3 py-1 font-semibold text-slate-900">Equipe</button>
-                <button type="button" className="rounded-md px-3 py-1 font-semibold text-gray-300">Departamento</button>
-              </div>
-            </div>
-            <div className="overflow-auto rounded-xl border border-white/10">
-              <table className="w-full min-w-[720px]">
-                <thead className="bg-white/10 text-xs uppercase tracking-wide text-gray-300">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Departamento</th>
-                    <th className="px-3 py-2 text-left">Colaboradores</th>
-                    <th className="px-3 py-2 text-left">Situacao das tarefas</th>
-                    <th className="px-3 py-2 text-left">Desempenho</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10 text-sm">
-                  {[
-                    { nome: 'Pessoal', colabs: 3, pendente: 1, progresso: 0, concluidas: 2, desempenho: '67%' },
-                    { nome: 'Administrativo', colabs: 5, pendente: 216, progresso: 0, concluidas: 0, desempenho: '0%' },
-                  ].map((row) => (
-                    <tr key={row.nome} className="hover:bg-white/5">
-                      <td className="px-3 py-3 text-white">{row.nome}</td>
-                      <td className="px-3 py-3 text-gray-300">{row.colabs}</td>
-                      <td className="px-3 py-3 text-gray-300">{`${row.pendente} / ${row.progresso} / ${row.concluidas}`}</td>
-                      <td className="px-3 py-3">
-                        <div className="h-3 w-24 overflow-hidden rounded bg-white/10">
-                          <div className="h-full bg-emerald-400" style={{ width: row.desempenho }} />
-                        </div>
-                        <div className="mt-1 text-xs text-emerald-300">{row.desempenho}</div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       ) : null}
 
-      <div className={`grid grid-cols-1 gap-4 md:grid-cols-4 ${isTableLikeTab ? '' : 'hidden'}`}>
-        <MiniCard title="Total" value={resumo.total} tone="border-white/10 bg-white/5 text-white" />
-        <MiniCard title="Novo" value={resumo.novo} tone="border-blue-500/30 bg-blue-500/10 text-blue-100" />
-        <MiniCard title="Em andamento" value={resumo.emAndamento} tone="border-amber-500/30 bg-amber-500/10 text-amber-100" />
-        <MiniCard title="Concluidos" value={resumo.concluidos} tone="border-emerald-500/30 bg-emerald-500/10 text-emerald-100" />
-      </div>
+      <div className={`${isProcessWorkspaceTab && processViewMode === 'tabela' ? '' : 'hidden'}`}>
+        <div className="mb-2 text-sm text-gray-300">Processos</div>
+        <div className="mb-3 text-[38px] font-semibold leading-none text-white">Situação dos Processos</div>
 
-      <div className={`glass rounded-[24px] border border-white/10 p-4 ${isTableLikeTab ? '' : 'hidden'}`}>
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div className="inline-flex items-center gap-2 text-sm text-gray-300">
-            <Filter className="h-4 w-4" />
-            Filtros
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[286px_minmax(0,1fr)_164px]">
+          <div ref={responsibleDropdownRef} className="rounded-[8px] border border-white/20 bg-[#111a2b] p-3">
+            <div className="flex h-[88px] items-center gap-3">
+              <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-slate-500/35 text-slate-100">
+                <Users className="h-6 w-6" />
+              </span>
+              <div className="flex-1 text-[34px] font-semibold leading-none text-white">Todos</div>
+              <button
+                type="button"
+                onClick={() => setShowResponsibleSelector((prev) => !prev)}
+                className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-gray-200"
+              >
+                Alterar
+              </button>
+            </div>
+            <div className={`mt-2 ${showResponsibleSelector ? '' : 'hidden'}`}>
+              <label className="mb-1 block text-xs text-gray-300">Selecione o responsável</label>
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-white/20 bg-[#101827]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedResponsavel('all');
+                    setShowResponsibleSelector(false);
+                  }}
+                  className="w-full border-b border-white/10 px-3 py-2 text-left text-sm text-white hover:bg-white/10"
+                >
+                  Todos
+                </button>
+                {responsavelOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setSelectedResponsavel(option.value);
+                      setShowResponsibleSelector(false);
+                    }}
+                    className="w-full border-b border-white/10 px-3 py-2 text-left text-sm text-white last:border-b-0 hover:bg-white/10"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="min-w-[190px]">
-            <div className="mb-2 text-sm font-semibold text-gray-200">Acoes</div>
+
+          <div>
+            <div className="mb-2 flex justify-end">
+              <div className="rounded-lg border border-white/20 bg-[#303a4e] px-4 py-2 text-sm text-gray-300">
+                Serão exibidos apenas os processos nos quais você é o gestor do departamento.
+              </div>
+            </div>
+            <div className="flex h-[94px] overflow-hidden rounded-[8px] border border-white/15 bg-[#202939]">
+              <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-slate-200"><ClipboardList className="h-5 w-5" /></span>
+                  <div><div className="text-xs text-gray-300">Total</div><div className="text-[34px] font-semibold leading-none text-white">{resumo.total}</div></div>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-500/20 text-rose-300"><AlertTriangle className="h-5 w-5" /></span>
+                  <div><div className="text-xs text-gray-300">Em multa</div><div className="text-[34px] font-semibold leading-none text-white">0</div></div>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-slate-200"><ClipboardList className="h-5 w-5" /></span>
+                  <div><div className="text-xs text-gray-300">A fazer</div><div className="text-[34px] font-semibold leading-none text-white">{resumo.novo}</div></div>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300"><RotateCcw className="h-5 w-5" /></span>
+                  <div><div className="text-xs text-gray-300">Em Progresso</div><div className="text-[34px] font-semibold leading-none text-white">{resumo.emAndamento}</div></div>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300"><Check className="h-5 w-5" /></span>
+                  <div><div className="text-xs text-gray-300">Concluído</div><div className="text-[34px] font-semibold leading-none text-white">{resumo.concluidos}</div></div>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-3 px-4">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/20 text-amber-300"><MinusCircle className="h-5 w-5" /></span>
+                  <div><div className="text-xs text-gray-300">Dispensada</div><div className="text-[34px] font-semibold leading-none text-white">0</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[40px] font-semibold leading-none text-white">Ações</div>
             <div className="space-y-2">
               <button
                 type="button"
                 onClick={handleOpenCreate}
-                className="w-full rounded-lg border border-emerald-500/45 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30"
+                className="w-full rounded-lg border border-emerald-500/45 bg-emerald-500/80 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
               >
                 + Criar processo
               </button>
               <button
                 type="button"
-                className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
+                onClick={() => setShowBatchEditModal(true)}
+                className="w-full rounded-lg border border-white/20 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-white"
               >
-                Edicao em lote
+                Edição em lote
               </button>
               <button
                 type="button"
+                onClick={() => setShowBatchSendModal(true)}
                 className="w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-semibold text-gray-200 hover:bg-white/10"
               >
                 Envio em lote
@@ -1213,140 +1680,216 @@ const Services = () => {
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setClientDropdownOpen((prev) => !prev)}
-              className="inline-flex w-full items-center justify-between rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
-            >
-              <span className="truncate">{selectedClienteLabel}</span>
-              <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${clientDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
 
-            {clientDropdownOpen ? (
-              <div className="absolute z-20 mt-2 w-full rounded-xl border border-white/10 bg-zinc-950 p-2 shadow-2xl">
-                <div className="mb-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5">
-                  <Search className="h-4 w-4 text-gray-500" />
-                  <input
-                    value={clientSearchTerm}
-                    onChange={(e) => setClientSearchTerm(e.target.value)}
-                    placeholder="Digite para buscar cliente"
-                    className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraftFilters((prev) => ({ ...prev, cliente: '' }));
-                    setClientDropdownOpen(false);
-                  }}
-                  className="mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-300 hover:bg-white/10"
-                >
-                  Todos os clientes
-                </button>
-                <div className="max-h-52 overflow-y-auto">
-                  {rankedClienteOptions.map((item) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => {
-                        setDraftFilters((prev) => ({ ...prev, cliente: item.value }));
-                        setClientDropdownOpen(false);
-                      }}
-                      className="w-full rounded-md px-2 py-1.5 text-left text-sm text-white hover:bg-white/10"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                  {rankedClienteOptions.length === 0 ? (
-                    <p className="px-2 py-3 text-xs text-gray-500">Nenhum cliente encontrado para essa busca.</p>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+        <div className="mt-3 rounded-[10px] border border-white/10 bg-[#101827] p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs text-gray-400">
+              Selecionados: <span className="font-semibold text-white">{selectedServiceIds.length}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => toggleAllVisibleSelection(true)}
+                className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+              >
+                Selecionar visíveis
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleAllVisibleSelection(false)}
+                className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+              >
+                Limpar seleção
+              </button>
+              <button
+                type="button"
+                onClick={handleDuplicateSelected}
+                className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/20"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Duplicar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-500/20"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Excluir
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowBatchGenerateModal(true)}
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-500/25"
+              >
+                Geração em lote
+              </button>
+            </div>
           </div>
 
-          <select
-            value={draftFilters.setor}
-            onChange={(e) => setDraftFilters((prev) => ({ ...prev, setor: e.target.value }))}
-            className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
-          >
-            <option value="">Todos os setores</option>
-            {setorFilterOptions.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[220px_1.4fr_220px_220px_220px_220px]">
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Exibir por prazo</label>
+              <select
+                value={selectedPeriodo}
+                onChange={(e) => setSelectedPeriodo(e.target.value)}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                <option value="all">Todos os meses</option>
+                {periodoOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-            <input
-              type="checkbox"
-              checked={draftFilters.cadastradosPorVoce}
-              onChange={(e) => setDraftFilters((prev) => ({ ...prev, cadastradosPorVoce: e.target.checked }))}
-            />
-            Cadastrados por voce
-          </label>
-          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-            <input
-              type="checkbox"
-              checked={draftFilters.vinculados}
-              onChange={(e) => setDraftFilters((prev) => ({ ...prev, vinculados: e.target.checked }))}
-            />
-            Vinculados
-          </label>
-          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-            <input
-              type="checkbox"
-              checked={draftFilters.ordensServico}
-              onChange={(e) => setDraftFilters((prev) => ({ ...prev, ordensServico: e.target.checked }))}
-            />
-            Ordens de servico
-          </label>
-          <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-200">
-            <input
-              type="checkbox"
-              checked={draftFilters.servicosPadrao}
-              onChange={(e) => setDraftFilters((prev) => ({ ...prev, servicosPadrao: e.target.checked }))}
-            />
-            Servicos padrao
-          </label>
-        </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Buscar</label>
+              {scopeTab === 'tarefa' ? (
+                <div ref={clientDropdownRef} className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                  <input
+                    value={quickSearch}
+                    onChange={(e) => setQuickSearch(e.target.value)}
+                    placeholder="Busque por cliente ou tarefa..."
+                    className="w-full rounded-lg border border-white/15 bg-zinc-900 py-2 pl-9 pr-10 text-sm text-white outline-none placeholder:text-gray-500 focus:border-emerald-400/40"
+                  />
+                  <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                </div>
+              ) : (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setClientDropdownOpen((prev) => !prev)}
+                    className="inline-flex w-full items-center justify-between rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                  >
+                    <span className="truncate">{selectedClienteLabel}</span>
+                    <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${clientDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {canSearch ? (
-            <button
-              type="button"
-              onClick={handleSearch}
-              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25"
-            >
-              Buscar
-            </button>
-          ) : null}
-          {(
-            appliedFilters.cliente
-            || appliedFilters.setor
-            || appliedFilters.cadastradosPorVoce
-            || appliedFilters.vinculados
-            || appliedFilters.ordensServico
-            || appliedFilters.servicosPadrao
-            || accessDeniedBySector
-          ) ? (
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200 hover:bg-white/10"
-            >
-              Limpar
-            </button>
-          ) : null}
+                  {clientDropdownOpen ? (
+                    <div className="absolute z-20 mt-2 w-full rounded-xl border border-white/10 bg-zinc-950 p-2 shadow-2xl">
+                      <div className="mb-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5">
+                        <Search className="h-4 w-4 text-gray-500" />
+                        <input
+                          value={clientSearchTerm}
+                          onChange={(e) => setClientSearchTerm(e.target.value)}
+                          placeholder="Digite para buscar cliente"
+                          className="w-full bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftFilters((prev) => ({ ...prev, cliente: '' }));
+                          setClientDropdownOpen(false);
+                        }}
+                        className="mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-300 hover:bg-white/10"
+                      >
+                        Todos os clientes
+                      </button>
+                      <div className="max-h-52 overflow-y-auto">
+                        {rankedClienteOptions.map((item) => (
+                          <button
+                            key={item.value}
+                            type="button"
+                            onClick={() => {
+                              setDraftFilters((prev) => ({ ...prev, cliente: item.value }));
+                              setClientDropdownOpen(false);
+                            }}
+                            className="w-full rounded-md px-2 py-1.5 text-left text-sm text-white hover:bg-white/10"
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                        {rankedClienteOptions.length === 0 ? (
+                          <p className="px-2 py-3 text-xs text-gray-500">Nenhum cliente encontrado para essa busca.</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Data</label>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={quickSearchDate}
+                  onChange={(e) => setQuickSearchDate(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 pr-9 text-sm text-white outline-none focus:border-emerald-400/40"
+                />
+                <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Prazo do processo</label>
+              <select
+                value={selectedPrazo}
+                onChange={(e) => setSelectedPrazo(e.target.value)}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                <option value="all">Todos</option>
+                <option value="late">Atrasados</option>
+                <option value="on_time">No prazo</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Status</label>
+              <select
+                value={selectedStatusFilter}
+                onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                <option value="all">Todos</option>
+                {statusOptions.map((status) => (
+                  <option key={`status-filter-${status.value}`} value={status.value}>
+                    {status.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Urgência</label>
+              <select
+                value={selectedUrgencyFilter}
+                onChange={(e) => setSelectedUrgencyFilter(e.target.value)}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                <option value="all">Todas</option>
+                <option value="baixa">Baixa</option>
+                <option value="normal">Normal</option>
+                <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Departamento</label>
+              <select
+                value={draftFilters.setor}
+                onChange={(e) => setDraftFilters((prev) => ({ ...prev, setor: e.target.value }))}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                <option value="">Todos</option>
+                {setorFilterOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className={`glass rounded-[24px] border border-white/10 overflow-hidden ${isTableLikeTab ? '' : 'hidden'}`}>
+      <div className={`glass rounded-[24px] border border-white/10 overflow-hidden ${isProcessWorkspaceTab && processViewMode === 'tabela' ? '' : 'hidden'}`}>
         {loading ? (
           <div className="p-8 text-center text-sm text-gray-400">Carregando servicos...</div>
         ) : visibleServicos.length === 0 ? (
@@ -1355,16 +1898,24 @@ const Services = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px]">
+            <table className={`w-full ${scopeTab === 'tarefa' ? 'min-w-[1380px]' : 'min-w-[860px]'}`}>
               <thead className="bg-white/10">
                 <tr>
+                  <th className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={visibleServicos.length > 0 && selectedServiceIds.length === visibleServicos.length}
+                      onChange={(e) => toggleAllVisibleSelection(e.target.checked)}
+                    />
+                  </th>
                   {scopeTab === 'cliente' ? (
                     <>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Tipo do servico</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Data de criacao</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Status</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-300">Acoes</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Processos</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Situação</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Prazo</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Prazo-meta</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Departamentos</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Responsáveis</th>
                     </>
                   ) : null}
                   {scopeTab === 'processo' ? (
@@ -1378,72 +1929,245 @@ const Services = () => {
                   ) : null}
                   {scopeTab === 'tarefa' ? (
                     <>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Tarefas</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Situacao</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Cliente</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Nome processo</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-300">Prazo processo</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Tarefas</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Situação</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Cliente</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Nome Processo</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Prazo Processo</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Departamento</th>
+                      <th className="px-4 py-3 text-left text-base font-semibold text-white">Responsável</th>
                     </>
                   ) : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/10">
                 {scopeTab === 'cliente'
-                  ? visibleServicos.map((servico) => {
-                    const statusMeta = getStatusMeta(servico.status_ui);
-                    return (
-                      <tr key={servico.id} className="hover:bg-white/5">
-                        <td className="px-4 py-3 text-sm text-white">{servico.empresa_nome || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-200">{servico.tipo_servico || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-300">{formatDate(servico.created_at || servico.data_criacao || servico.data_prazo)}</td>
-                        <td className="px-4 py-3">
-                          <select
-                            value={servico.status_ui}
-                            onChange={(e) => handleStatusChange(servico.id, e.target.value)}
-                            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none ${statusMeta.className}`}
-                          >
-                            {statusOptions.map((status) => (
-                              <option key={status.value} value={status.value}>
-                                {status.label}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedServico(servico)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            Detalhes
-                          </button>
+                  ? groupedByClient.map(([clientName, clientItems]) => (
+                    <React.Fragment key={clientName}>
+                      <tr className="bg-white/10">
+                        <td colSpan={7} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-blue-200">
+                          {clientName}
                         </td>
                       </tr>
-                    );
-                  })
+                      {clientItems.map((servico) => {
+                        const statusMeta = getStatusMeta(servico.status_ui);
+                        const deptKey = normalizeSectorKey(servico.setor || '');
+                        const deptBadge =
+                          deptKey === 'financeiro' ? 'F' :
+                          deptKey === 'atendimento' ? 'A' :
+                          deptKey === 'comercial' ? 'C' :
+                          deptKey === 'trabalhista' ? 'T' :
+                          deptKey === 'fiscal' ? 'P' : 'P';
+                        const deptClass =
+                          deptBadge === 'F' ? 'bg-green-600' :
+                          deptBadge === 'A' ? 'bg-red-500' :
+                          deptBadge === 'C' ? 'bg-amber-500' :
+                          deptBadge === 'T' ? 'bg-blue-500' : 'bg-yellow-500';
+                        return (
+                          <tr key={servico.id} className="hover:bg-white/5">
+                            <td className="px-3 py-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedServiceIds.includes(String(servico.id))}
+                                onChange={(e) => toggleServiceSelection(servico.id, e.target.checked)}
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-sm text-white">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProcessService(servico)}
+                                className="inline-flex items-center gap-2 text-left hover:text-blue-100"
+                              >
+                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                                <span>{servico.tipo_servico || servico.titulo || '-'}</span>
+                              </button>
+                            </td>
+                            <td className="px-4 py-3">
+                              <select
+                                value={servico.status_ui}
+                                onChange={(e) => handleStatusChange(servico.id, e.target.value)}
+                                className={`rounded-md px-2.5 py-1 text-xs font-semibold outline-none ${statusMeta.className}`}
+                              >
+                                {statusOptions.map((status) => (
+                                  <option key={status.value} value={status.value}>
+                                    {status.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-blue-200">{formatDate(servico.data_prazo || servico.created_at)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-400">-</td>
+                            <td className="px-4 py-3 text-sm">
+                              <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1.5 text-xs font-semibold text-white ${deptClass}`}>
+                                {deptBadge}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedServico(servico)}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-100 text-slate-900"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))
                   : null}
 
                 {scopeTab === 'processo'
                   ? groupedByProcess.map((row) => (
-                    <tr key={row.name} className="hover:bg-white/5">
-                      <td className="px-4 py-3 text-sm text-white">{row.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.clients}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.total}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.setor}</td>
-                      <td className="px-4 py-3 text-sm text-gray-400">-</td>
-                    </tr>
+                    <React.Fragment key={row.name}>
+                      <tr className="hover:bg-white/5">
+                        <td className="px-3 py-3">
+                          <input
+                            type="checkbox"
+                            checked={row.items.every((item) => selectedServiceIds.includes(String(item.id)))}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              row.items.forEach((item) => toggleServiceSelection(item.id, checked));
+                            }}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedProcessRows((prev) => ({ ...prev, [row.name]: !prev[row.name] }))}
+                            className="inline-flex items-center gap-2 text-left"
+                          >
+                            <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${expandedProcessRows[row.name] ? 'rotate-90' : ''}`} />
+                            <span>{row.name}</span>
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{row.clients} clientes</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{row.total} processos</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{row.setor}</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{row.items.filter((item) => getServiceResponsibleName(item) !== 'Nao atribuido').length || '-'}</td>
+                      </tr>
+                      {expandedProcessRows[row.name]
+                        ? row.items.map((servico) => {
+                          const statusMeta = getStatusMeta(servico.status_ui);
+                          const deptKey = normalizeSectorKey(servico.setor || '');
+                          const deptBadge =
+                            deptKey === 'financeiro' ? 'F' :
+                            deptKey === 'atendimento' ? 'A' :
+                            deptKey === 'comercial' ? 'C' :
+                            deptKey === 'trabalhista' ? 'T' :
+                            deptKey === 'fiscal' ? 'P' : '-';
+                          const deptClass =
+                            deptBadge === 'F' ? 'bg-green-600' :
+                            deptBadge === 'A' ? 'bg-red-500' :
+                            deptBadge === 'C' ? 'bg-amber-500' :
+                            deptBadge === 'T' ? 'bg-blue-500' :
+                            deptBadge === 'P' ? 'bg-yellow-500' : 'bg-slate-600';
+                          return (
+                            <tr key={`${row.name}-${servico.id}`} className="bg-white/[0.02] hover:bg-white/5">
+                              <td className="px-3 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedServiceIds.includes(String(servico.id))}
+                                  onChange={(e) => toggleServiceSelection(servico.id, e.target.checked)}
+                                />
+                              </td>
+                              <td className="px-10 py-3 text-sm text-white">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedProcessService(servico)}
+                                  className="max-w-[360px] truncate text-left text-blue-100 hover:text-white"
+                                >
+                                  {servico.empresa_nome || 'Sem cliente'}
+                                </button>
+                              </td>
+                              <td className="px-4 py-3">
+                                <select
+                                  value={servico.status_ui}
+                                  onChange={(e) => handleStatusChange(servico.id, e.target.value)}
+                                  className={`rounded-md px-2.5 py-1 text-xs font-semibold outline-none ${statusMeta.className}`}
+                                >
+                                  {statusOptions.map((status) => (
+                                    <option key={status.value} value={status.value}>
+                                      {status.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-blue-200">{formatDate(servico.data_prazo || servico.created_at)}</td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1.5 text-xs font-semibold text-white ${deptClass}`}>
+                                  {deptBadge}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-200">{getServiceResponsibleName(servico)}</td>
+                            </tr>
+                          );
+                        })
+                        : null}
+                    </React.Fragment>
                   ))
                   : null}
 
                 {scopeTab === 'tarefa'
                   ? taskRows.map((row) => (
                     <tr key={row.key} className="hover:bg-white/5">
-                      <td className="px-4 py-3 text-sm text-white">{row.tarefa}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.situacao}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.cliente}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.processo}</td>
-                      <td className="px-4 py-3 text-sm text-gray-300">{row.prazo}</td>
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedServiceIds.includes(String(row.sourceId))}
+                          onChange={(e) => toggleServiceSelection(row.sourceId, e.target.checked)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-white">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = visibleServicos.find((item) => item.id === row.sourceId);
+                            if (target) setSelectedProcessService(target);
+                          }}
+                          className="max-w-[420px] truncate text-left hover:text-blue-100"
+                        >
+                          {row.tarefa}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={row.statusUi}
+                          onChange={(e) => handleStatusChange(row.sourceId, e.target.value)}
+                          className={`rounded-md px-2.5 py-1 text-xs font-semibold outline-none ${getStatusMeta(row.statusUi).className}`}
+                        >
+                          {statusOptions.map((status) => (
+                            <option key={status.value} value={status.value}>
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-blue-200">
+                        <div className="max-w-[340px] truncate">{row.cliente}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-blue-200">
+                        <div className="max-w-[320px] truncate">{row.processo}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-blue-200">{row.prazo}</td>
+                      <td className="px-4 py-3 text-sm">
+                        <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1.5 text-xs font-semibold text-white ${row.deptClass}`}>
+                          {row.deptBadge}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = visibleServicos.find((item) => item.id === row.sourceId);
+                            if (target) setSelectedProcessService(target);
+                          }}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-100 text-slate-900"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   ))
                   : null}
@@ -1453,9 +2177,150 @@ const Services = () => {
         )}
       </div>
 
+      {showBatchEditModal ? (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
+            <h3 className="text-lg font-semibold text-white">Edição em lote</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              Processos alvo: {(selectedTargetServicos.length || filteredServicos.length)}
+            </p>
+            <div className="mt-4">
+              <label className="mb-2 block text-xs uppercase tracking-wide text-gray-400">Novo status</label>
+              <select
+                value={batchStatus}
+                onChange={(e) => setBatchStatus(e.target.value)}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                {statusOptions.map((status) => (
+                  <option key={status.value} value={status.value}>
+                    {status.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchEditModal(false)}
+                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => applyBatchStatus(batchStatus)}
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showBatchSendModal ? (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
+            <h3 className="text-lg font-semibold text-white">Envio em lote</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {(selectedTargetServicos.length || filteredServicos.length)} processos serao enviados para fila de processamento.
+            </p>
+            <div className="mt-4 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-2">
+              {(selectedTargetServicos.length ? selectedTargetServicos : filteredServicos).slice(0, 20).map((item) => (
+                <div key={`send-${item.id}`} className="rounded-lg px-2 py-1.5 text-sm text-gray-200">
+                  {item.empresa_nome} - {item.tipo_servico || item.titulo}
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchSendModal(false)}
+                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchSend}
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100"
+              >
+                Confirmar envio
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showBatchGenerateModal ? (
+        <div className="fixed inset-0 z-[66] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
+            <h3 className="text-lg font-semibold text-white">Geracao em lote</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              Selecione o servico e gere para as empresas marcadas.
+            </p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Modelo de servico (opcional)</label>
+                <select
+                  value={batchGenerateModelId}
+                  onChange={(e) => setBatchGenerateModelId(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none"
+                >
+                  <option value="">Selecionar manualmente</option>
+                  {processModels.map((item) => (
+                    <option key={item.id} value={item.id}>{item.nome}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Nome do servico</label>
+                <input
+                  value={batchGenerateServiceName}
+                  onChange={(e) => setBatchGenerateServiceName(e.target.value)}
+                  placeholder="Ex.: Cobranca de honorarios"
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Setor</label>
+                <select
+                  value={batchGenerateSectorKey}
+                  onChange={(e) => setBatchGenerateSectorKey(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none"
+                >
+                  {Object.entries(sectorLabelMap).map(([key, label]) => (
+                    <option key={`batch-sector-${key}`} value={key}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-gray-300">
+                Empresas selecionadas: <span className="font-semibold text-white">{selectedTargetServicos.length}</span>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchGenerateModal(false)}
+                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateBatch}
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100"
+              >
+                Gerar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {selectedServico ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-zinc-900 p-6">
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-zinc-900 p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-white">
                 <ClipboardList className="h-5 w-5" />
@@ -1487,9 +2352,90 @@ const Services = () => {
         </div>
       ) : null}
 
+      {selectedProcessService ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-[1400px] rounded-2xl border border-white/15 bg-zinc-900">
+            <div className="grid grid-cols-1 xl:grid-cols-[2.2fr_0.9fr]">
+              <div className="max-h-[86vh] overflow-y-auto border-r border-white/10 p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-3xl font-semibold text-white">{selectedProcessService.tipo_servico || selectedProcessService.titulo || 'Processo'}</h2>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProcessService(null)}
+                    className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-gray-200 hover:bg-white/10"
+                  >
+                    Fechar
+                  </button>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-gray-200">
+                  {selectedProcessService.empresa_nome || 'Sem cliente'}
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <DetailItem label="Situacao" value={getStatusMeta(selectedProcessService.status_ui).label} />
+                  <DetailItem label="Departamento" value={selectedProcessService.setor || 'Nao atribuido'} />
+                  <DetailItem label="Responsavel" value={getServiceResponsibleName(selectedProcessService)} />
+                  <DetailItem label="Prazo" value={formatDate(selectedProcessService.data_prazo || selectedProcessService.created_at)} />
+                  <DetailItem label="Prazo-meta" value="Sem prazo" />
+                  <DetailItem label="Competencia" value="abril de 2026" />
+                </div>
+
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-2 text-sm font-semibold text-white">Descricao</div>
+                  <p className="text-sm text-gray-300">{selectedProcessService.descricao || 'Sem descricao cadastrada.'}</p>
+                </div>
+
+                <div className="mt-4 border-b border-white/10">
+                  <div className="inline-flex items-center gap-8 text-sm">
+                    <span className="border-b-2 border-emerald-400 pb-2 font-semibold text-white">Anexos</span>
+                    <span className="pb-2 text-gray-400">ConnectHub</span>
+                    <span className="pb-2 text-gray-400">Comentarios</span>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                  <div className="mb-2 text-lg font-semibold text-white">Tarefas com anexos</div>
+                  <div className="rounded-xl border border-white/10 bg-[#111a2b] p-4 text-gray-300">
+                    Arraste e solte o arquivo aqui
+                  </div>
+                </div>
+              </div>
+
+              <aside className="max-h-[86vh] overflow-y-auto p-5">
+                <div className="mb-3 border-b border-white/10 pb-2 text-sm font-semibold text-white">Tarefas do processo</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <p className="mb-2 text-sm font-semibold text-white">{selectedProcessService.tipo_servico || 'Tarefa padrão'}</p>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedProcessService.status_ui}
+                      onChange={(e) => {
+                        handleStatusChange(selectedProcessService.id, e.target.value);
+                        setSelectedProcessService((prev) => ({ ...prev, status_ui: e.target.value }));
+                      }}
+                      className={`rounded-md px-2.5 py-1 text-xs font-semibold outline-none ${getStatusMeta(selectedProcessService.status_ui).className}`}
+                    >
+                      {statusOptions.map((status) => (
+                        <option key={status.value} value={status.value}>
+                          {status.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="rounded bg-red-500 px-1.5 py-0.5 text-xs font-semibold text-white">
+                      {normalizeSectorKey(selectedProcessService.setor || '') === 'financeiro' ? 'F' : 'A'}
+                    </span>
+                    <span className="text-xs text-gray-300">{formatDate(selectedProcessService.data_prazo || selectedProcessService.created_at)}</span>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showProcessModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-5xl rounded-2xl border border-white/15 bg-zinc-900 p-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/15 bg-zinc-900 p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">Novo processo (base do servico)</h2>
               <button
@@ -1604,12 +2550,30 @@ const Services = () => {
 
       {showCreateModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-4xl rounded-2xl border border-white/15 bg-zinc-900 p-6">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/15 bg-zinc-900 p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-white">Novo servico</h2>
+              <h2 className="text-lg font-semibold text-white">Novo processo</h2>
               <button type="button" onClick={() => setShowCreateModal(false)} className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-gray-200">Fechar</button>
             </div>
 
+            <div className="mb-4 inline-flex rounded-lg border border-white/10 bg-white/5 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setCreateMode('modelo')}
+                className={`rounded-md px-3 py-1.5 font-semibold ${createMode === 'modelo' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+              >
+                Criar com modelo
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode('manual')}
+                className={`rounded-md px-3 py-1.5 font-semibold ${createMode === 'manual' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
+              >
+                Criar manualmente
+              </button>
+            </div>
+
+            {createMode === 'modelo' ? (
             <div className="mb-4 rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1633,6 +2597,22 @@ const Services = () => {
                 </p>
               ) : null}
             </div>
+            ) : (
+              <div className="mb-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                <p className="text-sm font-medium text-white">Cadastro manual de processo</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  O formulario manual abre em tela completa com detalhes e tarefas.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenProcessBuilder}
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs font-medium text-emerald-100 hover:bg-emerald-500/25"
+                >
+                  <Plus className="h-4 w-4" />
+                  Abrir formulario manual
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <FormField label="Setor (primeiro passo)">
@@ -1753,6 +2733,42 @@ const Services = () => {
                 </select>
               </FormField>
 
+              <FormField label="Urgencia">
+                <select
+                  value={newService.urgencia}
+                  onChange={(e) => setNewService((prev) => ({ ...prev, urgencia: e.target.value }))}
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                >
+                  <option value="baixa">Baixa</option>
+                  <option value="normal">Normal</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">Urgente</option>
+                </select>
+              </FormField>
+
+              <FormField label="Data de inicio">
+                <input
+                  type="date"
+                  value={newService.data_inicio}
+                  onChange={(e) => setNewService((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                />
+              </FormField>
+
+              <FormField label="Canal de atendimento">
+                <select
+                  value={newService.canal_atendimento}
+                  onChange={(e) => setNewService((prev) => ({ ...prev, canal_atendimento: e.target.value }))}
+                  className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                >
+                  <option value="interno">Interno</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="email">E-mail</option>
+                  <option value="telefone">Telefone</option>
+                  <option value="presencial">Presencial</option>
+                </select>
+              </FormField>
+
               <FormField label="Descricao">
                 <textarea
                   value={newService.descricao}
@@ -1762,6 +2778,25 @@ const Services = () => {
                   className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 />
               </FormField>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+              <label className="inline-flex items-center gap-2 text-sm text-gray-200">
+                <input
+                  type="checkbox"
+                  checked={Boolean(newService.vincular_ordem_servico)}
+                  onChange={(e) => setNewService((prev) => ({ ...prev, vincular_ordem_servico: e.target.checked }))}
+                />
+                Vincular a ordem de servico
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-gray-200">
+                <input
+                  type="checkbox"
+                  checked={Boolean(newService.gerar_cobranca)}
+                  onChange={(e) => setNewService((prev) => ({ ...prev, gerar_cobranca: e.target.checked }))}
+                />
+                Gerar cobranca
+              </label>
             </div>
 
             {showCollaboratorSection ? (
@@ -1831,7 +2866,7 @@ const Services = () => {
             <div className="mt-4 flex justify-end">
               <button type="button" onClick={handleCreateService} className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-500/25">
                 <Plus className="h-4 w-4" />
-                Salvar servico
+                Salvar processo
               </button>
             </div>
           </div>

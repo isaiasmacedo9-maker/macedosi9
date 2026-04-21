@@ -84,3 +84,8 @@ code {
     @apply bg-background text-foreground;
     }
 }
+
+/* Garante rolagem em overlays/modal longos quando o conteudo excede a viewport */
+.fixed.inset-0 {
+  overflow-y: auto;
+}

@@ -243,9 +243,25 @@ async def get_financial_clients_collection():
     """Get financial clients collection"""
     return CompatCollection("financial_clients")
 
+async def get_financial_settings_collection():
+    """Get financial settings collection"""
+    return CompatCollection("financial_settings")
+
 async def get_importacoes_extrato_collection():
     """Get importacoes extrato collection"""
     return CompatCollection("importacoes_extrato")
+
+async def get_documents_collection():
+    """Get documents center collection"""
+    return CompatCollection("documents_center")
+
+async def get_clients_setup_collection():
+    """Get client setup/configuration collection"""
+    return CompatCollection("clients_setup")
+
+async def get_client_portal_users_collection():
+    """Get client portal users collection"""
+    return CompatCollection("client_portal_users")
 
 async def get_tasks_collection():
     """Get tasks collection"""

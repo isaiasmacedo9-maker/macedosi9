@@ -1,0 +1,111 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { BookOpen, Search } from 'lucide-react';
+import { accountingServiceProcessModels } from '../../dev/accountingProcessTemplates';
+import { listAcademyModels } from './academyProcessService';
+
+const normalizeText = (value = '') =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const MacedoAcademyManuais = () => {
+  const [search, setSearch] = useState('');
+  const [sourceModels, setSourceModels] = useState(accountingServiceProcessModels);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadModels = async () => {
+      try {
+        const rows = await listAcademyModels();
+        if (mounted && Array.isArray(rows) && rows.length) {
+          setSourceModels(rows);
+        }
+      } catch {}
+    };
+    loadModels();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const manuals = useMemo(() => {
+    const term = normalizeText(search);
+    if (!term) return sourceModels;
+    return sourceModels.filter((item) => {
+      const text = `${item.nome || ''} ${item.descricao || ''}`;
+      return normalizeText(text).includes(term);
+    });
+  }, [search, sourceModels]);
+
+  return (
+    <div className="space-y-5 text-white">
+      <div className="glass-intense rounded-[24px] border border-white/10 p-5">
+        <h1 className="text-2xl font-semibold">Macedo Academy</h1>
+        <p className="mt-1 text-sm text-gray-400">Base de manuais e orientações internas.</p>
+      </div>
+
+      <div className="glass rounded-[24px] border border-white/10 p-4">
+        <div className="mb-4 inline-flex rounded-lg border border-white/10 bg-white/5 p-1">
+          <button
+            type="button"
+            disabled
+            className="rounded-md px-4 py-1.5 text-sm font-semibold text-gray-500"
+          >
+            Processos
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            className="rounded-md bg-white px-4 py-1.5 text-sm font-semibold text-slate-900"
+          >
+            Manuais
+          </button>
+        </div>
+
+        <div className="flex items-center rounded-xl border border-white/15 bg-zinc-900 px-3 py-2">
+          <Search className="h-4 w-4 text-gray-500" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar manual..."
+            className="w-full bg-transparent px-2 text-sm text-white outline-none placeholder:text-gray-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        {manuals.map((manual) => (
+          <article key={manual.id} className="glass rounded-[20px] border border-white/10 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">{manual.nome}</h2>
+                <p className="mt-1 text-sm text-gray-400">{manual.descricao || 'Manual interno.'}</p>
+              </div>
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-white/5">
+                <BookOpen className="h-4 w-4 text-gray-300" />
+              </span>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 text-xs uppercase tracking-wide text-gray-400">Etapas do manual</div>
+              <ol className="space-y-1.5 text-sm text-gray-200">
+                {(manual.etapas || []).slice(0, 5).map((step, index) => (
+                  <li key={step.id || `${manual.id}-${index}`} className="flex gap-2">
+                    <span className="mt-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/10 text-xs">
+                      {index + 1}
+                    </span>
+                    <span>{step.nome || 'Etapa'}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default MacedoAcademyManuais;

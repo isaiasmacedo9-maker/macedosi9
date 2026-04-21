@@ -18,7 +18,8 @@ if USE_SQL:
     from sqlalchemy import select
     from database_sql import AsyncSessionLocal
     from models_sql import UserSQL
-    from crud_sql import convert_to_dict
+    from crud_sql import convert_to_dict, json_loads
+    from models_chat_users import UserPermissionSQL
 else:
     from database import get_users_collection
 
@@ -108,6 +109,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 raise credentials_exception
             
             user_data = convert_to_dict(user_obj)
+            perm_result = await session.execute(
+                select(UserPermissionSQL).where(UserPermissionSQL.user_id == user_obj.id)
+            )
+            permissions = perm_result.scalars().all()
+            user_data["permissoes"] = [
+                {
+                    "setor": permission.setor,
+                    "visualizacoes": json_loads(permission.visualizacoes),
+                }
+                for permission in permissions
+            ]
             return UserResponse(**user_data)
     else:
         users_collection = await get_users_collection()

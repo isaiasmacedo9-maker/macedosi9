@@ -53,7 +53,10 @@ const Chat = () => {
           </h1>
           <p className="text-gray-400 mt-2">Sistema de comunicação interna</p>
         </div>
-        <button className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2">
+        <button
+          onClick={() => window.alert('Criacao de novo chat sera disponibilizada nesta tela.')}
+          className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2"
+        >
           <Plus className="w-5 h-5" />
           <span>Novo Chat</span>
         </button>
