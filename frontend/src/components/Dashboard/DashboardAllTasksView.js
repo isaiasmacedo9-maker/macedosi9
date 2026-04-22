@@ -22,7 +22,7 @@ const setorLabel = {
   financeiro: 'Financeiro',
   fiscal: 'Fiscal',
   trabalhista: 'Trabalhista',
-  servicos: 'Servicos',
+  servicos: 'Serviços',
   clientes: 'Clientes',
 };
 
@@ -43,7 +43,7 @@ const DashboardAllTasksView = () => {
           <div>
             <h1 className="text-2xl font-semibold text-white">Todas as tarefas</h1>
             <p className="mt-2 text-sm text-gray-300">
-              Lista das tarefas do usuario com setor e acesso rapido ao detalhe do servico.
+              Lista das tarefas do usuário com setor e acesso rápido ao detalhe do serviço.
             </p>
           </div>
           <button
@@ -85,7 +85,7 @@ const DashboardAllTasksView = () => {
             </article>
           )) : (
             <div className="rounded-xl border border-dashed border-white/15 bg-black/20 p-6 text-center text-sm text-gray-400">
-              Nenhuma tarefa pendente para este usuario.
+              Nenhuma tarefa pendente para este usuário.
             </div>
           )}
         </div>

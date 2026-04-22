@@ -17,7 +17,7 @@ const STATUS_OPTIONS = [
   { value: 'confirmado', label: 'Confirmados' },
   { value: 'concluido', label: 'Concluidos' },
   { value: 'remarcado', label: 'Remarcado' },
-  { value: 'cliente_nao_compareceu', label: 'Cliente nao compareceu' },
+  { value: 'cliente_nao_compareceu', label: 'Cliente não compareceu' },
 ];
 
 const normalize = (value = '') =>
@@ -40,6 +40,8 @@ const sortByDateAsc = (a, b) =>
   new Date(`${a?.data_agendamento || '1970-01-01'}T00:00:00`) -
   new Date(`${b?.data_agendamento || '1970-01-01'}T00:00:00`);
 
+const getTodayInputDate = () => new Date().toISOString().split('T')[0];
+
 const PainelContadores = () => {
   const { user, hasModuleAccess } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -60,7 +62,7 @@ const PainelContadores = () => {
     cliente_nome: '',
     cliente_telefone: '',
     cliente_email: '',
-    data_agendamento: '',
+    data_agendamento: getTodayInputDate(),
     hora_inicio: '',
     hora_fim: '',
     duracao_minutos: '60',
@@ -252,7 +254,7 @@ const PainelContadores = () => {
       cliente_nome: '',
       cliente_telefone: '',
       cliente_email: '',
-      data_agendamento: '',
+      data_agendamento: getTodayInputDate(),
       hora_inicio: '',
       hora_fim: '',
       duracao_minutos: '60',
@@ -336,7 +338,7 @@ const PainelContadores = () => {
   if (!hasModuleAccess('contadores')) {
     return (
       <div className="glass rounded-xl p-6">
-        <p className="text-gray-300">Voce nao tem acesso ao modulo Contadores.</p>
+        <p className="text-gray-300">Você não tem acesso ao módulo Contadores.</p>
       </div>
     );
   }
@@ -351,8 +353,8 @@ const PainelContadores = () => {
           </h1>
           <p className="text-gray-400 mt-2">
             {activeArea === 'servicos'
-              ? `Area atual: Servicos ${currentContador?.nome || 'Sara'}`
-              : `Area atual: Agendamentos ${currentContador?.nome || 'Sara'}`}
+              ? `Área atual: Serviços ${currentContador?.nome || 'Sara'}`
+              : `Área atual: Agendamentos ${currentContador?.nome || 'Sara'}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -386,7 +388,7 @@ const PainelContadores = () => {
           onClick={() => setActiveArea('servicos')}
           className={`px-4 py-2 rounded-lg ${activeArea === 'servicos' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300'}`}
         >
-          Servicos
+          Serviços
         </button>
 
         {(isAdmin || hasSpecificContadorVisualization) && availableContadores.length > 1 ? (
@@ -671,4 +673,3 @@ const PainelContadores = () => {
 };
 
 export default PainelContadores;
-

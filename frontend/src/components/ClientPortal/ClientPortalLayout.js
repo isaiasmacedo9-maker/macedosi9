@@ -131,7 +131,7 @@ const ClientPortalLayout = ({ children }) => {
       },
       {
         key: 'gestao',
-        label: 'Gestao',
+        label: 'Gestão',
         icon: Users2,
         to: `/cliente/${clienteId}/gestao`,
         isActive:
@@ -154,7 +154,7 @@ const ClientPortalLayout = ({ children }) => {
       },
       {
         key: 'servicos',
-        label: 'Servicos',
+        label: 'Serviços',
         icon: Briefcase,
         to: `/cliente/${clienteId}/servicos`,
         isActive: location.pathname.includes('/servicos'),
@@ -194,8 +194,8 @@ const ClientPortalLayout = ({ children }) => {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-red-500/15 text-red-300">
             <ShieldCheck className="h-8 w-8" />
           </div>
-          <h1 className="text-2xl font-semibold">Cliente nao encontrado ou sem acesso</h1>
-          <p className="mt-3 text-sm text-gray-400">Este identificador nao esta vinculado ao usuario atual.</p>
+          <h1 className="text-2xl font-semibold">Cliente não encontrado ou sem acesso</h1>
+          <p className="mt-3 text-sm text-gray-400">Este identificador não está vinculado ao usuário atual.</p>
         </div>
       </div>
     );
@@ -312,7 +312,7 @@ const ClientPortalLayout = ({ children }) => {
 
                 {!isAllCompaniesView ? (
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <div className="mb-3 text-xs uppercase tracking-[0.18em] text-gray-400">Modulos rapidos</div>
+                    <div className="mb-3 text-xs uppercase tracking-[0.18em] text-gray-400">Módulos rápidos</div>
                     <div className="space-y-2">
                       {enabledModules?.macedogram ? (
                         <NavLink
@@ -344,7 +344,7 @@ const ClientPortalLayout = ({ children }) => {
                           }
                         >
                           <Gift className="h-5 w-5 text-fuchsia-300" />
-                          Clube de Beneficios
+                          Clube de Benefícios
                         </NavLink>
                       ) : null}
                     </div>
@@ -394,7 +394,7 @@ const ClientPortalLayout = ({ children }) => {
                   <div>
                     <div className="text-xs uppercase tracking-[0.2em] text-gray-400">Portal do cliente</div>
                     <h1 className="text-lg font-semibold text-white">
-                      {isAllCompaniesView ? 'Visao consolidada' : portalClient.nome_fantasia}
+                      {isAllCompaniesView ? 'Visão consolidada' : portalClient.nome_fantasia}
                     </h1>
                   </div>
                 </div>

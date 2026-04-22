@@ -17,6 +17,8 @@ const readArray = (key) => {
   }
 };
 
+const getTodayInputDate = () => new Date().toISOString().split('T')[0];
+
 const Comercial = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('servicos');
@@ -39,9 +41,9 @@ const Comercial = () => {
     descricao: '',
     valor_servico: 0,
     valor_desconto: 0,
-    data_contratacao: '',
-    data_inicio_previsto: '',
-    data_conclusao_prevista: '',
+    data_contratacao: getTodayInputDate(),
+    data_inicio_previsto: getTodayInputDate(),
+    data_conclusao_prevista: getTodayInputDate(),
     responsavel_id: '',
     observacoes: ''
   });
@@ -54,9 +56,9 @@ const Comercial = () => {
     valor_mensal: 0,
     valor_total: 0,
     forma_pagamento: '',
-    data_assinatura: '',
-    data_inicio_vigencia: '',
-    data_vencimento: '',
+    data_assinatura: getTodayInputDate(),
+    data_inicio_vigencia: getTodayInputDate(),
+    data_vencimento: getTodayInputDate(),
     renovacao_automatica: 'nao',
     responsavel_id: '',
     observacoes: '',
@@ -362,7 +364,7 @@ const Comercial = () => {
       empresa_id: commercialItem.empresa_id,
       empresa_nome: commercialItem.empresa_nome,
       tipo_servico: servicoForm.tipo_servico,
-      descricao: servicoForm.descricao || 'Criado pelo modulo comercial.',
+      descricao: servicoForm.descricao || 'Criado pelo módulo comercial.',
       setor: 'Comercial',
       status: 'pendente',
       prioridade: 'media',
@@ -543,9 +545,9 @@ const Comercial = () => {
       descricao: '',
       valor_servico: 0,
       valor_desconto: 0,
-      data_contratacao: '',
-      data_inicio_previsto: '',
-      data_conclusao_prevista: '',
+      data_contratacao: getTodayInputDate(),
+      data_inicio_previsto: getTodayInputDate(),
+      data_conclusao_prevista: getTodayInputDate(),
       responsavel_id: '',
       observacoes: ''
     });
@@ -560,9 +562,9 @@ const Comercial = () => {
       valor_mensal: 0,
       valor_total: 0,
       forma_pagamento: '',
-      data_assinatura: '',
-      data_inicio_vigencia: '',
-      data_vencimento: '',
+      data_assinatura: getTodayInputDate(),
+      data_inicio_vigencia: getTodayInputDate(),
+      data_vencimento: getTodayInputDate(),
       renovacao_automatica: 'nao',
       responsavel_id: '',
       observacoes: '',

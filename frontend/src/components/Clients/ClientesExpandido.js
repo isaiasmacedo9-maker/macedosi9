@@ -49,8 +49,9 @@ const sectionTabs = [
   { id: 'setup_config', label: 'Setup Config' },
   { id: 'acesso_cliente', label: 'Login Cliente' },
   { id: 'dados_empresa', label: 'Dados da empresa' },
-  { id: 'modulos_liberados', label: 'Modulos' },
-  { id: 'servicos_vinculados', label: 'Servicos vinculados' },
+  { id: 'assinatura', label: 'Assinatura' },
+  { id: 'modulos_liberados', label: 'Módulos' },
+  { id: 'servicos_vinculados', label: 'Serviços vinculados' },
   { id: 'documentos', label: 'Documentos' },
   { id: 'senhas', label: 'Senhas' },
   { id: 'financeiro', label: 'Financeiro' },
@@ -217,6 +218,8 @@ const ClientesExpandido = () => {
   const [clientSetupMap, setClientSetupMap] = useState({});
   const [portalUsers, setPortalUsers] = useState([]);
   const [financialByClientId, setFinancialByClientId] = useState({});
+  const [assinaturaPlans, setAssinaturaPlans] = useState([]);
+  const [assinaturaServicesCatalog, setAssinaturaServicesCatalog] = useState([]);
   const [novoSocio, setNovoSocio] = useState({ nome: '', participacao: '', cpf: '', funcao: 'Socio' });
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [selectedCityFilter, setSelectedCityFilter] = useState('Todas as Cidades');
@@ -239,6 +242,7 @@ const ClientesExpandido = () => {
     loadSetupMap();
     loadPortalUsers();
     loadFinancialClientsMap();
+    loadAssinaturasSettings();
   }, []);
 
   const loadClients = async () => {
@@ -293,6 +297,34 @@ const ClientesExpandido = () => {
     } catch (error) {
       console.error('Erro ao carregar mapa financeiro dos clientes:', error);
       setFinancialByClientId({});
+    }
+  };
+
+  const loadAssinaturasSettings = async () => {
+    try {
+      const [plansResponse, servicesResponse] = await Promise.all([
+        api.get('/financial/settings/assinaturas/plans'),
+        api.get('/financial/settings/assinaturas/services'),
+      ]);
+      const plans = Array.isArray(plansResponse.data?.items) ? plansResponse.data.items : [];
+      const services = Array.isArray(servicesResponse.data?.items) ? servicesResponse.data.items : [];
+      setAssinaturaPlans(
+        plans.map((plan) => ({
+          ...plan,
+          nome: plan.nome || plan.name || '',
+          services: Array.isArray(plan.services) ? plan.services : (Array.isArray(plan.selectedServices) ? plan.selectedServices : []),
+        })),
+      );
+      setAssinaturaServicesCatalog(
+        services.map((service) => ({
+          ...service,
+          nome: service.nome || service.name || '',
+        })),
+      );
+    } catch (error) {
+      console.error('Erro ao carregar configuracao de assinaturas:', error);
+      setAssinaturaPlans([]);
+      setAssinaturaServicesCatalog([]);
     }
   };
 
@@ -384,6 +416,13 @@ const ClientesExpandido = () => {
     const portalUser = portalUsers.find((item) => String(item.clientRefId) === String(selectedClient.id));
     return {
       ...base,
+      assinatura: {
+        ...(base.assinatura || {}),
+        planId: base.assinatura?.planId || '',
+        nomePlano: base.assinatura?.nomePlano || '',
+        servicos: Array.isArray(base.assinatura?.servicos) ? base.assinatura.servicos : [],
+        observacoes: base.assinatura?.observacoes || '',
+      },
       acessoCliente: {
         ...(base.acessoCliente || {}),
         nome: base.acessoCliente?.nome || portalUser?.nome || selectedClient.nome_fantasia || '',
@@ -409,7 +448,7 @@ const ClientesExpandido = () => {
     });
     Object.values(clientSetupMap || {}).forEach((cfg) => {
       const city = cfg?.setupEmpresa?.enderecoCidade;
-      if (city) base.add(city);
+      if (city) base.add(canonicalCityLabel(city));
     });
     return Array.from(base).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [clients, clientSetupMap]);
@@ -755,6 +794,49 @@ const ClientesExpandido = () => {
           senhas: {
             ...base.senhas,
             [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const updateSetupAssinatura = (field, value) => {
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          assinatura: {
+            ...(base.assinatura || {}),
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const applyAssinaturaPlan = (planId) => {
+    const plan = assinaturaPlans.find((item) => String(item.id) === String(planId));
+    if (!plan) {
+      updateSetupAssinatura('planId', '');
+      updateSetupAssinatura('nomePlano', '');
+      updateSetupAssinatura('servicos', []);
+      return;
+    }
+    if (!selectedClient) return;
+    saveSetupMap((current) => {
+      const base = current[selectedClient.id] || createDefaultClientSetup(selectedClient);
+      return {
+        ...current,
+        [selectedClient.id]: {
+          ...base,
+          assinatura: {
+            ...(base.assinatura || {}),
+            planId: plan.id,
+            nomePlano: plan.nome || plan.name || '',
+            servicos: Array.isArray(plan.services) ? plan.services : (Array.isArray(plan.selectedServices) ? plan.selectedServices : []),
           },
         },
       };
@@ -1641,7 +1723,7 @@ const ClientesExpandido = () => {
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <InputField
-                    label="Nome do usuario"
+                    label="Nome do usuário"
                     value={selectedSetup?.acessoCliente?.nome || ''}
                     onChange={(v) => updateSetupAcessoCliente('nome', v)}
                   />
@@ -1688,7 +1770,7 @@ const ClientesExpandido = () => {
                   <span className="text-xs text-gray-400">
                     {selectedSetup?.acessoCliente?.salvo
                       ? `Ultima atualizacao: ${new Date(selectedSetup.acessoCliente.atualizadoEm || Date.now()).toLocaleString('pt-BR')}`
-                      : 'Login ainda nao salvo.'}
+                      : 'Login ainda não salvo.'}
                   </span>
                 </div>
               </SectionCard>
@@ -1702,7 +1784,72 @@ const ClientesExpandido = () => {
                   <InfoField label="CNPJ" value={selectedClient.cnpj || '-'} mono />
                   <InfoField label="Regime" value={getClientRegime(selectedClient).replaceAll('_', ' ')} />
                   <InfoField label="Status" value={selectedClient.status || 'ativo'} />
-                  <InfoField label="Cidade" value={selectedClient.cidade || '-'} />
+                  <InfoField label="Cidade" value={getClientCity(selectedClient) || '-'} />
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {activeSection === 'assinatura' ? (
+              <SectionCard title="Assinatura" icon={<Settings className="w-5 h-5 text-red-300" />}>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <InfoField label="Empresa" value={selectedClient.nome_empresa || '-'} />
+                  <InfoField label="CNPJ" value={selectedClient.cnpj || '-'} mono />
+                  <InfoField label="Cidade" value={getClientCity(selectedClient) || '-'} />
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm text-gray-300">Plano de assinatura</label>
+                    <select
+                      value={selectedSetup?.assinatura?.planId || ''}
+                      onChange={(event) => applyAssinaturaPlan(event.target.value)}
+                      className="w-full rounded-lg border border-gray-700 bg-black/30 px-4 py-2 text-white"
+                    >
+                      <option value="">Selecione...</option>
+                      {assinaturaPlans.map((plan) => (
+                        <option key={plan.id} value={plan.id}>{plan.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <InputField
+                    label="Nome do plano"
+                    value={selectedSetup?.assinatura?.nomePlano || ''}
+                    onChange={(value) => updateSetupAssinatura('nomePlano', value)}
+                    placeholder="Ex.: Plano Essencial"
+                  />
+                </div>
+                <div className="mt-4 rounded-lg border border-gray-700 bg-black/30 p-3">
+                  <p className="text-sm font-semibold text-white">Serviços vinculados ao cliente nessa assinatura</p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {(selectedSetup?.assinatura?.servicos || []).length ? (
+                      (selectedSetup?.assinatura?.servicos || []).map((service) => (
+                        <div key={service.id || service.nome} className="rounded-lg border border-gray-700 bg-black/30 px-3 py-2 text-sm text-gray-200">
+                          {service.nome || '-'}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-400">Nenhum servico vinculado ao plano.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 rounded-lg border border-gray-700 bg-black/30 p-3">
+                  <p className="text-sm font-semibold text-white">Catálogo de serviços (módulo Assinaturas)</p>
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {assinaturaServicesCatalog.map((service) => (
+                      <div key={service.id || service.nome} className="rounded-lg border border-gray-700 bg-black/30 px-3 py-2 text-sm text-gray-300">
+                        {service.nome || '-'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm text-gray-300">Observacoes</label>
+                  <textarea
+                    value={selectedSetup?.assinatura?.observacoes || ''}
+                    onChange={(event) => updateSetupAssinatura('observacoes', event.target.value)}
+                    rows={4}
+                    className="w-full rounded-lg border border-gray-700 bg-black/30 px-4 py-2 text-white"
+                    placeholder="Informacoes adicionais da assinatura do cliente."
+                  />
                 </div>
               </SectionCard>
             ) : null}
@@ -1710,7 +1857,7 @@ const ClientesExpandido = () => {
             {activeSection === 'financeiro' ? (
               <SectionCard title="Financeiro" icon={<SlidersHorizontal className="w-5 h-5 text-red-300" />}>
                 {!selectedFinancialData ? (
-                  <p className="text-gray-400">Este cliente ainda nao possui cadastro em Clientes Financeiro.</p>
+                  <p className="text-gray-400">Este cliente ainda não possui cadastro em Clientes Financeiro.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <InfoField label="Valor boleto" value={Number(selectedFinancialData.valor_boleto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
@@ -1769,7 +1916,7 @@ const ClientesExpandido = () => {
             ) : null}
 
             {activeSection === 'servicos_vinculados' ? (
-              <SectionCard title="Servicos vinculados" icon={<Settings className="w-5 h-5 text-red-300" />}>
+              <SectionCard title="Serviços vinculados" icon={<Settings className="w-5 h-5 text-red-300" />}>
                 {(() => {
                   const services = getMockInternalServices().filter((item) => item.empresa_id === selectedClient.id);
                   if (!services.length) return <p className="text-gray-400">Nenhum serviço vinculado.</p>;
@@ -2000,6 +2147,12 @@ function createDefaultClientSetup(client) {
       senhaSimplesNacional: '',
       senhaEmissorNacional: '',
       senhaPortalPrefeitura: '',
+    },
+    assinatura: {
+      planId: '',
+      nomePlano: '',
+      servicos: [],
+      observacoes: '',
     },
     modulosLiberados: [
       'Financeiro',

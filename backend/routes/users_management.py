@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from sqlalchemy import select, delete, and_
+import unicodedata
 from database_sql import AsyncSessionLocal
 from models_sql import UserSQL
 from models_chat_users import UserPermissionSQL, UserOnlineStatusSQL
@@ -49,6 +50,23 @@ CLIENTES_SENHAS_VIEWS = {
     "Senha do emissor nacional",
     "Senha portal prefeitura",
 }
+
+
+def _normalize_text(value: str) -> str:
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', str(value or '').strip().lower())
+        if unicodedata.category(c) != 'Mn'
+    )
+
+
+SETORES_CANONICOS = {
+    _normalize_text(nome_setor): nome_setor
+    for nome_setor in SETORES_DISPONIVEIS.keys()
+}
+
+
+def _canonicalizar_setor(setor: str) -> Optional[str]:
+    return SETORES_CANONICOS.get(_normalize_text(setor))
 
 
 def _is_visualizacao_valida(setor: str, visualizacao: str) -> bool:
@@ -228,18 +246,26 @@ async def create_user(user_data: UserCreate, current_user = Depends(get_admin_us
         for cidade in user_data.allowed_cities:
             if cidade not in CIDADES_DISPONIVEIS:
                 raise HTTPException(status_code=400, detail=f"Cidade inválida: {cidade}")
-        
-        # Validar permissões
+
+        # Validar permissões (aceita setor em caixa alta/baixa e acentos)
+        permissoes_normalizadas = []
         for perm in user_data.permissoes:
-            if perm.setor not in SETORES_DISPONIVEIS:
+            setor_canonico = _canonicalizar_setor(perm.setor)
+            if not setor_canonico:
                 raise HTTPException(status_code=400, detail=f"Setor inválido: {perm.setor}")
             for vis in perm.visualizacoes:
-                if not _is_visualizacao_valida(perm.setor, vis):
+                if not _is_visualizacao_valida(setor_canonico, vis):
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Visualização inválida '{vis}' para setor {perm.setor}"
+                        detail=f"Visualização inválida '{vis}' para setor {setor_canonico}"
                     )
-        
+            permissoes_normalizadas.append(
+                {
+                    "setor": setor_canonico,
+                    "visualizacoes": perm.visualizacoes,
+                }
+            )
+
         # Criar usuário
         hashed_password = get_password_hash(user_data.password)
         new_user = UserSQL(
@@ -248,18 +274,18 @@ async def create_user(user_data: UserCreate, current_user = Depends(get_admin_us
             password_hash=hashed_password,
             role=user_data.role,
             allowed_cities=json_dumps(user_data.allowed_cities),
-            allowed_sectors=json_dumps([p.setor for p in user_data.permissoes]),
+            allowed_sectors=json_dumps([p["setor"] for p in permissoes_normalizadas]),
             is_active=True
         )
         session.add(new_user)
         await session.flush()
-        
+
         # Criar permissões
-        for perm in user_data.permissoes:
+        for perm in permissoes_normalizadas:
             permission = UserPermissionSQL(
                 user_id=new_user.id,
-                setor=perm.setor,
-                visualizacoes=json_dumps(perm.visualizacoes)
+                setor=perm["setor"],
+                visualizacoes=json_dumps(perm["visualizacoes"])
             )
             session.add(permission)
         
@@ -324,15 +350,23 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user = Depend
         # Atualizar permissões
         if user_data.permissoes is not None:
             # Validar permissões
+            permissoes_normalizadas = []
             for perm in user_data.permissoes:
-                if perm.setor not in SETORES_DISPONIVEIS:
+                setor_canonico = _canonicalizar_setor(perm.setor)
+                if not setor_canonico:
                     raise HTTPException(status_code=400, detail=f"Setor inválido: {perm.setor}")
                 for vis in perm.visualizacoes:
-                    if not _is_visualizacao_valida(perm.setor, vis):
+                    if not _is_visualizacao_valida(setor_canonico, vis):
                         raise HTTPException(
                             status_code=400,
-                            detail=f"Visualização inválida '{vis}' para setor {perm.setor}"
+                            detail=f"Visualização inválida '{vis}' para setor {setor_canonico}"
                         )
+                permissoes_normalizadas.append(
+                    {
+                        "setor": setor_canonico,
+                        "visualizacoes": perm.visualizacoes,
+                    }
+                )
             
             # Remover permissões antigas
             await session.execute(
@@ -340,16 +374,16 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user = Depend
             )
             
             # Criar novas permissões
-            for perm in user_data.permissoes:
+            for perm in permissoes_normalizadas:
                 permission = UserPermissionSQL(
                     user_id=user_id,
-                    setor=perm.setor,
-                    visualizacoes=json_dumps(perm.visualizacoes)
+                    setor=perm["setor"],
+                    visualizacoes=json_dumps(perm["visualizacoes"])
                 )
                 session.add(permission)
-            
+
             # Atualizar allowed_sectors
-            user.allowed_sectors = json_dumps([p.setor for p in user_data.permissoes])
+            user.allowed_sectors = json_dumps([p["setor"] for p in permissoes_normalizadas])
         
         user.updated_at = datetime.utcnow()
         await session.commit()

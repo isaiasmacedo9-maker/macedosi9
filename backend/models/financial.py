@@ -227,6 +227,7 @@ class FinancialClient(BaseModel):
     quantidade_funcionarios: Optional[int] = 0
     status_fiscal: Optional[str] = "sem_movimento"
     capacidade_pagamento: Optional[str] = "paga_em_dia"
+    status_cliente: Optional[str] = "ativa"
     data_vencimento: Optional[str] = None
     valor_desconto: Optional[float] = 0.0
     ultimo_pagamento: Optional[date] = None
@@ -256,8 +257,10 @@ class FinancialClientCreate(BaseModel):
     quantidade_funcionarios: Optional[int] = 0
     status_fiscal: Optional[str] = "sem_movimento"
     capacidade_pagamento: Optional[str] = "paga_em_dia"
+    status_cliente: Optional[str] = "ativa"
     data_vencimento: Optional[str] = None
     valor_desconto: Optional[float] = 0.0
+    status_pagamento: Optional[StatusPagamento] = StatusPagamento.EM_DIA
     observacoes: Optional[str] = None
 
 class FinancialClientUpdate(BaseModel):
@@ -282,6 +285,7 @@ class FinancialClientUpdate(BaseModel):
     quantidade_funcionarios: Optional[int] = None
     status_fiscal: Optional[str] = None
     capacidade_pagamento: Optional[str] = None
+    status_cliente: Optional[str] = None
     observacoes: Optional[str] = None
 
 # Modelos para filtros e busca

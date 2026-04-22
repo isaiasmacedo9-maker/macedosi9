@@ -3,6 +3,36 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../config/api';
 import { Building2, Plus, Search, Filter } from 'lucide-react';
 
+const normalizeText = (value = '') =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const canonicalCityKey = (city = '') => {
+  const normalized = normalizeText(city);
+  if (!normalized) return '';
+  if (normalized.startsWith('ouroland')) return 'ourolandia';
+  if (normalized.startsWith('uberland')) return 'uberlandia';
+  if (normalized.startsWith('jacobin')) return 'jacobina';
+  if (normalized.startsWith('umburan')) return 'umburanas';
+  return normalized;
+};
+
+const canonicalCityLabel = (city = '') => {
+  const key = canonicalCityKey(city);
+  if (key === 'ourolandia') return 'Ourolandia';
+  if (key === 'uberlandia') return 'Uberlandia';
+  if (key === 'jacobina') return 'Jacobina';
+  if (key === 'umburanas') return 'Umburanas';
+  if (!key) return '-';
+  return String(city || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 const ClientsList = () => {
   const { user } = useAuth();
   const [clients, setClients] = useState([]);
@@ -46,7 +76,7 @@ const ClientsList = () => {
           </p>
         </div>
         <button
-          onClick={() => window.alert('Cadastro de novo cliente sera liberado neste modulo.')}
+          onClick={() => window.alert('Cadastro de novo cliente será liberado neste módulo.')}
           className="btn-futuristic px-6 py-3 rounded-xl text-white font-semibold flex items-center space-x-2"
         >
           <Plus className="w-5 h-5" />
@@ -70,7 +100,7 @@ const ClientsList = () => {
             </div>
           </div>
           <button
-            onClick={() => window.alert('Filtros avancados serao habilitados neste modulo.')}
+            onClick={() => window.alert('Filtros avançados serão habilitados neste módulo.')}
             className="flex items-center space-x-2 px-4 py-3 rounded-xl border border-red-600/30 text-gray-300 hover:text-white hover:border-red-600/50 transition-colors"
           >
             <Filter className="w-5 h-5" />
@@ -121,7 +151,7 @@ const ClientsList = () => {
                       </div>
                     </td>
                     <td className="p-4 text-gray-300">{client.cnpj}</td>
-                    <td className="p-4 text-gray-300 capitalize">{client.cidade}</td>
+                    <td className="p-4 text-gray-300">{canonicalCityLabel(client.cidade)}</td>
                     <td className="p-4">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         client.status === 'ativa' 

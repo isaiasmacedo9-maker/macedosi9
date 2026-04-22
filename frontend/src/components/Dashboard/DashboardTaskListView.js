@@ -38,7 +38,7 @@ const SECTOR_TABS = [
   { key: 'fiscal', label: 'Fiscal', modules: ['fiscal'] },
   { key: 'financeiro', label: 'Financeiro', modules: ['financeiro'] },
   { key: 'trabalhista', label: 'Trabalhista', modules: ['trabalhista'] },
-  { key: 'servicos-avulsos', label: 'Servicos Avulsos', modules: ['servicos', 'servicos_avulsos', 'services'] },
+  { key: 'servicos-avulsos', label: 'Serviços Avulsos', modules: ['servicos', 'servicos_avulsos', 'services'] },
 ];
 
 const formatDate = (value) => {
@@ -101,7 +101,7 @@ const DashboardTaskListView = ({ viewType = 'pending' }) => {
 
   const title = viewType === 'new' ? 'Novas tarefas' : 'Tarefas pendentes';
   const subtitle = viewType === 'new'
-    ? 'Tarefas novas ou recentemente atribuidas. Ficam aqui ate o fim do dia em que voce abriu esta view.'
+    ? 'Tarefas novas ou recentemente atribuídas. Ficam aqui até o fim do dia em que você abriu esta view.'
     : 'Tarefas em aberto sob sua responsabilidade.';
 
   return (
@@ -182,7 +182,7 @@ const DashboardTaskListView = ({ viewType = 'pending' }) => {
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-gray-300">
                   <Clock3 className="h-3.5 w-3.5 text-blue-300" />
-                  Atribuida em: {formatDate(task.atribuidoEm)}
+                  Atribuída em: {formatDate(task.atribuidoEm)}
                 </div>
               </div>
             </article>

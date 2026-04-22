@@ -46,7 +46,7 @@ const ClientPortalAllCompaniesHome = ({ consolidatedContext }) => {
       <div className="glass-intense rounded-[28px] border border-white/8 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Visao consolidada</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Visão consolidada</div>
             <h1 className="mt-2 text-3xl font-semibold text-white">Todas as empresas vinculadas</h1>
             <p className="mt-2 max-w-3xl text-sm text-gray-300">
               Painel geral para acompanhar indicadores principais sem focar em um regime especifico.
@@ -93,7 +93,7 @@ const ClientPortalAllCompaniesHome = ({ consolidatedContext }) => {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="glass rounded-[28px] p-6 xl:col-span-2">
           <h2 className="text-lg font-semibold text-white">Impostos a vencer por empresa</h2>
-          <p className="mt-1 text-sm text-gray-400">Visao consolidada dos tributos pendentes das empresas vinculadas.</p>
+          <p className="mt-1 text-sm text-gray-400">Visão consolidada dos tributos pendentes das empresas vinculadas.</p>
           <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
             {impostosPorEmpresa.map((item) => (
               <div key={item.clienteId} className="rounded-2xl border border-white/8 bg-black/20 p-4">

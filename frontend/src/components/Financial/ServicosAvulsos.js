@@ -15,45 +15,45 @@ const CATEGORIES = [
   { key: 'irpf', label: 'IRPF' },
   { key: 'mei', label: 'MEI' },
   { key: 'itr', label: 'ITR' },
-  { key: 'legalizacao', label: 'Legalizacao' },
-  { key: 'outros-servicos', label: 'Outros Servicos' },
+  { key: 'legalizacao', label: 'Legalização' },
+  { key: 'outros-servicos', label: 'Outros Serviços' },
 ];
 
 const OUTROS_SERVICOS_ITEMS = [
   {
     key: 'parcelamento-debitos',
-    nome: 'Parcelamento de Debitos',
-    processo: 'Levantamento de debitos + simulacao + adesao ao parcelamento',
+    nome: 'Parcelamento de Débitos',
+    processo: 'Levantamento de débitos + simulação + adesão ao parcelamento',
     responsavel: 'Financeiro',
     tarefas: [
-      'Conferir origem e valor dos debitos',
-      'Validar modalidade de parcelamento aplicavel',
+      'Conferir origem e valor dos débitos',
+      'Validar modalidade de parcelamento aplicável',
       'Simular parcelas e validar com cliente',
-      'Gerar e protocolar adesao',
+      'Gerar e protocolar adesão',
       'Enviar resumo e cronograma para o cliente',
     ],
   },
   {
     key: 'calculo-rescisao-avulsa',
-    nome: 'Calculo de Rescisao Avulsa',
-    processo: 'Coleta de dados trabalhistas + calculo + conferencia + entrega',
+    nome: 'Cálculo de Rescisão Avulsa',
+    processo: 'Coleta de dados trabalhistas + cálculo + conferência + entrega',
     responsavel: 'Trabalhista',
     tarefas: [
       'Coletar dados do colaborador e contrato',
-      'Validar eventos e verbas rescisorias',
-      'Calcular rescisao e encargos',
-      'Conferir consistencia e aprovar',
-      'Entregar memoria de calculo ao cliente',
+      'Validar eventos e verbas rescisórias',
+      'Calcular rescisão e encargos',
+      'Conferir consistência e aprovar',
+      'Entregar memória de cálculo ao cliente',
     ],
   },
   {
     key: 'outros-servicos',
-    nome: 'Outros Servicos',
-    processo: 'Triagem da demanda + definicao de escopo + execucao',
+    nome: 'Outros Serviços',
+    processo: 'Triagem da demanda + definição de escopo + execução',
     responsavel: 'Atendimento',
     tarefas: [
       'Registrar demanda detalhada',
-      'Classificar setor responsavel',
+      'Classificar setor responsável',
       'Definir escopo e prazo',
       'Executar e revisar entrega',
       'Formalizar retorno ao cliente',
@@ -62,14 +62,14 @@ const OUTROS_SERVICOS_ITEMS = [
 ];
 
 const DEFAULT_TEMPLATES = [
-  { id: 'tpl-irpf-1', categoria: 'irpf', nome: 'Declaracao IRPF Completa', processo: 'Checklist IRPF + validacao pendencias', responsavel: 'Fiscal', valorPadrao: 240 },
-  { id: 'tpl-irpf-2', categoria: 'irpf', nome: 'Retificacao de IRPF', processo: 'Analise de divergencias + retificacao', responsavel: 'Fiscal', valorPadrao: 180 },
-  { id: 'tpl-mei-1', categoria: 'mei', nome: 'DASN-SIMEI Anual', processo: 'Conferencia faturamento + transmissao DASN', responsavel: 'Fiscal', valorPadrao: 160 },
-  { id: 'tpl-mei-2', categoria: 'mei', nome: 'Regularizacao de DAS MEI', processo: 'Levantamento debitos + emissao guias', responsavel: 'Financeiro', valorPadrao: 120 },
-  { id: 'tpl-itr-1', categoria: 'itr', nome: 'Declaracao ITR', processo: 'Levantamento imovel rural + transmissao ITR', responsavel: 'Fiscal', valorPadrao: 350 },
+  { id: 'tpl-irpf-1', categoria: 'irpf', nome: 'Declaração IRPF Completa', processo: 'Checklist IRPF + validação de pendências', responsavel: 'Fiscal', valorPadrao: 240 },
+  { id: 'tpl-irpf-2', categoria: 'irpf', nome: 'Retificação de IRPF', processo: 'Análise de divergências + retificação', responsavel: 'Fiscal', valorPadrao: 180 },
+  { id: 'tpl-mei-1', categoria: 'mei', nome: 'DASN-SIMEI Anual', processo: 'Conferência de faturamento + transmissão DASN', responsavel: 'Fiscal', valorPadrao: 160 },
+  { id: 'tpl-mei-2', categoria: 'mei', nome: 'Regularização de DAS MEI', processo: 'Levantamento de débitos + emissão de guias', responsavel: 'Financeiro', valorPadrao: 120 },
+  { id: 'tpl-itr-1', categoria: 'itr', nome: 'Declaração ITR', processo: 'Levantamento de imóvel rural + transmissão ITR', responsavel: 'Fiscal', valorPadrao: 350 },
   { id: 'tpl-leg-1', categoria: 'legalizacao', nome: 'Abertura de Empresa', processo: 'Viabilidade + DBE + Junta + Prefeitura', responsavel: 'Contadores', valorPadrao: 1200 },
-  { id: 'tpl-leg-2', categoria: 'legalizacao', nome: 'Alteracao Contratual', processo: 'Minuta + assinatura + protocolo', responsavel: 'Contadores', valorPadrao: 700 },
-  { id: 'tpl-out-1', categoria: 'outros-servicos', nome: 'Certificado Digital A1', processo: 'Validacao documentos + emissao certificado', responsavel: 'Atendimento', valorPadrao: 290 },
+  { id: 'tpl-leg-2', categoria: 'legalizacao', nome: 'Alteração Contratual', processo: 'Minuta + assinatura + protocolo', responsavel: 'Contadores', valorPadrao: 700 },
+  { id: 'tpl-out-1', categoria: 'outros-servicos', nome: 'Certificado Digital A1', processo: 'Validação de documentos + emissão de certificado', responsavel: 'Atendimento', valorPadrao: 290 },
 ];
 
 const readJson = (key, fallback = []) => {
@@ -137,7 +137,7 @@ const buildTemplates = () => {
     id: `os-model-${item.id || Date.now()}`,
     categoria: categoryFromServiceName(item.nome_modelo),
     nome: item.nome_modelo,
-    processo: item.detalhes_pagamento || 'Processo comercial padrao',
+    processo: item.detalhes_pagamento || 'Processo comercial padrão',
     responsavel: 'Comercial',
     valorPadrao: Number(item.valor || 0),
   }));
@@ -158,14 +158,14 @@ const printOrder = (order) => {
     <html>
       <head><title>${order.numero}</title></head>
       <body style="font-family: Arial, sans-serif; padding: 24px;">
-        <h1>Ordem de Servico - ${order.numero}</h1>
+        <h1>Ordem de Serviço - ${order.numero}</h1>
         <p><strong>Cliente:</strong> ${order.cliente_nome}</p>
         <p><strong>Categoria:</strong> ${order.categoria_label}</p>
-        <p><strong>Servico:</strong> ${order.tipo_servico}</p>
+        <p><strong>Serviço:</strong> ${order.tipo_servico}</p>
         <p><strong>Processo:</strong> ${order.processo}</p>
-        <p><strong>Responsavel:</strong> ${order.responsavel}</p>
+        <p><strong>Responsável:</strong> ${order.responsavel}</p>
         <p><strong>Valor:</strong> ${formatCurrency(order.valor)}</p>
-        <p><strong>Status de Execucao:</strong> ${order.status_execucao || order.status}</p>
+        <p><strong>Status de Execução:</strong> ${order.status_execucao || order.status}</p>
         <p><strong>Status Financeiro:</strong> ${order.status_financeiro || '-'}</p>
         <p><strong>Data:</strong> ${new Date(order.created_at).toLocaleString('pt-BR')}</p>
       </body>
@@ -444,7 +444,7 @@ const ServicosAvulsos = () => {
       }
     }
 
-    const categoryLabel = CATEGORIES.find((item) => item.key === selectedTemplate.categoria)?.label || 'Outros Servicos';
+    const categoryLabel = CATEGORIES.find((item) => item.key === selectedTemplate.categoria)?.label || 'Outros Serviços';
     const newOrder = {
       id: `avulso-os-${Date.now()}`,
       numero: generateOrderNumber(selectedTemplate.categoria),
@@ -512,10 +512,10 @@ const ServicosAvulsos = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-white">
-              {selectedCategory ? `Servicos Avulsos - ${selectedCategory.label}` : 'Servicos Avulsos'}
+              {selectedCategory ? `Serviços Avulsos - ${selectedCategory.label}` : 'Serviços Avulsos'}
             </h1>
             <p className="mt-2 text-sm text-gray-300">
-              O.S avulsas vinculadas ao Comercial (O.S gerais) com processo e responsavel predefinidos.
+              O.S avulsas vinculadas ao Comercial (O.S gerais) com processo e responsável predefinidos.
             </p>
           </div>
           <button
@@ -524,7 +524,7 @@ const ServicosAvulsos = () => {
             className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200 hover:bg-white/10"
           >
             <ArrowLeft className="h-4 w-4" />
-            {selectedCategory ? 'Voltar para Servicos Avulsos' : 'Voltar para Financeiro'}
+            {selectedCategory ? 'Voltar para Serviços Avulsos' : 'Voltar para Financeiro'}
           </button>
         </div>
       </div>
@@ -532,7 +532,7 @@ const ServicosAvulsos = () => {
       <div className="glass rounded-2xl border border-white/10 p-6">
         <div className="mb-4 flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-red-300" />
-          <h2 className="text-lg font-semibold text-white">Metricas de Servicos Avulsos</h2>
+          <h2 className="text-lg font-semibold text-white">Métricas de Serviços Avulsos</h2>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
           {categoryMetrics.map((metric) => (
@@ -546,7 +546,7 @@ const ServicosAvulsos = () => {
               <p className="mt-2 text-xs text-gray-300">{metric.totalOS} O.S</p>
               <p className="text-xs text-gray-400">{formatCurrency(metric.totalValor)}</p>
               <p className="mt-2 text-[11px] text-gray-500">
-                {metric.services.length ? `Servicos: ${metric.services.slice(0, 2).join(', ')}${metric.services.length > 2 ? '...' : ''}` : 'Sem O.S'}
+                {metric.services.length ? `Serviços: ${metric.services.slice(0, 2).join(', ')}${metric.services.length > 2 ? '...' : ''}` : 'Sem O.S'}
               </p>
             </button>
           ))}
@@ -554,7 +554,7 @@ const ServicosAvulsos = () => {
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
           <p className="text-sm font-semibold text-amber-100">Aguardando pagamento</p>
           <p className="mt-1 text-xs text-gray-200">
-            {awaitingPaymentOrders.length} servicos • {formatCurrency(awaitingPaymentOrders.reduce((sum, item) => sum + Number(item.valor || 0), 0))}
+            {awaitingPaymentOrders.length} serviços • {formatCurrency(awaitingPaymentOrders.reduce((sum, item) => sum + Number(item.valor || 0), 0))}
           </p>
         </div>
       </div>
@@ -583,7 +583,7 @@ const ServicosAvulsos = () => {
               }}
               className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-left hover:bg-emerald-500/20"
             >
-              <p className="text-sm font-semibold text-emerald-100">Adicionar modelo de servico</p>
+              <p className="text-sm font-semibold text-emerald-100">Adicionar modelo de serviço</p>
               <p className="mt-1 text-xs text-gray-200">Crie um novo modelo para Outros Serviços</p>
             </button>
           </div>
@@ -644,13 +644,13 @@ const ServicosAvulsos = () => {
             <input
               value={newTemplate.valorPadrao}
               onChange={(e) => setNewTemplate((p) => ({ ...p, valorPadrao: e.target.value }))}
-              placeholder="Valor padrao"
+              placeholder="Valor padrão"
               className="input-futuristic rounded-lg px-3 py-2 text-sm"
             />
             <input
               value={newTemplate.nome}
               onChange={(e) => setNewTemplate((p) => ({ ...p, nome: e.target.value }))}
-              placeholder="Nome do servico"
+              placeholder="Nome do serviço"
               className="input-futuristic rounded-lg px-3 py-2 text-sm md:col-span-2"
             />
             <input
@@ -662,7 +662,7 @@ const ServicosAvulsos = () => {
             <input
               value={newTemplate.responsavel}
               onChange={(e) => setNewTemplate((p) => ({ ...p, responsavel: e.target.value }))}
-              placeholder="Responsavel executor"
+              placeholder="Responsável executor"
               className="input-futuristic rounded-lg px-3 py-2 text-sm"
             />
           </div>
@@ -689,7 +689,7 @@ const ServicosAvulsos = () => {
               }}
               className="ml-2 mt-4 inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:bg-white/10"
             >
-              Cancelar edicao
+              Cancelar edição
             </button>
           ) : null}
 
@@ -777,7 +777,7 @@ const ServicosAvulsos = () => {
                   <div className="rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-gray-300">
                     {(() => {
                       const selected = clients.find((item) => String(item.id) === String(form.existingClientId));
-                      if (!selected) return 'Cliente nao encontrado.';
+                      if (!selected) return 'Cliente não encontrado.';
                       return (
                         <>
                           <p><span className="text-gray-400">Cliente:</span> {selected.nome_empresa || selected.nome_fantasia || '-'}</p>
@@ -894,7 +894,7 @@ const ServicosAvulsos = () => {
             )}
 
             <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-              <p className="text-xs text-gray-400">Servico / processo selecionado</p>
+              <p className="text-xs text-gray-400">Serviço / processo selecionado</p>
               <p className="mt-1 text-sm font-medium text-white">{selectedTemplate?.nome || 'Nenhum selecionado'}</p>
               <p className="text-xs text-gray-300">{selectedTemplate?.processo || '-'}</p>
               <p className="text-xs text-gray-500">{selectedTemplate?.responsavel || '-'} • {formatCurrency(selectedTemplate?.valorPadrao || 0)}</p>
@@ -902,14 +902,14 @@ const ServicosAvulsos = () => {
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs text-gray-300">Status de Execucao</label>
+                <label className="mb-1 block text-xs text-gray-300">Status de Execução</label>
                 <select
                   value={form.statusExecucao}
                   onChange={(e) => setForm((p) => ({ ...p, statusExecucao: e.target.value }))}
                   className="input-futuristic w-full rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="aberta">Aberta</option>
-                  <option value="em_execucao">Em execucao</option>
+                  <option value="em_execucao">Em execução</option>
                   <option value="concluida">Concluida</option>
                   <option value="cancelada">Cancelada</option>
                 </select>
@@ -939,7 +939,7 @@ const ServicosAvulsos = () => {
             <textarea
               value={form.dadosNecessarios}
               onChange={(e) => setForm((p) => ({ ...p, dadosNecessarios: e.target.value }))}
-              placeholder="Dados necessarios para este servico (somente complemento; o restante vem pre-preenchido)"
+              placeholder="Dados necessários para este serviço (somente complemento; o restante vem pré-preenchido)"
               rows={3}
               className="input-futuristic rounded-lg px-3 py-2 text-sm"
             />
@@ -959,7 +959,7 @@ const ServicosAvulsos = () => {
 
       <div className="glass rounded-2xl border border-white/10 p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-white">O.S do modulo {selectedCategory ? selectedCategory.label : 'Servicos Avulsos'}</h2>
+          <h2 className="text-lg font-semibold text-white">O.S do módulo {selectedCategory ? selectedCategory.label : 'Serviços Avulsos'}</h2>
           <div className="inline-flex items-center gap-2">
             <Filter className="h-4 w-4 text-gray-300" />
             <select
@@ -969,7 +969,7 @@ const ServicosAvulsos = () => {
             >
               <option value="todos">Todos os status</option>
               <option value="aberta">Aberta</option>
-              <option value="em_execucao">Em execucao</option>
+              <option value="em_execucao">Em execução</option>
               <option value="concluida">Concluida</option>
               <option value="cancelada">Cancelada</option>
             </select>
@@ -984,7 +984,7 @@ const ServicosAvulsos = () => {
                   <p className="text-xs text-gray-300">{order.cliente_nome} • {order.categoria_label}</p>
                   <p className="text-xs text-gray-400">{order.processo}</p>
                   <p className="text-xs text-gray-500">{order.responsavel} • {formatCurrency(order.valor)}</p>
-                  <p className="text-xs text-gray-400">Status Execucao: {order.status_execucao || order.status}</p>
+                  <p className="text-xs text-gray-400">Status Execução: {order.status_execucao || order.status}</p>
                   <p className="text-xs text-gray-400">Status Financeiro: {order.status_financeiro || '-'}</p>
                 </div>
                 <button

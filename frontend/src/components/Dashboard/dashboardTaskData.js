@@ -4,8 +4,8 @@ const TASK_VIEW_TRACK_KEY = 'mock_dashboard_new_tasks_viewed_v1';
 export const DASHBOARD_MOCK_TASKS = [
   { id: 'tsk-1', titulo: 'Conferir DAS abril', moduleKey: 'fiscal', status: 'pendente', prioridade: 'alta', vencimento: '2026-04-20', atribuidoEm: '2026-04-14', assignedTo: ['dev-user', 'dev@macedosi.local'], relatedServiceId: 'srv-1' },
   { id: 'tsk-2', titulo: 'Atualizar cadastro de clientes', moduleKey: 'clientes', status: 'em_andamento', prioridade: 'media', vencimento: '2026-04-23', atribuidoEm: '2026-04-15', assignedTo: ['colaborador@macedosi.com'], relatedServiceId: 'srv-2' },
-  { id: 'tsk-3', titulo: 'Retorno de atendimento prioritario', moduleKey: 'atendimento', status: 'pendente', prioridade: 'alta', vencimento: '2026-04-18', atribuidoEm: '2026-04-13', assignedTo: ['dev-user', 'colaborador@macedosi.com'], relatedServiceId: 'srv-1' },
-  { id: 'tsk-4', titulo: 'Conferencia de folha mensal', moduleKey: 'trabalhista', status: 'concluida', prioridade: 'media', vencimento: '2026-04-15', atribuidoEm: '2026-04-10', assignedTo: ['auxiliar@macedosi.com'], relatedServiceId: 'srv-3' },
+  { id: 'tsk-3', titulo: 'Retorno de atendimento prioritário', moduleKey: 'atendimento', status: 'pendente', prioridade: 'alta', vencimento: '2026-04-18', atribuidoEm: '2026-04-13', assignedTo: ['dev-user', 'colaborador@macedosi.com'], relatedServiceId: 'srv-1' },
+  { id: 'tsk-4', titulo: 'Conferência de folha mensal', moduleKey: 'trabalhista', status: 'concluida', prioridade: 'media', vencimento: '2026-04-15', atribuidoEm: '2026-04-10', assignedTo: ['auxiliar@macedosi.com'], relatedServiceId: 'srv-3' },
 ];
 
 const normalizeIdentity = (value = '') => String(value).trim().toLowerCase();

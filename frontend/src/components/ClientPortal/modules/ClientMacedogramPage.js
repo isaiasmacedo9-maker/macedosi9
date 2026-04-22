@@ -127,7 +127,7 @@ const ClientMacedogramPage = ({ authUser, clienteId }) => {
                   ? 'Timeline de empresas com publicacoes de rotina, midias e atualizacoes para acompanhamento contabil.'
                   : activeSection === 'mensagens'
                     ? 'Lista interna de conversas entre empresas e equipe contábil.'
-                    : 'Visao resumida da empresa ativa dentro do Macedogram.'}
+                    : 'Visão resumida da empresa ativa dentro do Macedogram.'}
               </p>
             </div>
           </div>

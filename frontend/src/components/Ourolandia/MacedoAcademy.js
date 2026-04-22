@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { accountingServiceProcessModels } from '../../dev/accountingProcessTemplates';
-import { createProcessModelFromDraft, hydrateProcessModels } from './processModelUtils';
+import { createProcessModelFromDraft, hydrateProcessModel, hydrateProcessModels } from './processModelUtils';
 import {
   createAcademyModel,
   generateProcessesBatch,
@@ -38,13 +38,13 @@ const REGIME_OPTIONS = [
 const DEPARTMENT_META = {
   fiscal: { label: 'Fiscal', badge: 'F', color: 'bg-green-500' },
   pessoal: { label: 'Pessoal', badge: 'P', color: 'bg-amber-500' },
-  legalizacao: { label: 'Legalizacao', badge: 'L', color: 'bg-cyan-500' },
+  legalizacao: { label: 'Legalização', badge: 'L', color: 'bg-cyan-500' },
   atendimento: { label: 'Atendimento', badge: 'A', color: 'bg-red-500' },
 };
 
 const RESPONSIBLE_OPTIONS = [
-  { id: 'responsavel_cliente', label: 'Responsavel do cliente' },
-  { id: 'nao_atribuido', label: 'Nao atribuido' },
+  { id: 'responsavel_cliente', label: 'Responsável do cliente' },
+  { id: 'nao_atribuido', label: 'Não atribuído' },
   { id: 'sara_macedo', label: 'Sara Macedo' },
   { id: 'naiara', label: 'Naiara' },
   { id: 'gilvanilson', label: 'Gilvanilson' },
@@ -94,6 +94,17 @@ const normalizeSectorKey = (value = '') => {
   if (text.includes('legal')) return 'legalizacao';
   if (text.includes('atend')) return 'atendimento';
   return 'fiscal';
+};
+
+const normalizeRegimeKey = (value = '') => {
+  const text = normalizeText(value);
+  if (text.includes('simples')) return 'simples_nacional';
+  if (text.includes('presumido')) return 'lucro_presumido';
+  if (text.includes('real')) return 'lucro_real';
+  if (text.includes('mei')) return 'mei';
+  if (text.includes('produtor')) return 'produtor_rural';
+  if (text.includes('cpf')) return 'cpf';
+  return text;
 };
 
 const getRegimeChip = (regimeId) => REGIME_OPTIONS.find((item) => item.id === regimeId)?.chip || regimeId;
@@ -260,6 +271,8 @@ const MacedoAcademy = () => {
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [draft, setDraft] = useState(null);
 
+  const getModelSteps = (model) => (Array.isArray(model?.etapas) ? model.etapas : []);
+
   useEffect(() => {
     let mounted = true;
     const loadInitial = async () => {
@@ -332,7 +345,7 @@ const MacedoAcademy = () => {
       const searchMatches = !search || normalizeText(model.nome).includes(normalizeText(search));
       const regimes = model?.regimesConfig?.selecionados || [];
       const regimeMatches = regimeFilter === 'any' || regimes.includes(regimeFilter);
-      const departments = Array.from(new Set((model.etapas || []).map((step) => normalizeSectorKey(step.setorResponsavel))));
+      const departments = Array.from(new Set(getModelSteps(model).map((step) => normalizeSectorKey(step.setorResponsavel))));
       const departmentMatches = departmentFilter === 'all' || departments.includes(departmentFilter);
       return searchMatches && regimeMatches && departmentMatches;
     });
@@ -375,10 +388,35 @@ const MacedoAcademy = () => {
     };
   };
 
+  const recalculateDraftRegimeSummary = (incomingDraft) => {
+    if (!incomingDraft) return incomingDraft;
+    const selectedRegimes = new Set((incomingDraft.regimes?.selected || []).map((item) => normalizeRegimeKey(item)));
+    const baseClients = incomingDraft.regimes?.allClients
+      ? allClientsCatalog
+      : allClientsCatalog.filter((client) => selectedRegimes.has(normalizeRegimeKey(client.regime)));
+
+    const removedIds = new Set((incomingDraft.clientsExceptions?.removed || []).map((item) => getExceptionItemId(item)));
+    const added = (incomingDraft.clientsExceptions?.added || []).filter(Boolean);
+    const finalClients = [...baseClients.filter((item) => !removedIds.has(item.id)), ...added].reduce((acc, item) => {
+      if (!item?.id) return acc;
+      if (!acc.some((exists) => exists.id === item.id)) acc.push(item);
+      return acc;
+    }, []);
+
+    return {
+      ...incomingDraft,
+      regimes: {
+        ...incomingDraft.regimes,
+        clientsAssociated: finalClients.length,
+        clientsDisabled: Math.max(0, allClientsCatalog.length - finalClients.length),
+      },
+    };
+  };
+
   const openEditor = (model) => {
     setSelectedId(model.id);
     setIsCreateMode(false);
-    setDraft(normalizeDraftExceptions(toModelDraft(model)));
+    setDraft(recalculateDraftRegimeSummary(normalizeDraftExceptions(toModelDraft(model))));
     setDrawerTab('regimes');
     setIsHeaderActionsOpen(false);
     setIsDrawerOpen(true);
@@ -393,7 +431,7 @@ const MacedoAcademy = () => {
       regimesConfig: {
         selecionarTodos: true,
         selecionados: ['simples_nacional'],
-        clientesAssociados: MOCK_CLIENTS.length,
+        clientesAssociados: allClientsCatalog.length,
         clientesDesativados: 0,
       },
       clientesExcecoesConfig: { adicionados: [], removidos: [] },
@@ -409,7 +447,7 @@ const MacedoAcademy = () => {
     };
     setSelectedId('');
     setIsCreateMode(true);
-    setDraft(normalizeDraftExceptions(toModelDraft(draftModel)));
+    setDraft(recalculateDraftRegimeSummary(normalizeDraftExceptions(toModelDraft(draftModel))));
     setDrawerTab('regimes');
     setIsHeaderActionsOpen(false);
     setIsDrawerOpen(true);
@@ -437,12 +475,12 @@ const MacedoAcademy = () => {
           etapas: nextModel.etapas,
           metadata: nextModel.metadata || {},
         });
-        persistedModel = {
+        persistedModel = hydrateProcessModel({
           ...nextModel,
           ...response,
-        };
+        }) || nextModel;
       } catch {}
-      setModels((current) => [persistedModel, ...current]);
+      setModels((current) => hydrateProcessModels([persistedModel, ...current]));
       setSelectedId(persistedModel.id || nextModel.id);
       setIsCreateMode(false);
       if (closeDrawer) {
@@ -465,12 +503,14 @@ const MacedoAcademy = () => {
           etapas: nextModel.etapas,
           metadata: nextModel.metadata || {},
         });
-        persistedModel = {
+        persistedModel = hydrateProcessModel({
           ...nextModel,
           ...response,
-        };
+        }) || nextModel;
       } catch {}
-      setModels((current) => current.map((item) => (item.id === previous.id ? persistedModel : item)));
+      setModels((current) =>
+        hydrateProcessModels(current.map((item) => (item.id === previous.id ? persistedModel : item))),
+      );
       if (closeDrawer) {
         setIsDrawerOpen(false);
         setDraft(null);
@@ -485,13 +525,13 @@ const MacedoAcademy = () => {
       const selected = new Set(current.regimes.selected);
       if (selected.has(regimeId)) selected.delete(regimeId);
       else selected.add(regimeId);
-      return {
+      return recalculateDraftRegimeSummary({
         ...current,
         regimes: {
           ...current.regimes,
           selected: Array.from(selected),
         },
-      };
+      });
     });
   };
 
@@ -502,27 +542,27 @@ const MacedoAcademy = () => {
       const exists = sourceList.some((item) => getExceptionItemId(item) === client.id);
       if (exists) return current;
       const oppositeView = targetView === 'adicionados' ? 'removidos' : 'adicionados';
-      return {
+      return recalculateDraftRegimeSummary({
         ...current,
         clientsExceptions: {
           ...current.clientsExceptions,
           [targetView]: [...sourceList, client],
           [oppositeView]: (current.clientsExceptions[oppositeView] || []).filter((item) => getExceptionItemId(item) !== client.id),
         },
-      };
+      });
     });
   };
 
   const removeClientException = (clientId, source) => {
     setDraft((current) => {
       if (!current) return current;
-      return {
+      return recalculateDraftRegimeSummary({
         ...current,
         clientsExceptions: {
           ...current.clientsExceptions,
           [source]: (current.clientsExceptions[source] || []).filter((item) => getExceptionItemId(item) !== clientId),
         },
-      };
+      });
     });
   };
 
@@ -653,9 +693,9 @@ const MacedoAcademy = () => {
         etapas: normalized.etapas,
         metadata: normalized.metadata || {},
       });
-      persistedModel = { ...normalized, ...response };
+      persistedModel = hydrateProcessModel({ ...normalized, ...response }) || normalized;
     } catch {}
-    setModels((current) => [persistedModel, ...current]);
+    setModels((current) => hydrateProcessModels([persistedModel, ...current]));
     setImportPreviewId('');
     setIsImportModalOpen(false);
   };
@@ -664,12 +704,12 @@ const MacedoAcademy = () => {
     if (!sourceModel) return;
     setSelectedId('');
     setIsCreateMode(true);
-    setDraft(
+    setDraft(recalculateDraftRegimeSummary(
       toModelDraft({
         ...sourceModel,
         id: '',
       }),
-    );
+    ));
     setDrawerTab('regimes');
     setIsImportModalOpen(false);
     setIsDrawerOpen(true);
@@ -694,8 +734,10 @@ const MacedoAcademy = () => {
   // - "Gerar processos" na UI cria Servicos reais para os clientes
   const generateServicesFromModel = async () => {
     if (!draft) return;
-    const selectedRegimes = new Set(draft.regimes.selected);
-    const baseClients = draft.regimes.allClients ? MOCK_CLIENTS : MOCK_CLIENTS.filter((item) => selectedRegimes.has(item.regime));
+    const selectedRegimes = new Set((draft.regimes.selected || []).map((item) => normalizeRegimeKey(item)));
+    const baseClients = draft.regimes.allClients
+      ? allClientsCatalog
+      : allClientsCatalog.filter((item) => selectedRegimes.has(normalizeRegimeKey(item.regime)));
     const removedIds = new Set((draft.clientsExceptions.removed || []).map((item) => item.id));
     const added = draft.clientsExceptions.added || [];
 
@@ -775,18 +817,28 @@ const MacedoAcademy = () => {
   };
 
   const selectedImportPreview = importableTemplates.find((item) => item.id === importPreviewId) || null;
+  const safeClientsExceptions =
+    draft && draft.clientsExceptions
+      ? draft.clientsExceptions
+      : {
+          activeView: 'adicionados',
+          search: '',
+          added: [],
+          removed: [],
+        };
+
   const clientsForExceptionSearch = useMemo(() => {
-    const term = normalizeText(draft?.clientsExceptions?.search || '');
+    const term = normalizeText(safeClientsExceptions.search || '');
     if (!term) return allClientsCatalog;
     return allClientsCatalog.filter((item) => normalizeText(item.nome).includes(term) || normalizeText(item.cnpj).includes(term));
-  }, [draft?.clientsExceptions?.search, allClientsCatalog]);
+  }, [safeClientsExceptions.search, allClientsCatalog]);
+
   const activeExceptionIds = useMemo(() => {
-    const activeView = draft?.clientsExceptions?.activeView;
-    const list = Array.isArray(activeView ? draft?.clientsExceptions?.[activeView] : [])
-      ? draft.clientsExceptions[activeView]
-      : [];
+    const activeView = safeClientsExceptions.activeView;
+    const sourceList = activeView ? safeClientsExceptions[activeView] : [];
+    const list = Array.isArray(sourceList) ? sourceList : [];
     return new Set(list.map((item) => getExceptionItemId(item)).filter(Boolean));
-  }, [draft?.clientsExceptions]);
+  }, [safeClientsExceptions]);
 
   const canGenerateModel =
     !!draft &&
@@ -902,7 +954,7 @@ const MacedoAcademy = () => {
                 const isSelected = selectedId === model.id;
                 const isExpanded = !!expandedModelRows[model.id];
                 const modelRegimes = model?.regimesConfig?.selecionados || [];
-                const departments = Array.from(new Set((model.etapas || []).map((step) => normalizeSectorKey(step.setorResponsavel))));
+                const departments = Array.from(new Set(getModelSteps(model).map((step) => normalizeSectorKey(step.setorResponsavel))));
                 return (
                   <React.Fragment key={model.id}>
                     <tr
@@ -959,7 +1011,7 @@ const MacedoAcademy = () => {
                       </td>
                     </tr>
                     {isExpanded ? (
-                      (model.etapas || []).map((step, index) => (
+                      getModelSteps(model).map((step, index) => (
                         <tr key={`${model.id}-step-${step.id || index}`} className="border-b border-slate-100 bg-slate-50/80 text-sm">
                           <td className="px-10 py-2 text-slate-700">
                             <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded bg-slate-200 text-xs font-semibold text-slate-600">{index + 1}</span>
@@ -1941,7 +1993,7 @@ const MacedoAcademy = () => {
             </div>
 
             {!importableTemplates.length ? (
-              <EmptyState text="Nao existem novos modelos para importar." />
+              <EmptyState text="Não existem novos modelos para importar." />
             ) : (
               <>
                 <label className="block text-sm font-semibold text-slate-600">
@@ -1966,7 +2018,7 @@ const MacedoAcademy = () => {
                     <div className="text-2xl font-bold">{selectedImportPreview.nome}</div>
                     <p className="mt-1 text-sm text-slate-600">{selectedImportPreview.descricao}</p>
                     <div className="mt-3 space-y-2">
-                      {(selectedImportPreview.etapas || []).map((step, index) => (
+                      {getModelSteps(selectedImportPreview).map((step, index) => (
                         <div key={step.id || `${selectedImportPreview.id}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                           <div className="font-semibold">{`${index + 1}. ${step.nome}`}</div>
                           <div className="text-sm text-slate-500">{((step.tarefas || [])[0]?.descricao || 'Sem descricao')}</div>
@@ -2061,14 +2113,14 @@ const MacedoAcademy = () => {
                 <div className="text-xl font-bold">Prazo</div>
                 <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
                   <Info className="mr-1 inline h-4 w-4" />
-                  {draft.deadline.delayedFine ? 'Esse serviço gera multa, caso atrase.' : 'Esse serviço nao gera multa por atraso.'}
+                  {draft.deadline.delayedFine ? 'Esse serviço gera multa, caso atrase.' : 'Esse serviço não gera multa por atraso.'}
                 </div>
                 <div className="mt-2 rounded-md bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">
                   Tipo: {draft.deadline.type === 'data_mensal_fixa' ? 'Mensal Fixo' : 'Tempo estimado'}
                   <br />
                   Data: Dia {draft.deadline.fixedDay}
                   <br />
-                  Prazo-meta: {draft.deadline.useGoal ? `${draft.deadline.goalDays} dias de antecedencia` : 'Nao definido'}
+                  Prazo-meta: {draft.deadline.useGoal ? `${draft.deadline.goalDays} dias de antecedência` : 'Não definido'}
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">

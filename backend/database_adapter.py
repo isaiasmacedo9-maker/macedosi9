@@ -15,14 +15,14 @@ load_dotenv(ROOT_DIR / '.env')
 USE_SQL = os.environ.get('USE_SQL', 'false').lower() == 'true'
 
 if USE_SQL:
-    print("✓ Using SQL database (SQLite)")
+    print("Using SQL database (SQLite)")
     from sqlalchemy import select, update, delete, func
     from sqlalchemy.ext.asyncio import AsyncSession
     from database_sql import AsyncSessionLocal, init_db, close_db
     from models_sql import *
     from crud_sql import json_loads, json_dumps, convert_to_dict
 else:
-    print("✓ Using MongoDB database")
+    print("Using MongoDB database")
     from database import connect_to_mongo, close_mongo_connection
 
 class DatabaseAdapter:
@@ -198,6 +198,10 @@ class DatabaseAdapter:
             'chats': ChatSQL,
             'tasks': TaskSQL,
             'guias_fiscais': GuiaFiscalSQL,
+            'import_batches': ImportBatchSQL,
+            'import_rows': ImportRowSQL,
+            'aliases_cliente': AliasClienteSQL,
+            'import_settlement_links': ImportSettlementLinkSQL,
         }
         
         model = mapping.get(collection_name)

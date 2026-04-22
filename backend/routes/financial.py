@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query, File, UploadFile
+from pydantic import BaseModel
 from typing import List, Optional
 from models.financial import (
     ContaReceber, ContaReceberCreate, ContaReceberUpdate, PagamentoTitulo,
@@ -10,6 +11,7 @@ from models.financial import (
 )
 from models.user import UserResponse
 from auth import get_current_user
+from database_adapter import DatabaseAdapter
 from database_compat import (
     get_contas_receber_collection, get_financial_clients_collection,
     get_importacoes_extrato_collection, get_financial_settings_collection
@@ -18,6 +20,9 @@ from datetime import datetime, date, timedelta
 import json
 import uuid
 import re
+import csv
+import io
+import unicodedata
 from typing import Dict, Any
 
 router = APIRouter(prefix="/financial", tags=["Financial"])
@@ -25,6 +30,103 @@ router = APIRouter(prefix="/financial", tags=["Financial"])
 
 class FinancialHonorariosSettingsPayload(BaseModel):
     items: List[Dict[str, Any]]
+
+
+class FinancialAssinaturaServicesPayload(BaseModel):
+    items: List[Dict[str, Any]]
+
+
+class FinancialAssinaturaPlansPayload(BaseModel):
+    items: List[Dict[str, Any]]
+
+class ContaPagarCreatePayload(BaseModel):
+    external_id: Optional[str] = None
+    descricao: str
+    categoria: Optional[str] = None
+    subcategoria: Optional[str] = None
+    valor: float = 0.0
+    valor_pago: float = 0.0
+    juros: float = 0.0
+    valor_restante: float = 0.0
+    situacao: Optional[str] = "em_dia"
+    forma_pagamento: Optional[str] = None
+    tipo_despesa: Optional[str] = None
+    centro_custo: Optional[str] = None
+    conta_utilizada: Optional[str] = None
+    competencia: Optional[str] = None
+    natureza_despesa: Optional[str] = None
+    recorrente: Optional[bool] = False
+    tipo_parcela: Optional[str] = None
+    numero_parcela: Optional[int] = None
+    total_parcelas: Optional[int] = None
+    prioridade: Optional[str] = None
+    comentario: Optional[str] = None
+    comprovante_anexo: Optional[str] = None
+    pago: Optional[bool] = False
+    data_lancamento: Optional[date] = None
+    data_pagamento_ref: Optional[date] = None
+    data_reproducao: Optional[date] = None
+
+
+class ContaPagarUpdatePayload(BaseModel):
+    descricao: Optional[str] = None
+    categoria: Optional[str] = None
+    subcategoria: Optional[str] = None
+    valor: Optional[float] = None
+    valor_pago: Optional[float] = None
+    juros: Optional[float] = None
+    valor_restante: Optional[float] = None
+    situacao: Optional[str] = None
+    forma_pagamento: Optional[str] = None
+    tipo_despesa: Optional[str] = None
+    centro_custo: Optional[str] = None
+    conta_utilizada: Optional[str] = None
+    competencia: Optional[str] = None
+    natureza_despesa: Optional[str] = None
+    recorrente: Optional[bool] = None
+    tipo_parcela: Optional[str] = None
+    numero_parcela: Optional[int] = None
+    total_parcelas: Optional[int] = None
+    prioridade: Optional[str] = None
+    comentario: Optional[str] = None
+    comprovante_anexo: Optional[str] = None
+    pago: Optional[bool] = None
+    data_lancamento: Optional[date] = None
+    data_pagamento_ref: Optional[date] = None
+    data_reproducao: Optional[date] = None
+
+DEFAULT_ASSINATURA_SERVICES = [
+    {"id": "svc-001", "nome": "Escrituracao contabil mensal"},
+    {"id": "svc-002", "nome": "Apuracao de impostos federais"},
+    {"id": "svc-003", "nome": "Apuracao de impostos estaduais"},
+    {"id": "svc-004", "nome": "Apuracao de impostos municipais"},
+    {"id": "svc-005", "nome": "Entrega de PGDAS"},
+    {"id": "svc-006", "nome": "Entrega de DCTFWeb"},
+    {"id": "svc-007", "nome": "Entrega de EFD Contribuicoes"},
+    {"id": "svc-008", "nome": "Entrega de ECD"},
+    {"id": "svc-009", "nome": "Entrega de ECF"},
+    {"id": "svc-010", "nome": "Entrega de DIRF"},
+    {"id": "svc-011", "nome": "Entrega de DEFIS"},
+    {"id": "svc-012", "nome": "Entrega de RAIS"},
+    {"id": "svc-013", "nome": "Entrega de CAGED"},
+    {"id": "svc-014", "nome": "Folha de pagamento mensal"},
+    {"id": "svc-015", "nome": "Calculo de ferias"},
+    {"id": "svc-016", "nome": "Calculo de rescisao"},
+    {"id": "svc-017", "nome": "Pro-labore de socios"},
+    {"id": "svc-018", "nome": "Emissao de guias INSS"},
+    {"id": "svc-019", "nome": "Emissao de guias FGTS"},
+    {"id": "svc-020", "nome": "Emissao de DAS mensal"},
+    {"id": "svc-021", "nome": "Conferencia de notas fiscais"},
+    {"id": "svc-022", "nome": "Conciliacao bancaria"},
+    {"id": "svc-023", "nome": "Fluxo de caixa gerencial"},
+    {"id": "svc-024", "nome": "Relatorio de resultados"},
+    {"id": "svc-025", "nome": "Regularizacao fiscal"},
+    {"id": "svc-026", "nome": "Parcelamento de debitos"},
+    {"id": "svc-027", "nome": "Abertura de empresa"},
+    {"id": "svc-028", "nome": "Alteracao contratual"},
+    {"id": "svc-029", "nome": "Baixa de empresa"},
+    {"id": "svc-030", "nome": "Consultoria tributaria"},
+]
 
 
 def _is_official_locked(record: Dict[str, Any]) -> bool:
@@ -37,6 +139,86 @@ def check_financial_access(user: UserResponse):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access to financial module not allowed"
         )
+
+
+def _normalize_text(value: str) -> str:
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', str(value or '').strip().lower())
+        if unicodedata.category(c) != 'Mn'
+    )
+
+
+def _parse_br_decimal(value: Any) -> float:
+    if value is None:
+        return 0.0
+    raw = str(value).strip()
+    if not raw:
+        return 0.0
+    raw = raw.replace("R$", "").replace(" ", "")
+    raw = raw.replace(".", "").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.0
+
+
+def _parse_optional_int(value: Any) -> Optional[int]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(float(raw.replace(",", ".")))
+    except ValueError:
+        return None
+
+
+def _parse_bool(value: Any) -> bool:
+    normalized = _normalize_text(value)
+    return normalized in {"sim", "true", "1", "pago", "yes", "y"}
+
+
+def _parse_date_value(value: Any) -> Optional[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    iso_match = re.match(r"^\d{4}-\d{2}-\d{2}$", raw)
+    if iso_match:
+        return raw
+
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except ValueError:
+            continue
+
+    return None
+
+
+def _normalize_situacao(value: Any, paid: bool) -> str:
+    text = _normalize_text(value)
+    if paid or text in {"em dia", "pago", "quitado"}:
+        return "pago"
+    if text in {"atrasado", "vencido", "em atraso"}:
+        return "atrasado"
+    if text in {"pendente", "a pagar", "aberto"}:
+        return "em_aberto"
+    return "em_aberto"
+
+
+async def _get_contas_pagar_settings_row():
+    collection = await get_financial_settings_collection()
+    row = await collection.find_one({"key": "contas_pagar"})
+    if not row:
+        row = {
+            "id": str(uuid.uuid4()),
+            "key": "contas_pagar",
+            "items": [],
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        await collection.insert_one(row)
+    return collection, row
 
 # Contas a Receber
 @router.post("/contas-receber", response_model=ContaReceber)
@@ -1057,6 +1239,7 @@ async def create_financial_client(
         "quantidade_funcionarios": client_data.quantidade_funcionarios or 0,
         "status_fiscal": client_data.status_fiscal or "sem_movimento",
         "capacidade_pagamento": client_data.capacidade_pagamento or "paga_em_dia",
+        "status_cliente": client_data.status_cliente or "ativa",
         "status_pagamento": client_data.status_pagamento.value if hasattr(client_data.status_pagamento, 'value') else client_data.status_pagamento,
         "observacoes": client_data.observacoes,
         "ultimo_pagamento": None,
@@ -1185,6 +1368,255 @@ async def get_financial_client(
     return FinancialClient(**client_data)
 
 
+@router.get("/contas-pagar")
+async def list_contas_pagar(
+    current_user: UserResponse = Depends(get_current_user),
+    search: Optional[str] = Query(None),
+    situacao: Optional[str] = Query(None),
+):
+    check_financial_access(current_user)
+    _, row = await _get_contas_pagar_settings_row()
+    items = row.get("items", [])
+
+    filtered = []
+    search_text = _normalize_text(search) if search else ""
+    situacao_text = _normalize_text(situacao) if situacao else ""
+
+    for item in items:
+        if situacao_text and _normalize_text(item.get("situacao", "")) != situacao_text:
+            continue
+        if search_text:
+            haystack = " ".join(
+                [
+                    str(item.get("descricao", "")),
+                    str(item.get("categoria", "")),
+                    str(item.get("subcategoria", "")),
+                    str(item.get("centro_custo", "")),
+                    str(item.get("competencia", "")),
+                    str(item.get("external_id", "")),
+                ]
+            )
+            if search_text not in _normalize_text(haystack):
+                continue
+        filtered.append(item)
+
+    filtered.sort(key=lambda i: (i.get("data_lancamento") or "", i.get("created_at") or ""), reverse=True)
+    return {"items": filtered, "total": len(filtered)}
+
+
+@router.post("/contas-pagar")
+async def create_conta_pagar(
+    payload: ContaPagarCreatePayload,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection, row = await _get_contas_pagar_settings_row()
+    now_iso = datetime.utcnow().isoformat()
+
+    item_id = str(uuid.uuid4())
+    data_lancamento = (payload.data_lancamento or date.today()).isoformat()
+    data_pagamento_ref = payload.data_pagamento_ref.isoformat() if payload.data_pagamento_ref else None
+    data_reproducao = payload.data_reproducao.isoformat() if payload.data_reproducao else None
+
+    item = {
+        "id": item_id,
+        "external_id": payload.external_id or item_id[:8].upper(),
+        "descricao": payload.descricao,
+        "categoria": payload.categoria or "",
+        "subcategoria": payload.subcategoria or "",
+        "valor": float(payload.valor or 0),
+        "valor_pago": float(payload.valor_pago or 0),
+        "juros": float(payload.juros or 0),
+        "valor_restante": float(payload.valor_restante or 0),
+        "situacao": payload.situacao or "em_aberto",
+        "forma_pagamento": payload.forma_pagamento or "",
+        "tipo_despesa": payload.tipo_despesa or "",
+        "centro_custo": payload.centro_custo or "",
+        "conta_utilizada": payload.conta_utilizada or "",
+        "competencia": payload.competencia or "",
+        "natureza_despesa": payload.natureza_despesa or "",
+        "recorrente": bool(payload.recorrente),
+        "tipo_parcela": payload.tipo_parcela or "",
+        "numero_parcela": payload.numero_parcela,
+        "total_parcelas": payload.total_parcelas,
+        "prioridade": payload.prioridade or "",
+        "comentario": payload.comentario or "",
+        "comprovante_anexo": payload.comprovante_anexo or "",
+        "pago": bool(payload.pago),
+        "data_lancamento": data_lancamento,
+        "data_pagamento_ref": data_pagamento_ref,
+        "data_reproducao": data_reproducao,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "created_by_id": str(current_user.id),
+        "created_by_name": str(current_user.name),
+    }
+
+    next_items = [item, *(row.get("items", []) if isinstance(row.get("items"), list) else [])]
+    await collection.update_one(
+        {"key": "contas_pagar"},
+        {"$set": {"items": next_items, "updated_at": now_iso, "updated_by_id": str(current_user.id), "updated_by_name": str(current_user.name)}},
+    )
+
+    return {"message": "Conta a pagar criada com sucesso", "item": item}
+
+
+@router.put("/contas-pagar/{conta_id}")
+async def update_conta_pagar(
+    conta_id: str,
+    payload: ContaPagarUpdatePayload,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection, row = await _get_contas_pagar_settings_row()
+    items = row.get("items", []) if isinstance(row.get("items"), list) else []
+    now_iso = datetime.utcnow().isoformat()
+
+    update_dict = payload.model_dump(exclude_unset=True)
+    if "data_lancamento" in update_dict and update_dict["data_lancamento"]:
+        update_dict["data_lancamento"] = update_dict["data_lancamento"].isoformat()
+    if "data_pagamento_ref" in update_dict and update_dict["data_pagamento_ref"]:
+        update_dict["data_pagamento_ref"] = update_dict["data_pagamento_ref"].isoformat()
+    if "data_reproducao" in update_dict and update_dict["data_reproducao"]:
+        update_dict["data_reproducao"] = update_dict["data_reproducao"].isoformat()
+
+    updated = None
+    next_items = []
+    for item in items:
+        if str(item.get("id")) == str(conta_id):
+            merged = {**item, **update_dict, "updated_at": now_iso, "updated_by_id": str(current_user.id), "updated_by_name": str(current_user.name)}
+            updated = merged
+            next_items.append(merged)
+        else:
+            next_items.append(item)
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="Conta a pagar não encontrada")
+
+    await collection.update_one(
+        {"key": "contas_pagar"},
+        {"$set": {"items": next_items, "updated_at": now_iso, "updated_by_id": str(current_user.id), "updated_by_name": str(current_user.name)}},
+    )
+
+    return {"message": "Conta a pagar atualizada com sucesso", "item": updated}
+
+
+@router.post("/contas-pagar/import-csv")
+async def import_contas_pagar_csv(
+    file: UploadFile = File(...),
+    clear_existing: bool = Query(False),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Arquivo inválido. Envie um CSV.")
+
+    raw_bytes = await file.read()
+    try:
+        decoded = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        decoded = raw_bytes.decode("latin-1")
+
+    collection, row = await _get_contas_pagar_settings_row()
+    existing_items = [] if clear_existing else (row.get("items", []) if isinstance(row.get("items"), list) else [])
+    existing_by_external = {str(item.get("external_id")): item for item in existing_items if item.get("external_id")}
+
+    reader = csv.DictReader(io.StringIO(decoded))
+    now_iso = datetime.utcnow().isoformat()
+    inserted = 0
+    updated = 0
+
+    for csv_row in reader:
+        external_id = str(csv_row.get("ID") or csv_row.get("Id") or "").strip()
+        descricao = str(csv_row.get("Descrição") or csv_row.get("Descricao") or csv_row.get("descricao") or "").strip()
+        if not external_id and not descricao:
+            continue
+
+        paid = _parse_bool(csv_row.get("Pago_Bool") or csv_row.get("Pago"))
+        situacao = _normalize_situacao(csv_row.get("Situação") or csv_row.get("Situacao"), paid)
+
+        item_payload = {
+            "id": existing_by_external.get(external_id, {}).get("id") or str(uuid.uuid4()),
+            "external_id": external_id or str(uuid.uuid4())[:8].upper(),
+            "descricao": descricao or "Sem descrição",
+            "categoria": str(csv_row.get("Categoria") or "").strip(),
+            "subcategoria": str(csv_row.get("Subcategoria") or "").strip(),
+            "valor": _parse_br_decimal(csv_row.get("Valor_Num") or csv_row.get("Valor")),
+            "valor_pago": _parse_br_decimal(csv_row.get("Valor_Pago_Num") or csv_row.get("Valor Pago")),
+            "juros": _parse_br_decimal(csv_row.get("Juros_Num") or csv_row.get("Juros")),
+            "valor_restante": _parse_br_decimal(csv_row.get("Valor_Restante_Num") or csv_row.get("Valor Restante")),
+            "situacao": situacao,
+            "forma_pagamento": str(csv_row.get("Forma de Pagamento") or "").strip(),
+            "tipo_despesa": str(csv_row.get("Tipo de despesa") or "").strip(),
+            "centro_custo": str(csv_row.get("Centro de Custo") or "").strip(),
+            "conta_utilizada": str(csv_row.get("Conta Utilizada") or "").strip(),
+            "competencia": str(csv_row.get("Competência") or csv_row.get("Competencia") or "").strip(),
+            "natureza_despesa": str(csv_row.get("Natureza da Despesa") or "").strip(),
+            "recorrente": _parse_bool(csv_row.get("Recorrente")),
+            "tipo_parcela": str(csv_row.get("Tipo de Parcela") or "").strip(),
+            "numero_parcela": _parse_optional_int(csv_row.get("Nº da Parcela") or csv_row.get("No da Parcela")),
+            "total_parcelas": _parse_optional_int(csv_row.get("Total de Parcelas")),
+            "prioridade": str(csv_row.get("Prioridade") or "").strip(),
+            "comentario": str(csv_row.get("Comentário") or csv_row.get("Comentario") or "").strip(),
+            "comprovante_anexo": str(csv_row.get("Comprovante / Anexo") or "").strip(),
+            "pago": paid,
+            "data_lancamento": _parse_date_value(csv_row.get("Data_Lancamento") or csv_row.get("Dia")) or date.today().isoformat(),
+            "data_pagamento_ref": _parse_date_value(csv_row.get("Data_Pagamento_Ref") or csv_row.get("Pagamento")),
+            "data_reproducao": _parse_date_value(csv_row.get("Data_Reproducao_ISO") or csv_row.get("Data de Reprodução")),
+            "updated_at": now_iso,
+            "updated_by_id": str(current_user.id),
+            "updated_by_name": str(current_user.name),
+            "import_source": "contas_a_pagar_csv",
+        }
+
+        if external_id and external_id in existing_by_external:
+            existing = existing_by_external[external_id]
+            item_payload["created_at"] = existing.get("created_at", now_iso)
+            item_payload["created_by_id"] = existing.get("created_by_id", str(current_user.id))
+            item_payload["created_by_name"] = existing.get("created_by_name", str(current_user.name))
+            existing_by_external[external_id] = item_payload
+            updated += 1
+        else:
+            item_payload["created_at"] = now_iso
+            item_payload["created_by_id"] = str(current_user.id)
+            item_payload["created_by_name"] = str(current_user.name)
+            existing_items.append(item_payload)
+            if external_id:
+                existing_by_external[external_id] = item_payload
+            inserted += 1
+
+    # Merge updated references back into list
+    merged = []
+    for item in existing_items:
+        ext_id = str(item.get("external_id") or "")
+        if ext_id and ext_id in existing_by_external:
+            merged.append(existing_by_external[ext_id])
+        else:
+            merged.append(item)
+
+    # include updated records that may not have been present in existing_items structure
+    merged_by_id = {str(item.get("id")): item for item in merged if item.get("id")}
+    for updated_item in existing_by_external.values():
+        item_id = str(updated_item.get("id") or "")
+        if item_id and item_id not in merged_by_id:
+            merged.append(updated_item)
+
+    merged.sort(key=lambda i: (i.get("data_lancamento") or "", i.get("created_at") or ""), reverse=True)
+
+    await collection.update_one(
+        {"key": "contas_pagar"},
+        {"$set": {"items": merged, "updated_at": now_iso, "updated_by_id": str(current_user.id), "updated_by_name": str(current_user.name)}},
+    )
+
+    return {
+        "message": "Importação de contas a pagar concluída",
+        "inserted": inserted,
+        "updated": updated,
+        "total": len(merged),
+        "filename": file.filename,
+    }
+
+
 @router.get("/settings/honorarios")
 async def get_financial_honorarios_settings(
     current_user: UserResponse = Depends(get_current_user),
@@ -1218,6 +1650,77 @@ async def update_financial_honorarios_settings(
     return {"message": "Financial honorarios settings saved", "items": payload.items or []}
 
 # Busca avançada com filtros
+@router.get("/settings/assinaturas/services")
+async def get_financial_assinatura_services_settings(
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection = await get_financial_settings_collection()
+    row = await collection.find_one({"key": "assinaturas_services"})
+    items = (row or {}).get("items")
+    if not isinstance(items, list) or not items:
+        items = DEFAULT_ASSINATURA_SERVICES
+    return {"items": items}
+
+
+@router.put("/settings/assinaturas/services")
+async def update_financial_assinatura_services_settings(
+    payload: FinancialAssinaturaServicesPayload,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection = await get_financial_settings_collection()
+    now_iso = datetime.utcnow().isoformat()
+    current = await collection.find_one({"key": "assinaturas_services"})
+    base = {
+        "key": "assinaturas_services",
+        "items": payload.items or [],
+        "updated_at": now_iso,
+        "updated_by_id": str(current_user.id),
+        "updated_by_name": str(current_user.name),
+    }
+    if current:
+        await collection.update_one({"key": "assinaturas_services"}, {"$set": base})
+    else:
+        await collection.insert_one({"id": str(uuid.uuid4()), "created_at": now_iso, **base})
+    return {"message": "Financial assinatura services settings saved", "items": payload.items or []}
+
+
+@router.get("/settings/assinaturas/plans")
+async def get_financial_assinatura_plans_settings(
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection = await get_financial_settings_collection()
+    row = await collection.find_one({"key": "assinaturas_plans"})
+    items = (row or {}).get("items")
+    if not isinstance(items, list):
+        items = []
+    return {"items": items}
+
+
+@router.put("/settings/assinaturas/plans")
+async def update_financial_assinatura_plans_settings(
+    payload: FinancialAssinaturaPlansPayload,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    check_financial_access(current_user)
+    collection = await get_financial_settings_collection()
+    now_iso = datetime.utcnow().isoformat()
+    current = await collection.find_one({"key": "assinaturas_plans"})
+    base = {
+        "key": "assinaturas_plans",
+        "items": payload.items or [],
+        "updated_at": now_iso,
+        "updated_by_id": str(current_user.id),
+        "updated_by_name": str(current_user.name),
+    }
+    if current:
+        await collection.update_one({"key": "assinaturas_plans"}, {"$set": base})
+    else:
+        await collection.insert_one({"id": str(uuid.uuid4()), "created_at": now_iso, **base})
+    return {"message": "Financial assinatura plans settings saved", "items": payload.items or []}
+
 @router.post("/contas-receber/search", response_model=List[ContaReceber])
 async def search_contas_receber(
     filters: ContaReceberFilters,

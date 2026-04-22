@@ -5,9 +5,9 @@ export const INTERNAL_MODULES = [
   { key: 'financeiro', label: 'Financeiro' },
   { key: 'fiscal', label: 'Fiscal' },
   { key: 'trabalhista', label: 'Trabalhista' },
-  { key: 'servicos', label: 'Servicos' },
+  { key: 'servicos', label: 'Serviços' },
   { key: 'documentos', label: 'Documentos' },
-  { key: 'configuracoes', label: 'Configuracoes' },
+  { key: 'configuracoes', label: 'Configurações' },
   { key: 'chat', label: 'Chat' },
   { key: 'dashboard', label: 'Dashboard' },
 ];

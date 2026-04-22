@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Folder, FolderOpen, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { getPortalDocumentosData } from '../../../dev/clientPortalData';
 
-const SETORES = ['Atendimento', 'Comercial', 'Contadores', 'Financeiro', 'Fiscal', 'Trabalhista', 'Servicos'];
+const SETORES = ['Atendimento', 'Comercial', 'Contadores', 'Financeiro', 'Fiscal', 'Trabalhista', 'Serviços'];
 
 const statusStyles = {
   validado: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
@@ -18,7 +18,7 @@ const inferSetor = (categoria = '') => {
   if (text.includes('conta') || text.includes('societ')) return 'Contadores';
   if (text.includes('atend')) return 'Atendimento';
   if (text.includes('comercial')) return 'Comercial';
-  return 'Servicos';
+  return 'Serviços';
 };
 
 const ClientDocumentosPage = ({ clienteId }) => {

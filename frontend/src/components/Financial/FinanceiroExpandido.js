@@ -14,6 +14,16 @@ import { toast } from 'sonner';
 import CreateContaModal from './CreateContaModal';
 import PaymentModal from './PaymentModal';
 
+const normalizeText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+const normalizeWhitespace = (value = '') => String(value).replace(/\s+/g, ' ').trim();
+const cityKey = (value = '') => normalizeText(normalizeWhitespace(value));
+
 const FinanceiroExpandido = () => {
   const { hasAccess, user } = useAuth();
   const navigate = useNavigate();
@@ -234,7 +244,7 @@ const FinanceiroExpandido = () => {
     let filtered = contas.filter(conta => {
       if (filters.empresa && !conta.empresa.toLowerCase().includes(filters.empresa.toLowerCase())) return false;
       if (filters.situacao.length && !filters.situacao.includes(conta.situacao)) return false;
-      if (filters.cidade && conta.cidade_atendimento !== filters.cidade) return false;
+      if (filters.cidade && cityKey(conta.cidade_atendimento) !== cityKey(filters.cidade)) return false;
       return true;
     });
 

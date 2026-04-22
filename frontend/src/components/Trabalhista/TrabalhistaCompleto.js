@@ -69,6 +69,7 @@ const mergeClientsUnique = (...lists) => {
 
 const TrabalhistaCompleto = () => {
   const { hasAccess, user } = useAuth();
+  const getTodayInputDate = () => new Date().toISOString().slice(0, 10);
   const [activeTab, setActiveTab] = useState('dashboard'); 
   const [moduleDivision, setModuleDivision] = useState('obrigacoes_mensais');
   // dashboard, recalculos, admissoes, demissoes, solicitacoes, obrigacoes, calendario, relatorios
@@ -85,7 +86,7 @@ const TrabalhistaCompleto = () => {
     empresa: '',
     tipo_recalculo: 'rescisao',
     funcionario_nome: '',
-    periodo_referencia: '',
+    periodo_referencia: getTodayInputDate(),
     valor_original: 0,
     motivo: '',
     responsavel: user?.name || '',
@@ -100,10 +101,10 @@ const TrabalhistaCompleto = () => {
     empresa: '',
     funcionario_nome: '',
     cpf: '',
-    data_nascimento: '',
+    data_nascimento: getTodayInputDate(),
     cargo: '',
     salario: 0,
-    data_admissao: '',
+    data_admissao: getTodayInputDate(),
     tipo_contrato: 'clt',
     jornada_trabalho: '44h semanais',
     responsavel: user?.name || '',
@@ -118,7 +119,7 @@ const TrabalhistaCompleto = () => {
     empresa: '',
     funcionario_id: '',
     funcionario_nome: '',
-    data_demissao: '',
+    data_demissao: getTodayInputDate(),
     tipo_demissao: 'sem_justa_causa',
     aviso_previo: 'trabalhado',
     motivo: '',
@@ -188,7 +189,7 @@ const TrabalhistaCompleto = () => {
     cpf: '',
     cargo: '',
     salario: '',
-    data_admissao: '',
+    data_admissao: getTodayInputDate(),
   });
   const [importReportByCompany, setImportReportByCompany] = useState({});
 
@@ -720,7 +721,7 @@ const TrabalhistaCompleto = () => {
       cpf: '',
       cargo: '',
       salario: '',
-      data_admissao: '',
+      data_admissao: getTodayInputDate(),
     });
   };
 
@@ -912,7 +913,7 @@ const TrabalhistaCompleto = () => {
       empresa: '',
       tipo_recalculo: 'rescisao',
       funcionario_nome: '',
-      periodo_referencia: '',
+      periodo_referencia: getTodayInputDate(),
       valor_original: 0,
       motivo: '',
       responsavel: user?.name || '',
@@ -926,10 +927,10 @@ const TrabalhistaCompleto = () => {
       empresa: '',
       funcionario_nome: '',
       cpf: '',
-      data_nascimento: '',
+      data_nascimento: getTodayInputDate(),
       cargo: '',
       salario: 0,
-      data_admissao: '',
+      data_admissao: getTodayInputDate(),
       tipo_contrato: 'clt',
       jornada_trabalho: '44h semanais',
       responsavel: user?.name || '',
@@ -943,7 +944,7 @@ const TrabalhistaCompleto = () => {
       empresa: '',
       funcionario_id: '',
       funcionario_nome: '',
-      data_demissao: '',
+    data_demissao: getTodayInputDate(),
       tipo_demissao: 'sem_justa_causa',
       aviso_previo: 'trabalhado',
       motivo: '',

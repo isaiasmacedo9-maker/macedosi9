@@ -247,7 +247,7 @@ const FiscalExpandido = () => {
     numero_nota: '',
     serie: '',
     tipo_nota: 'saida',
-    data_emissao: '',
+    data_emissao: getTodayInputDate(),
     valor_total: 0,
     valor_icms: 0,
     valor_ipi: 0,
@@ -472,7 +472,7 @@ const FiscalExpandido = () => {
       numero_nota: '',
       serie: '',
       tipo_nota: 'saida',
-      data_emissao: '',
+      data_emissao: getTodayInputDate(),
       valor_total: 0,
       valor_icms: 0,
       valor_ipi: 0,
@@ -1530,3 +1530,4 @@ const FiscalExpandido = () => {
 };
 
 export default FiscalExpandido;
+  const getTodayInputDate = () => new Date().toISOString().split('T')[0];

@@ -797,14 +797,14 @@ const ChatEnhanced = () => {
   const handleMarkAsUnreadFromMessage = (msg) => {
     const messageId = String(msg?.id || '');
     if (!messageId) {
-      setActionFeedback('Mensagem sem identificador para marcar nao lida.');
+      setActionFeedback('Mensagem sem identificador para marcar não lida.');
       return;
     }
     const seenMap = parseJson(localStorage.getItem(CHAT_SEEN_MESSAGES_KEY) || '{}', {});
     seenMap[messageId] = false;
     localStorage.setItem(CHAT_SEEN_MESSAGES_KEY, JSON.stringify(seenMap));
     setMessageActionsOpenKey('');
-    setActionFeedback('Mensagem marcada como nao lida.');
+    setActionFeedback('Mensagem marcada como não lida.');
   };
 
   const handleCreateReminder = (msg, messageKey) => {
@@ -1672,7 +1672,7 @@ const ChatEnhanced = () => {
                             <div className="space-y-1">
                               <button type="button" onClick={() => handleMarkAsUnreadFromMessage(msg)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-white hover:bg-gray-700">
                                 <Eye size={13} />
-                                Marcar como nao lida
+                                Marcar como não lida
                               </button>
                               <button type="button" onClick={() => handleCreateReminder(msg, msgKey)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-white hover:bg-gray-700">
                                 <Bell size={13} />
@@ -1740,7 +1740,7 @@ const ChatEnhanced = () => {
                               {seenBy.length ? (
                                 <p className="mt-1 text-gray-200">{seenBy.join(', ')}</p>
                               ) : (
-                                <p className="mt-1 text-gray-300">Ainda nao visualizado.</p>
+                                <p className="mt-1 text-gray-300">Ainda não visualizado.</p>
                               )}
                             </>
                           ) : null}
@@ -1865,7 +1865,7 @@ const ChatEnhanced = () => {
                                 {proc.nome} - {proc.clienteNome}
                               </button>
                             ))}
-                            {userProcesses.length === 0 ? <p className="px-2 py-2 text-xs text-gray-400">Nenhum processo vinculado ao seu usuario.</p> : null}
+                            {userProcesses.length === 0 ? <p className="px-2 py-2 text-xs text-gray-400">Nenhum processo vinculado ao seu usuário.</p> : null}
                           </div>
                         </div>
                       ) : null}

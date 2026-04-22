@@ -25,7 +25,7 @@ const MeusDados = () => {
     return (
       <div className="glass rounded-2xl border border-white/10 p-6">
         <h1 className="text-2xl font-bold text-white">Meus dados</h1>
-        <p className="mt-2 text-sm text-gray-300">Este modulo esta disponivel apenas para usuarios colaboradores.</p>
+        <p className="mt-2 text-sm text-gray-300">Este módulo está disponível apenas para usuários colaboradores.</p>
       </div>
     );
   }
@@ -51,7 +51,7 @@ const MeusDados = () => {
       return;
     }
     if (form.nextPassword !== form.confirmPassword) {
-      toast.error('A confirmacao da senha nao confere.');
+      toast.error('A confirmação da senha não confere.');
       return;
     }
     toast.success('Senha alterada com sucesso (modo local).');

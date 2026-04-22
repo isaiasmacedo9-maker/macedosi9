@@ -33,6 +33,29 @@ const normalizeText = (value = '') =>
     .toLowerCase()
     .trim();
 
+const canonicalCityKey = (city = '') => {
+  const normalized = normalizeText(city);
+  if (!normalized) return '';
+  if (normalized.startsWith('ouroland')) return 'ourolandia';
+  if (normalized.startsWith('uberland')) return 'uberlandia';
+  if (normalized.startsWith('jacobin')) return 'jacobina';
+  if (normalized.startsWith('umburan')) return 'umburanas';
+  return normalized;
+};
+
+const canonicalCityLabel = (city = '') => {
+  const key = canonicalCityKey(city);
+  if (key === 'ourolandia') return 'Ourolandia';
+  if (key === 'uberlandia') return 'Uberlandia';
+  if (key === 'jacobina') return 'Jacobina';
+  if (key === 'umburanas') return 'Umburanas';
+  if (!key) return 'Nao informado';
+  return String(city || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 const ClientesAvulso = () => {
   const navigate = useNavigate();
   const { hasModuleAccess } = useAuth();
@@ -54,7 +77,7 @@ const ClientesAvulso = () => {
       nome: item.nome_empresa || item.nome_fantasia || item.name || 'Cliente Avulso',
       documento: item.cnpj || item.documento || '-',
       categoria: item.categoria || 'MEI Avulso',
-      cidade: item.cidade || 'Nao informado',
+      cidade: canonicalCityLabel(item.cidade || 'Nao informado'),
     }));
     const base = [...MOCK_AVULSOS, ...local];
     const map = new Map();
@@ -74,7 +97,7 @@ const ClientesAvulso = () => {
       nome_empresa: newClient.nome.trim(),
       cnpj: newClient.documento.trim(),
       categoria: newClient.categoria,
-      cidade: newClient.cidade.trim(),
+      cidade: canonicalCityLabel(newClient.cidade.trim()),
       origem: 'clientes_avulso',
     };
     const current = readJson(AVULSO_CLIENTS_KEY, []);
@@ -94,7 +117,7 @@ const ClientesAvulso = () => {
       <div className="glass rounded-2xl border border-white/10 p-6 text-center">
         <h2 className="text-xl font-semibold text-white">Acesso restrito</h2>
         <p className="mt-2 text-sm text-gray-400">
-          Somente usuarios com modulo Comercial ou Financeiro podem acessar Clientes Avulso.
+          Somente usuários com módulo Comercial ou Financeiro podem acessar Clientes Avulso.
         </p>
       </div>
     );

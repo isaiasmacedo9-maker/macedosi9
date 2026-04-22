@@ -22,7 +22,7 @@ const setorLabel = {
   financeiro: 'Financeiro',
   fiscal: 'Fiscal',
   trabalhista: 'Trabalhista',
-  servicos: 'Servicos',
+  servicos: 'Serviços',
   clientes: 'Clientes',
 };
 
@@ -44,7 +44,7 @@ const DashboardTaskDetailView = () => {
       <div className="space-y-5">
         <section className="glass-intense rounded-2xl border border-white/10 p-5">
           <h1 className="text-2xl font-semibold text-white">Detalhes da tarefa</h1>
-          <p className="mt-2 text-sm text-gray-300">Tarefa nao encontrada para este usuario.</p>
+          <p className="mt-2 text-sm text-gray-300">Tarefa não encontrada para este usuário.</p>
         </section>
         <button
           type="button"
@@ -64,7 +64,7 @@ const DashboardTaskDetailView = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold text-white">Detalhes da tarefa</h1>
-            <p className="mt-2 text-sm text-gray-300">Visualizacao completa da tarefa atribuida ao usuario.</p>
+            <p className="mt-2 text-sm text-gray-300">Visualização completa da tarefa atribuída ao usuário.</p>
           </div>
           <button
             type="button"

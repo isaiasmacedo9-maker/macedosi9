@@ -9,7 +9,7 @@ const SETORES = [
   'Financeiro',
   'Fiscal',
   'Trabalhista',
-  'Servicos',
+  'Serviços',
 ];
 
 
@@ -28,8 +28,8 @@ const normalizeSectorKey = (raw = '') => {
   if (value.includes('finance')) return 'Financeiro';
   if (value.includes('fiscal')) return 'Fiscal';
   if (value.includes('trabalh')) return 'Trabalhista';
-  if (value.includes('servico')) return 'Servicos';
-  return 'Servicos';
+  if (value.includes('servico')) return 'Serviços';
+  return 'Serviços';
 };
 
 const DocumentsCenter = () => {
@@ -76,28 +76,29 @@ const DocumentsCenter = () => {
 
   const companies = useMemo(() => {
     const map = new Map();
-    [...clients].forEach((item) => {
-      const id = item.id || item.empresa_id || item.cnpj || item.empresa_nome;
-      const name = item.nome_empresa || item.nome_fantasia || item.empresa_nome || '';
+    clients.forEach((item) => {
+      const id = item.id || item.client_id || item.empresa_id || item.cnpj;
+      const name =
+        item.nome_empresa ||
+        item.nome_fantasia ||
+        item.razao_social ||
+        item.empresa_nome ||
+        item.nome ||
+        item.name ||
+        '';
       if (!id || !name) return;
       if (!map.has(String(id))) {
-        map.set(String(id), { id: String(id), nome: name });
-      }
-    });
-
-    documents.forEach((doc) => {
-      if (!doc.empresa_id && !doc.empresa_nome) return;
-      const key = String(doc.empresa_id || doc.empresa_nome);
-      if (!map.has(key)) {
-        map.set(key, {
-          id: key,
-          nome: doc.empresa_nome || `Empresa ${key}`,
+        map.set(String(id), {
+          id: String(id),
+          nome: String(name).trim(),
+          cnpj: item.cnpj || '',
         });
       }
     });
 
-    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  }, [clients, documents]);
+    return Array.from(map.values())
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [clients]);
 
   const groupedBySectorAndCompany = useMemo(() => {
     const grouped = {};
@@ -169,7 +170,7 @@ const DocumentsCenter = () => {
       <section className="glass-intense rounded-2xl border border-white/10 p-5">
         <h1 className="text-2xl font-bold text-white">Central de documentos</h1>
         <p className="mt-2 text-sm text-gray-300">
-          Area comum para toda a equipe com organizacao por setor e fluxo de troca documental.
+          Área comum para toda a equipe com organização por setor e fluxo de troca documental.
         </p>
       </section>
 
@@ -390,11 +391,12 @@ const DocumentsCenter = () => {
                   onChange={(e) => setDraft((prev) => ({ ...prev, empresa_id: e.target.value }))}
                   className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white"
                   required
+                  disabled={!companies.length}
                 >
-                  <option value="">Selecione...</option>
+                  <option value="">{companies.length ? 'Selecione...' : 'Nenhuma empresa cadastrada na Lista de Clientes'}</option>
                   {companies.map((company) => (
                     <option key={company.id} value={company.id}>
-                      {company.nome}
+                      {company.nome}{company.cnpj ? ` - ${company.cnpj}` : ''}
                     </option>
                   ))}
                 </select>

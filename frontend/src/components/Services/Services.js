@@ -81,6 +81,7 @@ const formatDate = (value) => {
     year: 'numeric',
   });
 };
+const getTodayInputDate = () => new Date().toISOString().slice(0, 10);
 
 const parseStorageArray = (key) => {
   try {
@@ -119,6 +120,20 @@ const mergeClientsUnique = (...lists) => {
 
 const getClientCity = (client) => client?.cidade_atendimento || client?.cidade || '';
 const getClientName = (client) => client?.nome_empresa || client?.nome_fantasia || client?.empresa_nome || '';
+const normalizeWhitespace = (value = '') => String(value).replace(/\s+/g, ' ').trim();
+const cityKey = (value = '') => normalizeText(normalizeWhitespace(value));
+const looksAllCaps = (value = '') => {
+  const text = normalizeWhitespace(value);
+  return Boolean(text) && text === text.toUpperCase();
+};
+const pickBestCityLabel = (currentLabel, nextLabel) => {
+  const current = normalizeWhitespace(currentLabel);
+  const next = normalizeWhitespace(nextLabel);
+  if (!current) return next;
+  if (!next) return current;
+  if (looksAllCaps(current) && !looksAllCaps(next)) return next;
+  return current;
+};
 
 const getUserIdentifier = (record = {}) => record.id || record.email || '';
 
@@ -239,12 +254,17 @@ const Services = () => {
     setor_key: 'atendimento',
     cidade: '',
     urgencia: 'normal',
-    data_inicio: '',
+    data_inicio: getTodayInputDate(),
     canal_atendimento: 'interno',
     vincular_ordem_servico: false,
     gerar_cobranca: false,
   });
   const [processModels, setProcessModels] = useState(() => hydrateProcessModels(accountingServiceProcessModels));
+  const [servicesConfig, setServicesConfig] = useState({
+    departments: [],
+    membersByDepartment: {},
+    assignmentsByDepartment: {},
+  });
   const [processDraft, setProcessDraft] = useState({
     nome: '',
     descricao: '',
@@ -265,14 +285,14 @@ const Services = () => {
   const isProcessWorkspaceTab = isProcessosTab;
 
   const getServiceResponsibleName = (service) => {
-    if (!service) return 'Nao atribuido';
+    if (!service) return 'Não atribuído';
     const directName = service.responsavel_nome || service.responsavel_conta || service.colaborador_responsavel || service.colaborador_lancamento_nome;
     if (directName) return directName;
     const assigned = Array.isArray(service.assigned_to) ? service.assigned_to : [];
     const firstAssigned = assigned[0];
-    if (!firstAssigned) return 'Nao atribuido';
+    if (!firstAssigned) return 'Não atribuído';
     const byId = allUsers.find((userItem) => getUserIdentifier(userItem) === firstAssigned);
-    return byId?.name || byId?.email || 'Nao atribuido';
+    return byId?.name || byId?.email || 'Não atribuído';
   };
 
   useEffect(() => {
@@ -285,6 +305,34 @@ const Services = () => {
       }
     } catch {}
   }, []);
+
+  useEffect(() => {
+    const syncModelsFromStorage = () => {
+      try {
+        const storedModels = JSON.parse(localStorage.getItem(MODELS_KEY) || '[]');
+        if (Array.isArray(storedModels) && storedModels.length) {
+          setProcessModels(hydrateProcessModels(storedModels));
+        }
+      } catch {}
+    };
+
+    const handleStorage = (event) => {
+      if (event?.key === MODELS_KEY) syncModelsFromStorage();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    if (topViewTab !== 'processos' && topViewTab !== 'modelos') return;
+    try {
+      const storedModels = JSON.parse(localStorage.getItem(MODELS_KEY) || '[]');
+      if (Array.isArray(storedModels) && storedModels.length) {
+        setProcessModels(hydrateProcessModels(storedModels));
+      }
+    } catch {}
+  }, [topViewTab]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -326,16 +374,15 @@ const Services = () => {
     } catch {}
 
     const localClients = parseStorageArray(MOCK_ADMIN_CLIENTS_KEY);
-    const mergedClients = mergeClientsUnique(
-      Array.isArray(backendClients) ? backendClients : [],
-      localClients,
-      mockClients,
-    );
+    const normalizedBackendClients = Array.isArray(backendClients) ? backendClients : [];
+    const mergedClients = normalizedBackendClients.length
+      ? mergeClientsUnique(normalizedBackendClients)
+      : mergeClientsUnique(localClients, mockClients);
     setAllClients(mergedClients);
 
     let backendUsers = [];
     try {
-      const response = await fetch(`${API_URL}/api/users-management/`, {
+      const response = await fetch(`${API_URL}/api/users-management/basic`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -343,6 +390,19 @@ const Services = () => {
         backendUsers = Array.isArray(payload) ? payload : [];
       }
     } catch {}
+
+    if (user?.role === 'admin') {
+      try {
+        const response = await fetch(`${API_URL}/api/users-management/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const payload = await response.json();
+          const adminPayload = Array.isArray(payload) ? payload : [];
+          backendUsers = [...backendUsers, ...adminPayload];
+        }
+      } catch {}
+    }
 
     const localUsers = parseStorageArray(MOCK_USERS_KEY);
     const mergedUsers = [...backendUsers, ...localUsers];
@@ -359,6 +419,26 @@ const Services = () => {
           },
         ];
     setAllUsers(withCreator);
+
+    try {
+      const response = await fetch(`${API_URL}/api/services/configuration`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        setServicesConfig({
+          departments: Array.isArray(payload?.departments) ? payload.departments : [],
+          membersByDepartment:
+            payload?.membersByDepartment && typeof payload.membersByDepartment === 'object'
+              ? payload.membersByDepartment
+              : {},
+          assignmentsByDepartment:
+            payload?.assignmentsByDepartment && typeof payload.assignmentsByDepartment === 'object'
+              ? payload.assignmentsByDepartment
+              : {},
+        });
+      }
+    } catch {}
   };
 
   const loadServicos = async () => {
@@ -473,12 +553,21 @@ const Services = () => {
 
   const responsavelOptions = useMemo(() => {
     const map = new Map();
+
+    allUsers.forEach((record) => {
+      const label = record?.name || record?.email || '';
+      const value = normalizeText(label);
+      if (!label || !value) return;
+      if (!map.has(value)) map.set(value, label);
+    });
+
     userVisibleServicos.forEach((item) => {
       const name = getServiceResponsibleName(item);
       if (!name) return;
       const key = normalizeText(name);
       if (!map.has(key)) map.set(key, name);
     });
+
     return Array.from(map.entries())
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR'));
@@ -511,18 +600,21 @@ const Services = () => {
   }, [servicos, user, processModels]);
 
   const cityOptions = useMemo(() => {
-    const uniqueCities = new Set(
-      allClients
-        .map((client) => getClientCity(client))
-        .filter(Boolean),
-    );
-    return Array.from(uniqueCities).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const uniqueCitiesMap = new Map();
+    allClients.forEach((client) => {
+      const rawCity = getClientCity(client);
+      const key = cityKey(rawCity);
+      if (!key) return;
+      const current = uniqueCitiesMap.get(key);
+      uniqueCitiesMap.set(key, pickBestCityLabel(current, rawCity));
+    });
+    return Array.from(uniqueCitiesMap.values()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [allClients]);
 
   const companyOptionsByCity = useMemo(() => {
     if (!newService.cidade) return [];
     return allClients
-      .filter((client) => normalizeText(getClientCity(client)) === normalizeText(newService.cidade))
+      .filter((client) => cityKey(getClientCity(client)) === cityKey(newService.cidade))
       .map((client) => ({
         id: client.id || client.cnpj || getClientName(client),
         name: getClientName(client),
@@ -625,18 +717,57 @@ const Services = () => {
   }, [responsibleSectors, user?.role, userSectorKeys]);
 
   const getCollaboratorOptionsBySector = (sectorKey) =>
-    allUsers
-      .filter((record) => {
-        if (!includeAdmins && record.role === 'admin') return false;
-        return userCanWorkOnSector(record, sectorKey);
-      })
-      .map((record) => ({
-        id: getUserIdentifier(record),
-        name: record.name || record.email || 'Sem nome',
-        role: record.role || 'colaborador',
-      }))
-      .filter((record) => record.id)
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    (() => {
+      const departments = Array.isArray(servicesConfig?.departments) ? servicesConfig.departments : [];
+      const membersByDepartment =
+        servicesConfig?.membersByDepartment && typeof servicesConfig.membersByDepartment === 'object'
+          ? servicesConfig.membersByDepartment
+          : {};
+
+      const departmentIdsBySector = new Set(
+        departments
+          .filter((dep) => normalizeSectorKey(dep?.name || '') === sectorKey)
+          .map((dep) => dep.id),
+      );
+
+      const memberIds = new Set();
+      Object.entries(membersByDepartment).forEach(([departmentId, ids]) => {
+        if (!departmentIdsBySector.size || departmentIdsBySector.has(departmentId)) {
+          if (Array.isArray(ids)) ids.forEach((id) => memberIds.add(id));
+        }
+      });
+
+      const fromDepartments = allUsers
+        .filter((record) => {
+          const id = getUserIdentifier(record);
+          if (!id || !memberIds.has(id)) return false;
+          if (!includeAdmins && record.role === 'admin') return false;
+          return true;
+        })
+        .map((record) => ({
+          id: getUserIdentifier(record),
+          name: record.name || record.email || 'Sem nome',
+          role: record.role || 'colaborador',
+        }))
+        .filter((record) => record.id);
+
+      if (fromDepartments.length) {
+        return fromDepartments.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      }
+
+      return allUsers
+        .filter((record) => {
+          if (!includeAdmins && record.role === 'admin') return false;
+          return userCanWorkOnSector(record, sectorKey);
+        })
+        .map((record) => ({
+          id: getUserIdentifier(record),
+          name: record.name || record.email || 'Sem nome',
+          role: record.role || 'colaborador',
+        }))
+        .filter((record) => record.id)
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    })();
 
   const filteredServicos = useMemo(() => {
     if (accessDeniedBySector) return [];
@@ -1038,7 +1169,7 @@ const Services = () => {
       setor_key: 'atendimento',
       cidade: initialCity,
       urgencia: 'normal',
-      data_inicio: '',
+      data_inicio: getTodayInputDate(),
       canal_atendimento: 'interno',
       vincular_ordem_servico: false,
       gerar_cobranca: false,
@@ -1318,7 +1449,7 @@ const Services = () => {
               isConfiguracoesTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
             }`}
           >
-            Configuracoes
+            Configurações
           </button>
         </div>
 
@@ -1349,7 +1480,7 @@ const Services = () => {
           </div>
         ) : isModelosTab ? (
           <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-gray-200">
-            Area de Modelos carregada a partir do modulo Macedo Academy.
+            Área de Modelos carregada a partir do módulo Macedo Academy.
           </div>
         ) : isConfiguracoesTab ? (
           <ServicesSettingsPanel allUsers={allUsers} allClients={allClients} currentUser={user} />
@@ -1409,7 +1540,7 @@ const Services = () => {
                     <div className="absolute inset-[28px] rounded-full bg-[#0f1728]" />
                   </div>
                   <div>
-                    <div className="text-3xl font-semibold text-white">Processos concluidos</div>
+                    <div className="text-3xl font-semibold text-white">Processos concluídos</div>
                     <div className="mt-2 text-5xl font-bold text-emerald-400">{resumo.concluidos}</div>
                     <div className="text-lg text-gray-400">de {resumo.total}</div>
                   </div>
@@ -1421,7 +1552,7 @@ const Services = () => {
                     <div className="grid grid-cols-3 gap-2">
                       <MiniCard title="A fazer" value={resumo.novo} tone="border-white/20 bg-white/5 text-white" />
                       <MiniCard title="Em Progresso" value={resumo.emAndamento} tone="border-cyan-500/40 bg-cyan-500/10 text-cyan-100" />
-                      <MiniCard title="Concluidas" value={resumo.concluidos} tone="border-emerald-500/40 bg-emerald-500/10 text-emerald-100" />
+                      <MiniCard title="Concluídas" value={resumo.concluidos} tone="border-emerald-500/40 bg-emerald-500/10 text-emerald-100" />
                     </div>
                   </div>
                   <div>
@@ -1446,7 +1577,7 @@ const Services = () => {
                 </div>
               </div>
               <p className="mt-2 text-center text-xl text-gray-200">
-                Faltam <span className="font-semibold text-rose-400">{Math.max(0, resumo.total - resumo.concluidos)} processos</span> para avancar de nivel.
+                Faltam <span className="font-semibold text-rose-400">{Math.max(0, resumo.total - resumo.concluidos)} processos</span> para avançar de nível.
                 Priorize os mais urgentes e comece agora!
               </p>
             </div>
@@ -1562,7 +1693,7 @@ const Services = () => {
                 <div className="mt-4 space-y-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-gray-200">A fazer: {resumo.novo}</div>
                   <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-cyan-100">Em Progresso: {resumo.emAndamento}</div>
-                  <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-100">Concluidas: {resumo.concluidos}</div>
+                  <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-100">Concluídas: {resumo.concluidos}</div>
                 </div>
               </div>
             </div>
@@ -2045,7 +2176,7 @@ const Services = () => {
                         <td className="px-4 py-3 text-sm text-gray-300">{row.clients} clientes</td>
                         <td className="px-4 py-3 text-sm text-gray-300">{row.total} processos</td>
                         <td className="px-4 py-3 text-sm text-gray-300">{row.setor}</td>
-                        <td className="px-4 py-3 text-sm text-gray-300">{row.items.filter((item) => getServiceResponsibleName(item) !== 'Nao atribuido').length || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-300">{row.items.filter((item) => getServiceResponsibleName(item) !== 'Não atribuído').length || '-'}</td>
                       </tr>
                       {expandedProcessRows[row.name]
                         ? row.items.map((servico) => {
@@ -2374,7 +2505,7 @@ const Services = () => {
 
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <DetailItem label="Situacao" value={getStatusMeta(selectedProcessService.status_ui).label} />
-                  <DetailItem label="Departamento" value={selectedProcessService.setor || 'Nao atribuido'} />
+                  <DetailItem label="Departamento" value={selectedProcessService.setor || 'Não atribuído'} />
                   <DetailItem label="Responsavel" value={getServiceResponsibleName(selectedProcessService)} />
                   <DetailItem label="Prazo" value={formatDate(selectedProcessService.data_prazo || selectedProcessService.created_at)} />
                   <DetailItem label="Prazo-meta" value="Sem prazo" />
@@ -2698,7 +2829,7 @@ const Services = () => {
                   </div>
                 ) : null}
                 <p className="mt-2 text-xs text-gray-400">
-                  Se o servico nao existir, clique no "+" para cadastrar um novo processo e ele sera selecionado automaticamente.
+                  Se o serviço não existir, clique no "+" para cadastrar um novo processo e ele será selecionado automaticamente.
                 </p>
               </FormField>
 

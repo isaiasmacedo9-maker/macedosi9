@@ -50,7 +50,7 @@ const ChangePassword = () => {
             onClick={() => navigate('/configuracoes')}
             className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-white/10"
           >
-            Voltar para Configuracoes
+            Voltar para Configurações
           </button>
         </div>
       </section>

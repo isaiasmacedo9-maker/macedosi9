@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 
 const TrabalhistaExpandido = () => {
   const { hasAccess, user } = useAuth();
+  const getTodayInputDate = () => new Date().toISOString().split('T')[0];
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, recalculos, admissoes, demissoes, solicitacoes, obrigacoes
   const [loading, setLoading] = useState(true);
   
@@ -25,7 +26,7 @@ const TrabalhistaExpandido = () => {
     empresa: '',
     tipo_recalculo: 'rescisao',
     funcionario_nome: '',
-    periodo_referencia: '',
+    periodo_referencia: getTodayInputDate(),
     valor_original: 0,
     motivo: '',
     responsavel: user?.name || '',
@@ -40,10 +41,10 @@ const TrabalhistaExpandido = () => {
     empresa: '',
     funcionario_nome: '',
     cpf: '',
-    data_nascimento: '',
+    data_nascimento: getTodayInputDate(),
     cargo: '',
     salario: 0,
-    data_admissao: '',
+    data_admissao: getTodayInputDate(),
     tipo_contrato: 'clt',
     jornada_trabalho: '44h semanais',
     responsavel: user?.name || '',
@@ -58,7 +59,7 @@ const TrabalhistaExpandido = () => {
     empresa: '',
     funcionario_id: '',
     funcionario_nome: '',
-    data_demissao: '',
+    data_demissao: getTodayInputDate(),
     tipo_demissao: 'sem_justa_causa',
     aviso_previo: 'trabalhado',
     motivo: '',
@@ -265,7 +266,7 @@ const TrabalhistaExpandido = () => {
       empresa: '',
       tipo_recalculo: 'rescisao',
       funcionario_nome: '',
-      periodo_referencia: '',
+      periodo_referencia: getTodayInputDate(),
       valor_original: 0,
       motivo: '',
       responsavel: user?.name || '',
@@ -279,10 +280,10 @@ const TrabalhistaExpandido = () => {
       empresa: '',
       funcionario_nome: '',
       cpf: '',
-      data_nascimento: '',
+      data_nascimento: getTodayInputDate(),
       cargo: '',
       salario: 0,
-      data_admissao: '',
+      data_admissao: getTodayInputDate(),
       tipo_contrato: 'clt',
       jornada_trabalho: '44h semanais',
       responsavel: user?.name || '',
@@ -296,7 +297,7 @@ const TrabalhistaExpandido = () => {
       empresa: '',
       funcionario_id: '',
       funcionario_nome: '',
-      data_demissao: '',
+      data_demissao: getTodayInputDate(),
       tipo_demissao: 'sem_justa_causa',
       aviso_previo: 'trabalhado',
       motivo: '',

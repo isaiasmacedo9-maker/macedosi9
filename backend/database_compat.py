@@ -251,6 +251,22 @@ async def get_importacoes_extrato_collection():
     """Get importacoes extrato collection"""
     return CompatCollection("importacoes_extrato")
 
+async def get_import_batches_collection():
+    """Get OFX import batches collection"""
+    return CompatCollection("import_batches")
+
+async def get_import_rows_collection():
+    """Get OFX import rows collection"""
+    return CompatCollection("import_rows")
+
+async def get_aliases_cliente_collection():
+    """Get client aliases collection"""
+    return CompatCollection("aliases_cliente")
+
+async def get_import_settlement_links_collection():
+    """Get settlement links created from import rows"""
+    return CompatCollection("import_settlement_links")
+
 async def get_documents_collection():
     """Get documents center collection"""
     return CompatCollection("documents_center")

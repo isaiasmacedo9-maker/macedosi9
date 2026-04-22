@@ -32,7 +32,7 @@ const Layout = ({ children }) => {
   const menuItems = useMemo(
     () => [
       { name: 'Dashboard', icon: LayoutDashboard, path: '/admin', moduleKey: 'dashboard' },
-      { name: 'Servicos', icon: FileText, path: '/servicos', moduleKey: 'servicos' },
+      { name: 'Serviços', icon: FileText, path: '/servicos', moduleKey: 'servicos' },
       { name: 'Documentos', icon: FileText, path: '/documentos', moduleKey: 'documentos' },
       { name: 'Lista de Clientes', icon: Users, path: '/clientes', moduleKey: 'clientes' },
       { name: 'Comercial', icon: Briefcase, path: '/comercial', moduleKey: 'comercial' },
@@ -43,7 +43,7 @@ const Layout = ({ children }) => {
       { name: 'Macedo Academy', icon: GraduationCap, path: '/ourolandia', moduleKey: 'ourolandia' },
       { name: 'Atendimento', icon: Headphones, path: '/atendimento', moduleKey: 'atendimento' },
       { name: 'Chat', icon: MessageCircle, path: '/chat', moduleKey: 'chat' },
-      { name: 'Configuracoes', icon: Settings, path: '/configuracoes', moduleKey: 'configuracoes', adminOnly: true },
+      { name: 'Configurações', icon: Settings, path: '/configuracoes', moduleKey: 'configuracoes', adminOnly: true },
     ],
     [],
   );

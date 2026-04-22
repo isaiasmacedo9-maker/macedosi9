@@ -17,7 +17,7 @@ const moduleLabelByKey = {
   financeiro: 'Financeiro',
   fiscal: 'Fiscal',
   trabalhista: 'Trabalhista',
-  servicos: 'Servicos',
+  servicos: 'Serviços',
   clientes: 'Clientes',
 };
 
@@ -120,7 +120,7 @@ const DashboardAlertsView = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold text-white">Alertas do setor</h1>
-            <p className="mt-2 text-sm text-gray-300">Alertas divididos pelos setores/modulos que este usuario pode visualizar.</p>
+            <p className="mt-2 text-sm text-gray-300">Alertas divididos pelos setores/módulos que este usuário pode visualizar.</p>
           </div>
           <button
             onClick={() => navigate('/dashboard')}
@@ -160,7 +160,7 @@ const DashboardAlertsView = () => {
       )) : (
         <section className="glass rounded-2xl border border-white/10 p-6 text-center text-sm text-gray-400">
           <AlertTriangle className="mx-auto mb-2 h-5 w-5 text-gray-500" />
-          Nenhum alerta disponivel para os setores deste usuario.
+          Nenhum alerta disponível para os setores deste usuário.
         </section>
       )}
     </div>

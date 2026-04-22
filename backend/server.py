@@ -16,6 +16,7 @@ from services.official_data_sync import import_official_csv_data
 from routes.auth import router as auth_router
 from routes.clients import router as clients_router
 from routes.financial import router as financial_router
+from routes.financial_ofx import router as financial_ofx_router
 from routes.trabalhista import router as trabalhista_router
 from routes.trabalhista_servicos import router as trabalhista_servicos_router
 from routes.fiscal import router as fiscal_router
@@ -120,6 +121,7 @@ api_router.include_router(auth_router)
 api_router.include_router(users_management_router)
 api_router.include_router(clients_router)
 api_router.include_router(financial_router)
+api_router.include_router(financial_ofx_router)
 api_router.include_router(trabalhista_router)
 api_router.include_router(trabalhista_servicos_router)
 api_router.include_router(fiscal_router)

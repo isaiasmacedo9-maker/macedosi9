@@ -30,8 +30,8 @@ const EMPTY_FORM = {
   tipo_guia: 'DARF',
   competencia: '',
   valor: '',
-  data_vencimento: '',
-  data_pagamento: '',
+  data_vencimento: new Date().toISOString().split('T')[0],
+  data_pagamento: new Date().toISOString().split('T')[0],
   status: 'pendente',
   colaborador_responsavel: '',
   observacoes: ''

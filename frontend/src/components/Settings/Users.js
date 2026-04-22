@@ -19,7 +19,7 @@ const DEFAULT_CONFIG = {
       'Login Cliente',
       'Dados da empresa',
       'Modulos',
-      'Servicos vinculados',
+      'Serviços vinculados',
       'Documentos',
       'Financeiro',
       'Senhas',
@@ -516,9 +516,7 @@ const Users = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const normalizedName = editingUser
-      ? formData.name
-      : getFirstName(formData.name);
+    const normalizedName = String(formData.name || '').trim();
 
     const normalizedPassword = String(formData.password || '').trim();
     const emailFromForm = getEmailFromName(formData.name);
@@ -622,7 +620,7 @@ const Users = () => {
   };
 
   const handleDeleteClientUser = async (clientUserId) => {
-    if (!window.confirm('Tem certeza que deseja remover este usuario cliente?')) return;
+    if (!window.confirm('Tem certeza que deseja remover este usuário cliente?')) return;
     try {
       await api.delete(`/clients/portal-users/by-id/${clientUserId}`);
       await loadClientUsers();
@@ -999,7 +997,7 @@ const Users = () => {
                     <div className="relative">
                       <input
                         type={showCurrentPassword ? 'text' : 'password'}
-                        value={showCurrentPassword ? String(editingUser?.password || 'Senha nao disponivel') : '********'}
+                        value={showCurrentPassword ? String(editingUser?.password || 'Senha não disponível') : '********'}
                         readOnly
                         className="w-full rounded-lg bg-gray-700 px-4 py-2 pr-11 text-white outline-none"
                       />
@@ -1262,7 +1260,7 @@ const Users = () => {
                   ))}
                 </select>
                 <p className="mt-1 text-xs text-gray-400">
-                  Escolha a empresa principal do acesso. Abaixo voce pode vincular outras empresas ao mesmo usuario.
+                  Escolha a empresa principal do acesso. Abaixo você pode vincular outras empresas ao mesmo usuário.
                 </p>
                 <button
                   type="button"
@@ -1293,7 +1291,7 @@ const Users = () => {
                 ) : null}
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-300">Empresas vinculadas ao usuario</label>
+                <label className="mb-2 block text-sm font-medium text-gray-300">Empresas vinculadas ao usuário</label>
                 <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-3">
                   {selectedClientOptions.map((client) => (
                     <div key={`selected-link-${client.id}`} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
@@ -1379,7 +1377,7 @@ const Users = () => {
                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-white hover:bg-red-700 disabled:opacity-40"
                 >
                   <Save size={18} />
-                  {editingClientUser ? 'Atualizar' : 'Criar'} usuario cliente
+                  {editingClientUser ? 'Atualizar' : 'Criar'} usuário cliente
                 </button>
                 <button type="button" onClick={resetClientForm} className="rounded-lg bg-gray-600 px-6 py-2 text-white hover:bg-gray-700">
                   Cancelar
@@ -1499,7 +1497,7 @@ const Users = () => {
             ))}
             {!clientUsers.length ? (
               <div className="rounded-xl border border-dashed border-white/15 bg-black/20 p-5 text-sm text-gray-400">
-                Nenhum usuario cliente cadastrado ainda.
+                Nenhum usuário cliente cadastrado ainda.
               </div>
             ) : null}
           </div>
@@ -1521,7 +1519,7 @@ const Users = () => {
               <input
                 value={logsSearch}
                 onChange={(e) => setLogsSearch(e.target.value)}
-                placeholder="Buscar por cliente, usuario ou acao..."
+                placeholder="Buscar por cliente, usuário ou ação..."
                 className="min-w-[280px] flex-1 rounded-lg bg-gray-700 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-red-500"
               />
             </div>

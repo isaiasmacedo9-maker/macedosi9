@@ -246,6 +246,95 @@ class MovimentoExtratoSQL(Base):
     
     importacao = relationship("ImportacaoExtratoSQL", back_populates="movimentos")
 
+
+# ==================== IMPORTAÇÃO OFX (CONTAS A RECEBER) ====================
+class ImportBatchSQL(Base):
+    __tablename__ = "import_batches"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    nome_arquivo = Column(String(255), nullable=False)
+    banco_origem = Column(String(120), default="Cora", nullable=False)
+    conta_origem = Column(String(120))
+    bank_id = Column(String(60))
+    hash_arquivo = Column(String(128), nullable=False, index=True)
+    data_importacao = Column(DateTime, default=datetime.utcnow, index=True)
+    usuario_id = Column(String(36), nullable=False, index=True)
+    usuario_nome = Column(String(255), nullable=False)
+
+    total_transacoes = Column(Integer, default=0)
+    total_elegiveis = Column(Integer, default=0)
+    total_lancadas = Column(Integer, default=0)
+    total_nao_identificadas = Column(Integer, default=0)
+    total_ja_lancados = Column(Integer, default=0)
+    total_conflitos = Column(Integer, default=0)
+    total_ignoradas = Column(Integer, default=0)
+    status_processamento = Column(String(50), default="simulado")  # simulado, confirmado, confirmado_parcial, erro
+    metadata_json = Column(Text)  # JSON
+
+
+class ImportRowSQL(Base):
+    __tablename__ = "import_rows"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    batch_id = Column(String(36), ForeignKey("import_batches.id"), nullable=False, index=True)
+    fitid = Column(String(255), index=True)
+    hash_linha = Column(String(128), nullable=False, index=True)
+    data_transacao = Column(Date, nullable=False, index=True)
+    nome_pagador = Column(String(255))
+    documento_pagador = Column(String(20), index=True)
+    memo_original = Column(Text)
+    descricao_transacao_extraida = Column(String(255))
+    tipo_transacao = Column(String(50), nullable=False)
+    valor = Column(Float, nullable=False)
+    banco_origem = Column(String(120), default="Cora")
+    conta_origem = Column(String(120))
+    bank_id = Column(String(60))
+
+    status_conciliacao = Column(String(50), default="nao_identificadas", index=True)
+    titulo_id = Column(String(36), index=True)
+    cliente_id = Column(String(36), index=True)
+    dias_atraso = Column(Integer, default=0)
+    multa = Column(Float, default=0.0)
+    juros = Column(Float, default=0.0)
+    motivo_resultado = Column(Text)
+    candidatos_json = Column(Text)  # JSON
+
+    confirmado_manualmente = Column(Boolean, default=False)
+    confirmado_por = Column(String(255))
+    confirmado_em = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AliasClienteSQL(Base):
+    __tablename__ = "aliases_cliente"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    cliente_id = Column(String(36), nullable=False, index=True)
+    alias_nome = Column(String(255), nullable=False, index=True)
+    origem = Column(String(100), default="manual")
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ImportSettlementLinkSQL(Base):
+    __tablename__ = "import_settlement_links"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conta_id = Column(String(36), nullable=False, index=True)
+    batch_id = Column(String(36), nullable=False, index=True)
+    row_id = Column(String(36), nullable=False, index=True)
+    fitid = Column(String(255), index=True)
+    valor_recebido = Column(Float, nullable=False)
+    juros = Column(Float, default=0.0)
+    multa = Column(Float, default=0.0)
+    dias_atraso = Column(Integer, default=0)
+    status_baixa = Column(String(60), default="pago")
+    usuario_id = Column(String(36), nullable=False)
+    usuario_nome = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 # ==================== TRABALHISTA ====================
 class SolicitacaoTrabalhistaSQL(Base):
     __tablename__ = "solicitacoes_trabalhistas"

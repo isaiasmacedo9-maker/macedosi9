@@ -14,10 +14,13 @@ import ClientesExpandido from "./components/Clients/ClientesExpandido";
 import ClientesAvulso from "./components/Clients/ClientesAvulso";
 import FinancialClients from "./components/Clients/FinancialClients";
 import FinanceiroExpandido from "./components/Financial/FinanceiroExpandido";
+import ContasReceber from "./components/Financial/ContasReceber";
 import FinanceiroHub from "./components/Financial/FinanceiroHub";
 import MetricasFinanceiras from "./components/Financial/MetricasFinanceiras";
 import ContasPagarPlaceholder from "./components/Financial/ContasPagarPlaceholder";
 import ServicosAvulsos from "./components/Financial/ServicosAvulsos";
+import HonorariosCalculatorModule from "./components/Financial/HonorariosCalculatorModule";
+import AssinaturasModule from "./components/Financial/AssinaturasModule";
 import TrabalhistaCompleto from "./components/Trabalhista/TrabalhistaCompleto";
 import FiscalExpandido from "./components/Fiscal/FiscalExpandido";
 import AtendimentoAgendamento from "./components/Atendimento/AtendimentoAgendamento";
@@ -83,12 +86,15 @@ function AppContent() {
                       <Route path="/clientes-avulso" element={<ClientesAvulso />} />
                       <Route path="/financeiro" element={<ModuleGuard moduleKey="financeiro"><FinanceiroHub /></ModuleGuard>} />
                       <Route path="/clientes-financeiro" element={<ModuleGuard moduleKey="financeiro"><FinancialClients /></ModuleGuard>} />
-                      <Route path="/contas-receber" element={<ModuleGuard moduleKey="financeiro"><FinanceiroExpandido /></ModuleGuard>} />
+                      <Route path="/contas-receber" element={<ModuleGuard moduleKey="financeiro"><ContasReceber /></ModuleGuard>} />
+                      <Route path="/contas-receber-legacy" element={<ModuleGuard moduleKey="financeiro"><FinanceiroExpandido /></ModuleGuard>} />
                       <Route path="/metricas-financeiras" element={<AdminGuard><ModuleGuard moduleKey="financeiro"><MetricasFinanceiras /></ModuleGuard></AdminGuard>} />
                       <Route path="/contas-pagar" element={<AdminGuard><ModuleGuard moduleKey="financeiro"><ContasPagarPlaceholder /></ModuleGuard></AdminGuard>} />
                       <Route path="/servicos-avulsos" element={<ModuleGuard moduleKey="financeiro"><ServicosAvulsos /></ModuleGuard>} />
                       <Route path="/servicos-avulsos/:categoria" element={<ModuleGuard moduleKey="financeiro"><ServicosAvulsos /></ModuleGuard>} />
                       <Route path="/servicos-avulsos/:categoria/:subservico" element={<ModuleGuard moduleKey="financeiro"><ServicosAvulsos /></ModuleGuard>} />
+                      <Route path="/financeiro/honorarios" element={<ModuleGuard moduleKey="financeiro"><HonorariosCalculatorModule /></ModuleGuard>} />
+                      <Route path="/financeiro/assinaturas" element={<ModuleGuard moduleKey="financeiro"><AssinaturasModule /></ModuleGuard>} />
                       <Route path="/trabalhista" element={<ModuleGuard moduleKey="trabalhista"><TrabalhistaCompleto /></ModuleGuard>} />
                       <Route path="/fiscal" element={<ModuleGuard moduleKey="fiscal"><FiscalExpandido /></ModuleGuard>} />
                       <Route path="/atendimento" element={<ModuleGuard moduleKey="atendimento"><AtendimentoAgendamento /></ModuleGuard>} />

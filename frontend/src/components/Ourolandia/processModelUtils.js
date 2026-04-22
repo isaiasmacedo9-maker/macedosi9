@@ -23,7 +23,7 @@ const normalizeSectorLabel = (value = '') => {
 };
 
 const normalizeTaskList = (tasks = []) =>
-  tasks
+  (Array.isArray(tasks) ? tasks : [])
     .map((task, index) => {
       const descricao = String(task?.descricao || '').trim();
       if (!descricao) return null;
@@ -37,7 +37,7 @@ const normalizeTaskList = (tasks = []) =>
     .filter(Boolean);
 
 const normalizeStepList = (steps = [], fallbackSector = 'Atendimento') =>
-  steps
+  (Array.isArray(steps) ? steps : [])
     .map((step, index) => {
       const tarefas = normalizeTaskList(step?.tarefas || []);
       if (!tarefas.length) return null;
@@ -92,6 +92,16 @@ const uniqueSectorAllocations = (setorDestino) => {
   }));
 };
 
+const ensureArray = (value) => (Array.isArray(value) ? value : []);
+const ensureNumber = (value, fallback = 0) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+};
+const ensureBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null) return fallback;
+  return Boolean(value);
+};
+
 const ensureExtendedStructure = (model) => ({
   ...model,
   metadata: {
@@ -99,24 +109,24 @@ const ensureExtendedStructure = (model) => ({
     ...(model?.metadata || {}),
   },
   regimesConfig: {
-    selecionarTodos: true,
-    selecionados: [],
-    clientesAssociados: Number(model?.regimesConfig?.clientesAssociados || 0),
-    clientesDesativados: Number(model?.regimesConfig?.clientesDesativados || 0),
+    selecionarTodos: ensureBoolean(model?.regimesConfig?.selecionarTodos, true),
+    selecionados: ensureArray(model?.regimesConfig?.selecionados),
+    clientesAssociados: ensureNumber(model?.regimesConfig?.clientesAssociados, 0),
+    clientesDesativados: ensureNumber(model?.regimesConfig?.clientesDesativados, 0),
     ...(model?.regimesConfig || {}),
   },
   clientesExcecoesConfig: {
-    adicionados: [],
-    removidos: [],
+    adicionados: ensureArray(model?.clientesExcecoesConfig?.adicionados),
+    removidos: ensureArray(model?.clientesExcecoesConfig?.removidos),
     ...(model?.clientesExcecoesConfig || {}),
   },
   prazoConfig: {
     tipo: 'data_mensal_fixa',
-    diaFixo: 20,
+    diaFixo: ensureNumber(model?.prazoConfig?.diaFixo, 20),
     competencia: 'mes_prazo',
-    usarPrazoMeta: false,
-    diasAntecedencia: 5,
-    atrasoGeraMulta: false,
+    usarPrazoMeta: ensureBoolean(model?.prazoConfig?.usarPrazoMeta, false),
+    diasAntecedencia: ensureNumber(model?.prazoConfig?.diasAntecedencia, 5),
+    atrasoGeraMulta: ensureBoolean(model?.prazoConfig?.atrasoGeraMulta, false),
     ...(model?.prazoConfig || {}),
   },
   recorrenciaConfig: {
@@ -172,7 +182,20 @@ export const hydrateProcessModel = (model) => {
     etapas: fallbackSteps.length ? fallbackSteps : normalizeStepList(buildDefaultSteps(setorDestino), setorDestino),
   };
 
-  return ensureExtendedStructure(hydrated);
+  const withStructure = ensureExtendedStructure(hydrated);
+
+  return {
+    ...withStructure,
+    regimesConfig: {
+      ...withStructure.regimesConfig,
+      selecionados: ensureArray(withStructure.regimesConfig?.selecionados),
+    },
+    clientesExcecoesConfig: {
+      ...withStructure.clientesExcecoesConfig,
+      adicionados: ensureArray(withStructure.clientesExcecoesConfig?.adicionados),
+      removidos: ensureArray(withStructure.clientesExcecoesConfig?.removidos),
+    },
+  };
 };
 
 export const hydrateProcessModels = (models = []) =>

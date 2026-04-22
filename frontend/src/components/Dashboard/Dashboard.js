@@ -25,26 +25,26 @@ import {
 
 const MOCK_SERVICES = [
   { id: 'srv-1', cliente: 'Loja Vila Centro', tipo: 'Certificado digital', status: 'em_andamento', moduleKey: 'servicos', criadoEm: '2026-04-10', assignedTo: ['dev-user'] },
-  { id: 'srv-2', cliente: 'Macedo Comercio', tipo: 'Abertura de filial', status: 'novo', moduleKey: 'servicos', criadoEm: '2026-04-12', assignedTo: ['colaborador@macedosi.com'] },
-  { id: 'srv-3', cliente: 'Clinica Sao Miguel', tipo: 'Regularizacao fiscal', status: 'concluido', moduleKey: 'servicos', criadoEm: '2026-04-02', assignedTo: ['dev-user'] },
+  { id: 'srv-2', cliente: 'Macedo Comércio', tipo: 'Abertura de filial', status: 'novo', moduleKey: 'servicos', criadoEm: '2026-04-12', assignedTo: ['colaborador@macedosi.com'] },
+  { id: 'srv-3', cliente: 'Clínica São Miguel', tipo: 'Regularização fiscal', status: 'concluido', moduleKey: 'servicos', criadoEm: '2026-04-02', assignedTo: ['dev-user'] },
 ];
 
 const MOCK_ACTIVITIES = [
-  { id: 'act-1', titulo: 'Servico atualizado: Certificado digital', detalhe: 'Loja Vila Centro movido para em andamento', moduleKey: 'servicos', when: 'Agora', assignedTo: ['dev-user'] },
-  { id: 'act-2', titulo: 'Novo processo fiscal criado', detalhe: 'Fechamento fiscal abril atribuido ao responsavel', moduleKey: 'fiscal', when: 'Hoje, 09:24', assignedTo: ['dev-user', 'colaborador@macedosi.com'] },
-  { id: 'act-3', titulo: 'Atendimento finalizado', detalhe: 'Retorno enviado para Clinica Sao Miguel', moduleKey: 'atendimento', when: 'Ontem', assignedTo: ['colaborador@macedosi.com'] },
+  { id: 'act-1', titulo: 'Serviço atualizado: Certificado digital', detalhe: 'Loja Vila Centro movido para em andamento', moduleKey: 'servicos', when: 'Agora', assignedTo: ['dev-user'] },
+  { id: 'act-2', titulo: 'Novo processo fiscal criado', detalhe: 'Fechamento fiscal abril atribuído ao responsável', moduleKey: 'fiscal', when: 'Hoje, 09:24', assignedTo: ['dev-user', 'colaborador@macedosi.com'] },
+  { id: 'act-3', titulo: 'Atendimento finalizado', detalhe: 'Retorno enviado para Clínica São Miguel', moduleKey: 'atendimento', when: 'Ontem', assignedTo: ['colaborador@macedosi.com'] },
 ];
 
 const MOCK_DEADLINES = [
-  { id: 'ddl-1', titulo: 'DAS - abril/2026', cliente: 'Macedo Comercio', valor: 640.2, moduleKey: 'fiscal', vencimento: '2026-04-20' },
+  { id: 'ddl-1', titulo: 'DAS - abril/2026', cliente: 'Macedo Comércio', valor: 640.2, moduleKey: 'fiscal', vencimento: '2026-04-20' },
   { id: 'ddl-2', titulo: 'FGTS - abril/2026', cliente: 'Loja Vila Centro', valor: 1810.45, moduleKey: 'trabalhista', vencimento: '2026-04-23' },
-  { id: 'ddl-3', titulo: 'Parcela de servico', cliente: 'Clinica Sao Miguel', valor: 3500, moduleKey: 'financeiro', vencimento: '2026-04-18' },
+  { id: 'ddl-3', titulo: 'Parcela de serviço', cliente: 'Clínica São Miguel', valor: 3500, moduleKey: 'financeiro', vencimento: '2026-04-18' },
 ];
 
 const MOCK_CLIENT_OWNERS = [
-  { id: 'cli-1', nome: 'Macedo Comercio', assignedTo: ['dev-user', 'colaborador@macedosi.com'] },
+  { id: 'cli-1', nome: 'Macedo Comércio', assignedTo: ['dev-user', 'colaborador@macedosi.com'] },
   { id: 'cli-2', nome: 'Loja Vila Centro', assignedTo: ['dev-user'] },
-  { id: 'cli-3', nome: 'Clinica Sao Miguel', assignedTo: ['colaborador@macedosi.com'] },
+  { id: 'cli-3', nome: 'Clínica São Miguel', assignedTo: ['colaborador@macedosi.com'] },
 ];
 
 const statusBadge = {
@@ -234,7 +234,7 @@ const Dashboard = () => {
         key: 'novas_tarefas',
         title: 'Novas tarefas',
         value: novasTarefas.length,
-        subtitle: novasTarefas[0] ? novasTarefas[0].titulo : 'Nenhuma nova tarefa nao visualizada',
+        subtitle: novasTarefas[0] ? novasTarefas[0].titulo : 'Nenhuma nova tarefa não visualizada',
         icon: FolderKanban,
         tone: 'border-sky-500/30 bg-sky-500/10',
         visible: true,
@@ -331,8 +331,8 @@ const Dashboard = () => {
             <h1 className="text-3xl font-bold text-white">Dashboard interno</h1>
             <p className="mt-2 text-sm text-gray-300">
               {isAdmin
-                ? 'Visao completa da operacao com todos os modulos.'
-                : 'Visao por itens atribuidos, com panorama completo dos modulos do sistema.'}
+                ? 'Visão completa da operação com todos os módulos.'
+                : 'Visão por itens atribuídos, com panorama completo dos módulos do sistema.'}
             </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
@@ -410,14 +410,14 @@ const Dashboard = () => {
         <section id="dashboard-servicos-atribuidos" className="glass rounded-2xl border border-white/10 p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="dashboard-section-title">Servicos atribuidos</h2>
-              <p className="dashboard-section-subtitle">Lista priorizada de servicos sob sua responsabilidade.</p>
+              <h2 className="dashboard-section-title">Serviços atribuídos</h2>
+              <p className="dashboard-section-subtitle">Lista priorizada de serviços sob sua responsabilidade.</p>
             </div>
             <button
               onClick={() => navigate('/servicos')}
               className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-300 hover:bg-white/10"
             >
-              Abrir modulo
+              Abrir módulo
               <ArrowUpRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -441,7 +441,7 @@ const Dashboard = () => {
               ))
             ) : (
               <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-gray-400">
-                Nenhum servico atribuido no momento.
+                Nenhum serviço atribuído no momento.
               </div>
             )}
           </div>
@@ -450,14 +450,14 @@ const Dashboard = () => {
         <section id="dashboard-alertas-setor" className="glass rounded-2xl border border-white/10 p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="dashboard-section-title">Como voce esta indo hoje</h2>
-              <p className="dashboard-section-subtitle">Visao rapida da sua produtividade diaria.</p>
+              <h2 className="dashboard-section-title">Como você está indo hoje</h2>
+              <p className="dashboard-section-subtitle">Visão rápida da sua produtividade diária.</p>
             </div>
             <Building2 className="h-5 w-5 text-gray-400" />
           </div>
           <div className="space-y-2.5">
             <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-              <span className="text-xs text-gray-300">Solicitacoes criadas por voce hoje</span>
+              <span className="text-xs text-gray-300">Solicitações criadas por você hoje</span>
               <span className="text-sm font-semibold text-white">{resumoHoje.solicitacoesCriadasHoje}</span>
             </div>
             <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
@@ -465,7 +465,7 @@ const Dashboard = () => {
               <span className="text-sm font-semibold text-white">{resumoHoje.empresasAtendidasHoje}</span>
             </div>
             <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-              <span className="text-xs text-gray-300">Servicos concluidos hoje</span>
+              <span className="text-xs text-gray-300">Serviços concluídos hoje</span>
               <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-300">
                 <CheckCircle2 className="h-4 w-4" />
                 {resumoHoje.servicosConcluidosHoje}
@@ -478,7 +478,7 @@ const Dashboard = () => {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="dashboard-section-title">Atividades recentes</h2>
-              <p className="dashboard-section-subtitle">Movimentacoes dos modulos liberados para este perfil.</p>
+              <p className="dashboard-section-subtitle">Movimentações dos módulos liberados para este perfil.</p>
             </div>
             <Clock3 className="h-5 w-5 text-gray-400" />
           </div>
@@ -498,7 +498,7 @@ const Dashboard = () => {
               ))
             ) : (
               <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-gray-400">
-                Nenhuma atividade recente para os modulos deste perfil.
+                Nenhuma atividade recente para os módulos deste perfil.
               </div>
             )}
           </div>
@@ -507,8 +507,8 @@ const Dashboard = () => {
         <section className="glass rounded-2xl border border-white/10 p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="dashboard-section-title">Proximos vencimentos</h2>
-              <p className="dashboard-section-subtitle">Compromissos financeiros e fiscais mais proximos.</p>
+              <h2 className="dashboard-section-title">Próximos vencimentos</h2>
+              <p className="dashboard-section-subtitle">Compromissos financeiros e fiscais mais próximos.</p>
             </div>
             <CalendarClock className="h-5 w-5 text-gray-400" />
           </div>
@@ -529,7 +529,7 @@ const Dashboard = () => {
                 ))
             ) : (
               <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-gray-400">
-                Sem vencimentos para os modulos liberados.
+                Sem vencimentos para os módulos liberados.
               </div>
             )}
           </div>
@@ -539,7 +539,7 @@ const Dashboard = () => {
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="dashboard-section-title">Alertas do setor</h2>
-              <p className="dashboard-section-subtitle">Sinais de atencao por modulo e prazo.</p>
+              <p className="dashboard-section-subtitle">Sinais de atenção por módulo e prazo.</p>
             </div>
             <AlertTriangle className="h-5 w-5 text-amber-300" />
           </div>
@@ -558,7 +558,7 @@ const Dashboard = () => {
               ))
             ) : (
               <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-gray-400">
-                Nenhum alerta para os modulos liberados.
+                Nenhum alerta para os módulos liberados.
               </div>
             )}
           </div>
@@ -567,8 +567,8 @@ const Dashboard = () => {
         <section className="glass rounded-2xl border border-white/10 p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="dashboard-section-title">Seu desempenho no mes</h2>
-              <p className="dashboard-section-subtitle">Tarefas vinculadas e concluidas no mes atual.</p>
+              <h2 className="dashboard-section-title">Seu desempenho no mês</h2>
+              <p className="dashboard-section-subtitle">Tarefas vinculadas e concluídas no mês atual.</p>
             </div>
             <CheckCircle2 className="h-5 w-5 text-emerald-300" />
           </div>
@@ -579,9 +579,9 @@ const Dashboard = () => {
                 <p className="mt-1.5 text-2xl font-semibold text-white">{desempenhoMensal.percentual}%</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-400">Tarefas vinculadas a voce esse mes</p>
+                <p className="text-xs text-gray-400">Tarefas vinculadas a você esse mês</p>
                 <p className="text-lg font-semibold text-white">{desempenhoMensal.total}</p>
-                <p className="mt-1 text-xs text-gray-400">Tarefas concluidas</p>
+                <p className="mt-1 text-xs text-gray-400">Tarefas concluídas</p>
                 <p className="text-lg font-semibold text-emerald-300">{desempenhoMensal.concluidas}</p>
               </div>
             </div>
@@ -592,7 +592,7 @@ const Dashboard = () => {
               />
             </div>
             <p className="mt-2 text-xs text-gray-400">
-              {desempenhoMensal.percentual}% das tarefas do mes foram concluidas.
+              {desempenhoMensal.percentual}% das tarefas do mês foram concluídas.
             </p>
           </div>
         </section>

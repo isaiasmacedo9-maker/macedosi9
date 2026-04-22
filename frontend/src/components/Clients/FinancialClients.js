@@ -36,6 +36,8 @@ const canonicalCityLabel = (city = '') => {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+const cityKey = (value = '') => canonicalCityKey(String(value || '').replace(/\s+/g, ' ').trim());
+
 const formatCurrency = (value) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -43,6 +45,31 @@ const toCsv = (headers, rows) => {
   const escapeCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
   return [headers.map(escapeCell).join(';'), ...rows.map((row) => row.map(escapeCell).join(';'))].join('\n');
 };
+
+const parseObservacoes = (raw) => {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  if (typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const normalizeService = (item = {}) => ({
+  id: String(item.id || `svc-${Date.now()}`),
+  nome: String(item.nome || item.name || '').trim(),
+});
+
+const normalizePlan = (item = {}) => ({
+  id: String(item.id || `plan-${Date.now()}`),
+  name: String(item.name || item.nome || '').trim(),
+  selectedServices: Array.isArray(item.selectedServices)
+    ? item.selectedServices.map(normalizeService)
+    : (Array.isArray(item.services) ? item.services.map(normalizeService) : []),
+});
 
 const mapFinancialFromApi = (item = {}) => ({
   ...item,
@@ -56,18 +83,21 @@ const mapFinancialFromApi = (item = {}) => ({
   quantidade_funcionarios: Number(item.quantidade_funcionarios || 0),
   responsavel_financeiro: item.responsavel_financeiro || '',
   status_fiscal: item.status_fiscal || 'sem_movimento',
+  status_cliente: item.status_cliente || 'ativa',
   capacidade_pagamento: item.capacidade_pagamento || 'paga_em_dia',
   tipo_pagamento_especial: item.tipo_pagamento_especial || item.forma_pagamento_especial || '',
   data_vencimento: item.data_vencimento || '',
+  observacoes: parseObservacoes(item.observacoes),
+  assinatura: parseObservacoes(item.observacoes)?.assinatura || null,
 });
 
 const defaultForm = {
   clientId: '',
   valorBoleto: '',
   valorDesconto: '',
-  dataVencimento: '',
-  quantidadeFuncionarios: '',
+  dataVencimento: String(new Date().getDate()),
   responsavelFinanceiro: '',
+  statusCliente: 'ativa',
   tipoHonorario: 'individual',
   empresasGrupo: [],
   formaPagamentoEspecial: false,
@@ -83,15 +113,10 @@ const defaultForm = {
   incluirObservacoesAcordo: false,
   observacoesAcordo: '',
   capacidadePagamento: 'paga_em_dia',
-  assinaturaNome: 'Plano Essencial',
+  assinaturaPlanoId: '',
+  assinaturaNome: '',
   assinaturaValorMensal: '',
-  assinaturaDireitos: {
-    financeiro: true,
-    atendimento: true,
-    fiscal: false,
-    trabalhista: false,
-  },
-  assinaturaDescricaoLivre: '',
+  assinaturaServicos: [],
 };
 
 const MESES = [
@@ -114,8 +139,17 @@ const CAPACIDADE_OPTIONS = [
   { value: 'paga_no_mes', label: 'Paga Dentro do Mes' },
   { value: 'atraso_recorrente', label: 'Atraso Recorrente' },
 ];
+const STATUS_CLIENTE_OPTIONS = [
+  { value: 'ativa', label: 'Ativa' },
+  { value: 'sus_parcial', label: 'Sus. Parcial' },
+  { value: 'sus_total', label: 'Sus. Total' },
+  { value: 'ex_cliente', label: 'Ex-Cliente' },
+  { value: 'cnpj_cancelado', label: 'CNPJ Cancelado' },
+  { value: 'cnpj_paralisado', label: 'CNPJ Paralisado' },
+];
+const VENCIMENTO_DIAS_OPTIONS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const capacidadeLabel = (value) =>
-  CAPACIDADE_OPTIONS.find((item) => item.value === value)?.label || 'Nao informado';
+  CAPACIDADE_OPTIONS.find((item) => item.value === value)?.label || 'Não informado';
 
 const defaultHonorariosConfig = [
   { key: 'baseMensal', label: 'Base mensal (BPO contábil)', valor: 280 },
@@ -138,6 +172,7 @@ const FinancialClients = () => {
   const [financialViewTab, setFinancialViewTab] = useState('dados_financeiros');
   const [form, setForm] = useState(defaultForm);
   const [honorariosConfig, setHonorariosConfig] = useState(defaultHonorariosConfig);
+  const [assinaturaPlans, setAssinaturaPlans] = useState([]);
   const [honorariosInput, setHonorariosInput] = useState({
     funcionarios: 0,
     notasFiscais: 0,
@@ -158,6 +193,7 @@ const FinancialClients = () => {
     semFuncionarios: true,
   });
   const [reportClientId, setReportClientId] = useState('');
+  const [showHonorariosInForm, setShowHonorariosInForm] = useState(false);
 
   useEffect(() => {
     if (!hasAccess([], ['financeiro'])) return;
@@ -184,6 +220,20 @@ const FinancialClients = () => {
       }
     };
     loadHonorariosSettings();
+  }, []);
+
+  useEffect(() => {
+    const loadAssinaturaPlans = async () => {
+      try {
+        const response = await api.get('/financial/settings/assinaturas/plans');
+        const items = Array.isArray(response.data?.items) ? response.data.items.map(normalizePlan) : [];
+        setAssinaturaPlans(items);
+      } catch (error) {
+        console.error('Erro ao carregar planos de assinatura:', error);
+        setAssinaturaPlans([]);
+      }
+    };
+    loadAssinaturaPlans();
   }, []);
 
   useEffect(() => {
@@ -221,13 +271,18 @@ const FinancialClients = () => {
   };
 
   const openCreateModal = () => {
-    setForm(defaultForm);
+    setForm({ ...defaultForm, dataVencimento: String(new Date().getDate()) });
     setShowCreateModal(true);
   };
 
   const selectedClient = useMemo(
     () => allClients.find((client) => String(client.id) === String(form.clientId)),
     [allClients, form.clientId],
+  );
+
+  const selectedAssinaturaPlan = useMemo(
+    () => assinaturaPlans.find((plan) => String(plan.id) === String(form.assinaturaPlanoId)) || null,
+    [assinaturaPlans, form.assinaturaPlanoId],
   );
 
   const getHonorarioValor = (key) => Number(honorariosConfig.find((item) => item.key === key)?.valor || 0);
@@ -280,7 +335,7 @@ const FinancialClients = () => {
   const allowedCitiesSet = useMemo(() => {
     if (user?.role === 'admin') return null;
     const cities = Array.isArray(user?.allowed_cities) ? user.allowed_cities : [];
-    const normalized = cities.map(normalizeText);
+    const normalized = cities.map(cityKey).filter(Boolean);
     if (!normalized.length || normalized.includes('todas')) return null;
     return new Set(normalized);
   }, [user]);
@@ -292,14 +347,6 @@ const FinancialClients = () => {
     });
     return map;
   }, [allClients]);
-
-  useEffect(() => {
-    if (!selectedClient) return;
-    setForm((prev) => ({
-      ...prev,
-      quantidadeFuncionarios: String(prev.quantidadeFuncionarios || 0),
-    }));
-  }, [form.clientId, selectedClient?.id]);
 
   const mapRegimeToTipoEmpresa = (regime) => {
     const key = normalizeText(regime || '');
@@ -337,7 +384,7 @@ const FinancialClients = () => {
       valor_desconto: Number(form.valorDesconto || 0),
       valor_com_desconto: Math.max(0, Number(form.valorBoleto || 0) - Number(form.valorDesconto || 0)),
       data_vencimento: form.dataVencimento || '',
-      dia_vencimento: form.dataVencimento ? new Date(`${form.dataVencimento}T00:00:00`).getDate() : 1,
+      dia_vencimento: Number(form.dataVencimento || 1),
       tipo_honorario: 'mensal',
       empresa_individual_grupo: form.tipoHonorario === 'grupo' ? 'grupo' : 'individual',
       contas_pagamento: form.tipoHonorario === 'grupo' ? form.empresasGrupo : [],
@@ -346,9 +393,10 @@ const FinancialClients = () => {
       tipo_pagamento_especial: form.formaPagamentoEspecial ? form.tipoPagamentoEspecial : '',
       tipo_empresa: mapRegimeToTipoEmpresa(selectedClient.tipo_regime || selectedClient.regime),
       status_pagamento: 'em_dia',
+      status_cliente: form.statusCliente || 'ativa',
       status_fiscal: 'sem_movimento',
       responsavel_financeiro: form.responsavelFinanceiro || '',
-      quantidade_funcionarios: Number(form.quantidadeFuncionarios || 0),
+      quantidade_funcionarios: 0,
       capacidade_pagamento: form.capacidadePagamento,
       observacoes: JSON.stringify({
         data_primeiro_vencimento: form.tipoPagamento === 'acordo' ? form.dataPrimeiroVencimento : '',
@@ -360,15 +408,10 @@ const FinancialClients = () => {
         valor_parcela_acordo: form.tipoPagamento === 'acordo' ? Number(form.valorParcelaAcordo || 0) : 0,
         observacoes_acordo: form.tipoPagamento === 'acordo' && form.incluirObservacoesAcordo ? form.observacoesAcordo : '',
         assinatura: {
-          nome: form.assinaturaNome || 'Plano personalizado',
+          plan_id: selectedAssinaturaPlan?.id || '',
+          nome: selectedAssinaturaPlan?.name || form.assinaturaNome || 'Plano personalizado',
           valor_mensal: Number(form.assinaturaValorMensal || form.valorBoleto || honorariosResultado.total || 0),
-          direitos: {
-            financeiro: Boolean(form.assinaturaDireitos?.financeiro),
-            atendimento: Boolean(form.assinaturaDireitos?.atendimento),
-            fiscal: Boolean(form.assinaturaDireitos?.fiscal),
-            trabalhista: Boolean(form.assinaturaDireitos?.trabalhista),
-          },
-          descricao_livre: form.assinaturaDescricaoLivre || '',
+          servicos: Array.isArray(selectedAssinaturaPlan?.selectedServices) ? selectedAssinaturaPlan.selectedServices : [],
         },
       }),
     };
@@ -397,17 +440,43 @@ const FinancialClients = () => {
       const response = await api.put(`/financial/clients/${id}`, patch);
       const updated = mapFinancialFromApi(response.data);
       setFinancialClients((prev) => prev.map((entry) => (entry.id === id ? updated : entry)));
+      setSelectedFinancialClient((prev) => (prev && prev.id === id ? updated : prev));
+      return updated;
     } catch (error) {
       console.error('Erro ao atualizar cliente financeiro:', error);
       toast.error('Falha ao salvar alteração no backend.');
+      return null;
     }
+  };
+
+  const updateClientStatusFromModal = async (statusValue) => {
+    if (!selectedFinancialClient?.id) return;
+    await updateField(selectedFinancialClient.id, 'status_cliente', statusValue);
+  };
+
+  const updateClientAssinaturaPlanFromModal = async (planId) => {
+    if (!selectedFinancialClient?.id) return;
+    const plan = assinaturaPlans.find((item) => String(item.id) === String(planId));
+    const currentObservacoes = parseObservacoes(selectedFinancialClient.observacoes);
+    const nextObservacoes = {
+      ...currentObservacoes,
+      assinatura: plan
+        ? {
+            plan_id: plan.id,
+            nome: plan.name,
+            valor_mensal: Number(selectedFinancialClient.assinatura?.valor_mensal || selectedFinancialClient.valor_boleto || 0),
+            servicos: Array.isArray(plan.selectedServices) ? plan.selectedServices : [],
+          }
+        : null,
+    };
+    await updateField(selectedFinancialClient.id, 'observacoes', JSON.stringify(nextObservacoes));
   };
 
   const filterOptions = [
     { value: 'empresa_nome', label: 'Empresa' },
-    { value: 'responsavel_financeiro', label: 'Responsavel financeiro' },
+    { value: 'responsavel_financeiro', label: 'Responsável financeiro' },
     { value: 'status_fiscal', label: 'Status fiscal' },
-    { value: 'tipo_honorario', label: 'Tipo de honorario' },
+    { value: 'tipo_honorario', label: 'Tipo de honorário' },
     { value: 'tipo_pagamento_especial', label: 'Pagamento especial' },
     { value: 'data_vencimento', label: 'Data de vencimento' },
   ];
@@ -416,7 +485,7 @@ const FinancialClients = () => {
     let base = [...financialClients];
 
     if (allowedCitiesSet) {
-      base = base.filter((item) => allowedCitiesSet.has(normalizeText(item.cidade || cityByClientId.get(String(item.client_id)) || '')));
+      base = base.filter((item) => allowedCitiesSet.has(cityKey(item.cidade || cityByClientId.get(String(item.client_id)) || '')));
     }
 
     base = base.filter((item) => {
@@ -490,7 +559,7 @@ const FinancialClients = () => {
   const financeFullRows = useMemo(() => {
     if (!allowedCitiesSet) return financialClients;
     return financialClients.filter((item) =>
-      allowedCitiesSet.has(normalizeText(item.cidade || cityByClientId.get(String(item.client_id)) || '')),
+      allowedCitiesSet.has(cityKey(item.cidade || cityByClientId.get(String(item.client_id)) || '')),
     );
   }, [financialClients, allowedCitiesSet, cityByClientId]);
 
@@ -524,13 +593,13 @@ const FinancialClients = () => {
       'Data Vencimento',
       'Status Pagamento',
       'Status Fiscal',
-      'Responsavel Financeiro',
+      'Responsável Financeiro',
     ];
 
     const rows = base.map((item) => [
       item.empresa_nome,
       item.cnpj || '',
-      item.cidade || '',
+      canonicalCityLabel(item.cidade || cityByClientId.get(String(item.client_id)) || ''),
       Number(item.valor_boleto || 0).toFixed(2),
       Number(item.valor_com_desconto || 0).toFixed(2),
       item.data_vencimento || '',
@@ -558,7 +627,7 @@ const FinancialClients = () => {
       <div className="glass p-8 rounded-2xl text-center">
         <DollarSign className="w-16 h-16 text-red-400 mx-auto mb-4 opacity-50" />
         <h2 className="text-xl font-bold text-white mb-2">Acesso Restrito</h2>
-        <p className="text-gray-400">Voce nao tem permissao para acessar este modulo.</p>
+        <p className="text-gray-400">Você não tem permissão para acessar este módulo.</p>
       </div>
     );
   }
@@ -819,14 +888,14 @@ const FinancialClients = () => {
                 {financialListMode === 'detalhado' ? (
                   <>
                     <th className="text-left p-4 text-gray-300 font-semibold">CNPJ</th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">Valor boleto</th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">Valor desconto</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Valor boleto (R$)</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Valor desconto (R$)</th>
                     <th className="text-left p-4 text-gray-300 font-semibold">Valor com desconto</th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">Data vencimento</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Data de vencimento</th>
                     <th className="text-left p-4 text-gray-300 font-semibold">Qtd. funcionarios</th>
                     <th className="text-left p-4 text-gray-300 font-semibold">Status fiscal</th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">Responsavel financeiro</th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">Tipo honorario</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Responsável financeiro</th>
+                    <th className="text-left p-4 text-gray-300 font-semibold">Tipo de honorário</th>
                     <th className="text-left p-4 text-gray-300 font-semibold">Tipo pagamento</th>
                     <th className="text-left p-4 text-gray-300 font-semibold">Capacidade de pagamento</th>
                     <th className="text-left p-4 text-gray-300 font-semibold">Pagamento especial</th>
@@ -905,7 +974,7 @@ const FinancialClients = () => {
                             {item.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'}
                           </span>
                         </td>
-                        <td className="p-4 text-xs text-gray-200">{item.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorario'}</td>
+                        <td className="p-4 text-xs text-gray-200">{item.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorário'}</td>
                         <td className="p-4">
                           <select
                             value={item.capacidade_pagamento || 'paga_em_dia'}
@@ -973,7 +1042,7 @@ const FinancialClients = () => {
                   <tr key={`full-${item.id}`} className="border-b border-gray-800/50 hover:bg-red-600/5 transition-colors">
                     <td className="p-4 text-white font-medium">{item.empresa_nome}</td>
                     <td className="p-4 text-gray-300 text-xs font-mono">{item.cnpj || '-'}</td>
-                    <td className="p-4 text-gray-300">{item.cidade || cityByClientId.get(String(item.client_id)) || '-'}</td>
+                    <td className="p-4 text-gray-300">{canonicalCityLabel(item.cidade || cityByClientId.get(String(item.client_id)) || '-')}</td>
                     <td className="p-4 text-emerald-300 text-sm font-semibold">{formatCurrency(item.valor_com_desconto || 0)}</td>
                     <td className="p-4 text-gray-200 text-sm">{item.responsavel_financeiro || '-'}</td>
                     <td className="p-4">
@@ -1015,46 +1084,78 @@ const FinancialClients = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <DetailItem label="Empresa" value={selectedFinancialClient.empresa_nome} />
                   <DetailItem label="CNPJ" value={selectedFinancialClient.cnpj || '-'} />
-                  <DetailItem label="Cidade" value={selectedFinancialClient.cidade || '-'} />
+                  <DetailItem label="Cidade" value={canonicalCityLabel(selectedFinancialClient.cidade || '-')} />
                   <DetailItem label="Valor boleto" value={formatCurrency(selectedFinancialClient.valor_boleto)} />
                   <DetailItem label="Valor desconto" value={formatCurrency(selectedFinancialClient.valor_desconto)} />
                   <DetailItem label="Valor com desconto" value={formatCurrency(selectedFinancialClient.valor_com_desconto)} />
-                  <DetailItem label="Data vencimento" value={selectedFinancialClient.data_vencimento || '-'} />
-                  <DetailItem label="Qtd. funcionarios" value={selectedFinancialClient.quantidade_funcionarios ?? 0} />
+                  <DetailItem label="Data de vencimento" value={selectedFinancialClient.data_vencimento || '-'} />
+                  <DetailItem label="Qtd. funcionários" value={selectedFinancialClient.quantidade_funcionarios ?? 0} />
                   <DetailItem label="Status fiscal" value={selectedFinancialClient.status_fiscal === 'com_movimento' ? 'Com movimento' : 'Sem movimento'} />
-                  <DetailItem label="Responsavel financeiro" value={selectedFinancialClient.responsavel_financeiro || '-'} />
-                  <DetailItem label="Tipo honorario" value={selectedFinancialClient.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'} />
-                  <DetailItem label="Tipo pagamento" value={selectedFinancialClient.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorario'} />
+                  <DetailItem label="Responsável financeiro" value={selectedFinancialClient.responsavel_financeiro || '-'} />
+                  <DetailItem label="Tipo honorário" value={selectedFinancialClient.tipo_honorario === 'grupo' ? 'Grupo de empresas' : 'Empresa individual'} />
+                  <DetailItem label="Tipo pagamento" value={selectedFinancialClient.tipo_pagamento === 'acordo' ? 'Acordo' : 'Honorário'} />
                   <DetailItem label="Capacidade de pagamento" value={capacidadeLabel(selectedFinancialClient.capacidade_pagamento)} />
+                  <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div className="text-xs uppercase tracking-wide text-gray-400">Status</div>
+                    <select
+                      value={selectedFinancialClient.status_cliente || 'ativa'}
+                      onChange={(e) => updateClientStatusFromModal(e.target.value)}
+                      className="mt-2 w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                    >
+                      {STATUS_CLIENTE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-sm font-semibold text-white">Assinatura vinculada (Financeiro + Atendimento)</p>
+                  <p className="text-sm font-semibold text-white">Assinatura vinculada</p>
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <DetailItem label="Plano" value={selectedFinancialClient.assinatura?.nome || 'Nao definido'} />
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-400">Plano</div>
+                      <select
+                        value={selectedFinancialClient.assinatura?.plan_id || ''}
+                        onChange={(e) => updateClientAssinaturaPlanFromModal(e.target.value)}
+                        className="mt-2 w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                      >
+                        <option value="">Selecione...</option>
+                        {assinaturaPlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>{plan.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <DetailItem label="Valor mensal" value={formatCurrency(selectedFinancialClient.assinatura?.valor_mensal || 0)} />
-                    <DetailItem
-                      label="Direitos"
-                      value={[
-                        selectedFinancialClient.assinatura?.direitos?.financeiro ? 'Financeiro' : null,
-                        selectedFinancialClient.assinatura?.direitos?.atendimento ? 'Atendimento' : null,
-                        selectedFinancialClient.assinatura?.direitos?.fiscal ? 'Fiscal' : null,
-                        selectedFinancialClient.assinatura?.direitos?.trabalhista ? 'Trabalhista' : null,
-                      ].filter(Boolean).join(', ') || 'Sem direitos definidos'}
-                    />
+                    <DetailItem label="Serviços no plano" value={String(selectedFinancialClient.assinatura?.servicos?.length || 0)} />
                   </div>
-                  {selectedFinancialClient.assinatura?.descricao_livre ? (
-                    <p className="mt-3 text-sm text-gray-300">{selectedFinancialClient.assinatura.descricao_livre}</p>
-                  ) : null}
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3">
+                    <p className="text-xs text-gray-400 mb-2">Serviços incluídos</p>
+                    {selectedFinancialClient.assinatura?.servicos?.length ? (
+                      <ul className="space-y-1 text-sm text-gray-200">
+                        {selectedFinancialClient.assinatura.servicos.map((service) => (
+                          <li key={service.id || service.nome}>- {service.nome}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-500">Sem serviços vinculados.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <DetailItem label="Razao social" value={selectedBaseClientForView?.nome_empresa || selectedFinancialClient.empresa_nome} />
+                <DetailItem label="Razão social" value={selectedBaseClientForView?.nome_empresa || selectedFinancialClient.empresa_nome} />
                 <DetailItem label="Nome fantasia" value={selectedBaseClientForView?.nome_fantasia || '-'} />
                 <DetailItem label="CNPJ" value={selectedBaseClientForView?.cnpj || selectedFinancialClient.cnpj || '-'} />
-                <DetailItem label="Cidade" value={selectedBaseClientForView?.cidade || selectedFinancialClient.cidade || '-'} />
+                <DetailItem label="Cidade" value={canonicalCityLabel(selectedBaseClientForView?.cidade || selectedFinancialClient.cidade || '-')} />
                 <DetailItem label="Regime" value={selectedBaseClientForView?.tipo_regime || '-'} />
-                <DetailItem label="Status" value={selectedBaseClientForView?.status || 'ativo'} />
+                <DetailItem
+                  label="Status"
+                  value={
+                    STATUS_CLIENTE_OPTIONS.find((opt) => opt.value === (selectedFinancialClient.status_cliente || 'ativa'))?.label
+                    || selectedBaseClientForView?.status
+                    || 'Ativa'
+                  }
+                />
               </div>
             )}
           </div>
@@ -1087,7 +1188,7 @@ const FinancialClients = () => {
                   {allClients
                     .filter((client) => {
                       if (!allowedCitiesSet) return true;
-                      return allowedCitiesSet.has(normalizeText(client.cidade || ''));
+                      return allowedCitiesSet.has(cityKey(client.cidade || client.cidade_atendimento || ''));
                     })
                     .map((client) => (
                     <option key={client.id} value={client.id}>
@@ -1097,7 +1198,7 @@ const FinancialClients = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Valor boleto</label>
+                <label className="block text-sm text-gray-300 mb-2">Valor boleto (R$)</label>
                 <input
                   type="number"
                   value={form.valorBoleto}
@@ -1106,7 +1207,7 @@ const FinancialClients = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Valor desconto</label>
+                <label className="block text-sm text-gray-300 mb-2">Valor desconto (R$)</label>
                 <input
                   type="number"
                   value={form.valorDesconto}
@@ -1115,25 +1216,19 @@ const FinancialClients = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Data de vencimento</label>
-                <input
-                  type="date"
+                <label className="block text-sm text-gray-300 mb-2">Data de vencimento (dia)</label>
+                <select
                   value={form.dataVencimento}
                   onChange={(e) => setForm((prev) => ({ ...prev, dataVencimento: e.target.value }))}
                   className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-                />
+                >
+                  {VENCIMENTO_DIAS_OPTIONS.map((day) => (
+                    <option key={day} value={day}>Dia {day}</option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Quantidade de funcionarios</label>
-                <input
-                  type="number"
-                  value={form.quantidadeFuncionarios}
-                  onChange={(e) => setForm((prev) => ({ ...prev, quantidadeFuncionarios: e.target.value }))}
-                  className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-300 mb-2">Responsavel financeiro</label>
+                <label className="block text-sm text-gray-300 mb-2">Responsável financeiro</label>
                 <input
                   value={form.responsavelFinanceiro}
                   onChange={(e) => setForm((prev) => ({ ...prev, responsavelFinanceiro: e.target.value }))}
@@ -1141,7 +1236,19 @@ const FinancialClients = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Tipo de honorario</label>
+                <label className="block text-sm text-gray-300 mb-2">Status</label>
+                <select
+                  value={form.statusCliente}
+                  onChange={(e) => setForm((prev) => ({ ...prev, statusCliente: e.target.value }))}
+                  className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
+                >
+                  {STATUS_CLIENTE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-2">Tipo de honorário</label>
                 <select
                   value={form.tipoHonorario}
                   onChange={(e) => setForm((prev) => ({ ...prev, tipoHonorario: e.target.value }))}
@@ -1164,7 +1271,7 @@ const FinancialClients = () => {
                   }
                   className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
                 >
-                  <option value="honorario">Honorario</option>
+                  <option value="honorario">Honorário</option>
                   <option value="acordo">Acordo</option>
                 </select>
               </div>
@@ -1183,13 +1290,27 @@ const FinancialClients = () => {
               <div className="md:col-span-3 rounded-lg border border-gray-700 bg-black/20 p-3">
                 <p className="text-sm font-medium text-white">Assinatura vinculada (direitos por plano)</p>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-2">Nome do plano</label>
-                    <input
-                      value={form.assinaturaNome}
-                      onChange={(e) => setForm((prev) => ({ ...prev, assinaturaNome: e.target.value }))}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm text-gray-300 mb-2">Plano</label>
+                    <select
+                      value={form.assinaturaPlanoId}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          assinaturaPlanoId: e.target.value,
+                          assinaturaNome:
+                            assinaturaPlans.find((plan) => String(plan.id) === String(e.target.value))?.name || '',
+                        }))
+                      }
                       className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-                    />
+                    >
+                      <option value="">Selecione um plano...</option>
+                      {assinaturaPlans.map((plan) => (
+                        <option key={plan.id} value={plan.id}>
+                          {plan.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm text-gray-300 mb-2">Valor mensal da assinatura</label>
@@ -1200,46 +1321,40 @@ const FinancialClients = () => {
                       className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
                     />
                   </div>
-                  <div className="flex items-end">
-                    <p className="text-xs text-gray-400">Esta área define o que o cliente tem direito pelo preço pago.</p>
+                  <div className="flex items-end justify-end">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/financeiro/assinaturas')}
+                      className="rounded-lg border border-sky-500/35 bg-sky-500/15 px-3 py-1.5 text-xs text-sky-100 hover:bg-sky-500/25"
+                    >
+                      Cadastrar novo plano
+                    </button>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-gray-200">
-                  {[
-                    { key: 'financeiro', label: 'Financeiro' },
-                    { key: 'atendimento', label: 'Atendimento' },
-                    { key: 'fiscal', label: 'Fiscal' },
-                    { key: 'trabalhista', label: 'Trabalhista' },
-                  ].map((item) => (
-                    <label key={item.key} className="inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(form.assinaturaDireitos?.[item.key])}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            assinaturaDireitos: {
-                              ...(prev.assinaturaDireitos || {}),
-                              [item.key]: e.target.checked,
-                            },
-                          }))
-                        }
-                      />
-                      {item.label}
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm text-gray-300 mb-2">Descrição do que está incluso</label>
-                  <textarea
-                    rows={2}
-                    value={form.assinaturaDescricaoLivre}
-                    onChange={(e) => setForm((prev) => ({ ...prev, assinaturaDescricaoLivre: e.target.value }))}
-                    className="w-full bg-black/30 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-                    placeholder="Ex.: atendimento prioritário, fechamento mensal, suporte via chat..."
-                  />
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/25 p-3">
+                  <p className="text-xs text-gray-400 mb-2">Serviços incluídos no plano selecionado</p>
+                  {selectedAssinaturaPlan?.selectedServices?.length ? (
+                    <ul className="space-y-1 text-sm text-gray-200">
+                      {selectedAssinaturaPlan.selectedServices.map((service) => (
+                        <li key={service.id || service.nome}>- {service.nome}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">Selecione um plano para ver os serviços.</p>
+                  )}
                 </div>
               </div>
+              <div className="md:col-span-3 rounded-lg border border-gray-700 bg-black/20 p-3">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={showHonorariosInForm}
+                    onChange={(e) => setShowHonorariosInForm(e.target.checked)}
+                  />
+                  Exibir calculadora de honorários no cadastro
+                </label>
+              </div>
+              {showHonorariosInForm ? (
               <div className="md:col-span-3 rounded-lg border border-sky-700/50 bg-sky-900/10 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-white">Calculadora de valor de honorários</p>
@@ -1307,6 +1422,7 @@ const FinancialClients = () => {
                   <p className="mt-1 text-lg font-semibold text-emerald-100">Honorário sugerido: {formatCurrency(honorariosResultado.total)}</p>
                 </div>
               </div>
+              ) : null}
               {form.tipoHonorario === 'grupo' ? (
                 <div className="md:col-span-2">
                   <label className="block text-sm text-gray-300 mb-2">Vincular empresas do grupo</label>
