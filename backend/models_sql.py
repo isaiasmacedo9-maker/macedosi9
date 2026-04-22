@@ -113,6 +113,20 @@ class ClientActivityLogSQL(Base):
     details = Column(Text)  # JSON string
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
+
+class FinancialSettingSQL(Base):
+    __tablename__ = "financial_settings"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    key = Column(String(100), nullable=False, unique=True, index=True)
+    items = Column(Text, default="[]")  # JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_id = Column(String(36))
+    created_by_name = Column(String(255))
+    updated_by_id = Column(String(36))
+    updated_by_name = Column(String(255))
+
 # ==================== CONTAS A RECEBER ====================
 class ContaReceberSQL(Base):
     __tablename__ = "contas_receber"

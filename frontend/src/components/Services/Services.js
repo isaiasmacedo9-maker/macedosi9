@@ -568,10 +568,22 @@ const Services = () => {
       if (!map.has(key)) map.set(key, name);
     });
 
+    const membersByDepartment = servicesConfig?.membersByDepartment || {};
+    Object.values(membersByDepartment).forEach((members) => {
+      if (!Array.isArray(members)) return;
+      members.forEach((member) => {
+        const label =
+          (typeof member === 'string' ? member : (member?.name || member?.nome || member?.email || '')) || '';
+        const key = normalizeText(label);
+        if (!label || !key) return;
+        if (!map.has(key)) map.set(key, label);
+      });
+    });
+
     return Array.from(map.entries())
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR'));
-  }, [userVisibleServicos, allUsers]);
+  }, [userVisibleServicos, allUsers, servicesConfig]);
 
   const rankedClienteOptions = useMemo(() => {
     const term = normalizeText(clientSearchTerm);

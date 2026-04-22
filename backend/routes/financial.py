@@ -206,6 +206,35 @@ def _normalize_situacao(value: Any, paid: bool) -> str:
     return "em_aberto"
 
 
+def _build_csv_row_external_id(csv_row: Dict[str, Any]) -> str:
+    normalized_row = _build_normalized_csv_row(csv_row)
+    seed = "|".join(
+        [
+            str(_csv_get(normalized_row, "ID", "Id")).strip(),
+            str(_csv_get(normalized_row, "Dia", "Data_Lancamento")).strip(),
+            str(_csv_get(normalized_row, "Descrição", "Descricao", "descricao")).strip(),
+            str(_csv_get(normalized_row, "Valor_Num", "Valor")).strip(),
+        ]
+    )
+    digest = uuid.uuid5(uuid.NAMESPACE_DNS, seed or str(uuid.uuid4()))
+    return str(digest)[:8].upper()
+
+
+def _build_normalized_csv_row(csv_row: Dict[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in (csv_row or {}).items():
+        normalized[_normalize_text(key)] = value
+    return normalized
+
+
+def _csv_get(csv_row_normalized: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = csv_row_normalized.get(_normalize_text(key))
+        if value not in (None, ""):
+            return value
+    return ""
+
+
 async def _get_contas_pagar_settings_row():
     collection = await get_financial_settings_collection()
     row = await collection.find_one({"key": "contas_pagar"})
@@ -1527,42 +1556,45 @@ async def import_contas_pagar_csv(
     updated = 0
 
     for csv_row in reader:
-        external_id = str(csv_row.get("ID") or csv_row.get("Id") or "").strip()
-        descricao = str(csv_row.get("Descrição") or csv_row.get("Descricao") or csv_row.get("descricao") or "").strip()
+        normalized_row = _build_normalized_csv_row(csv_row)
+        external_id = str(_csv_get(normalized_row, "ID", "Id")).strip()
+        descricao = str(_csv_get(normalized_row, "Descrição", "Descricao", "descricao")).strip()
         if not external_id and not descricao:
             continue
+        if not external_id:
+            external_id = _build_csv_row_external_id(csv_row)
 
-        paid = _parse_bool(csv_row.get("Pago_Bool") or csv_row.get("Pago"))
-        situacao = _normalize_situacao(csv_row.get("Situação") or csv_row.get("Situacao"), paid)
+        paid = _parse_bool(_csv_get(normalized_row, "Pago_Bool", "Pago"))
+        situacao = _normalize_situacao(_csv_get(normalized_row, "Situação", "Situacao"), paid)
 
         item_payload = {
             "id": existing_by_external.get(external_id, {}).get("id") or str(uuid.uuid4()),
-            "external_id": external_id or str(uuid.uuid4())[:8].upper(),
+            "external_id": external_id,
             "descricao": descricao or "Sem descrição",
-            "categoria": str(csv_row.get("Categoria") or "").strip(),
-            "subcategoria": str(csv_row.get("Subcategoria") or "").strip(),
-            "valor": _parse_br_decimal(csv_row.get("Valor_Num") or csv_row.get("Valor")),
-            "valor_pago": _parse_br_decimal(csv_row.get("Valor_Pago_Num") or csv_row.get("Valor Pago")),
-            "juros": _parse_br_decimal(csv_row.get("Juros_Num") or csv_row.get("Juros")),
-            "valor_restante": _parse_br_decimal(csv_row.get("Valor_Restante_Num") or csv_row.get("Valor Restante")),
+            "categoria": str(_csv_get(normalized_row, "Categoria") or "").strip(),
+            "subcategoria": str(_csv_get(normalized_row, "Subcategoria") or "").strip(),
+            "valor": _parse_br_decimal(_csv_get(normalized_row, "Valor_Num", "Valor")),
+            "valor_pago": _parse_br_decimal(_csv_get(normalized_row, "Valor_Pago_Num", "Valor Pago")),
+            "juros": _parse_br_decimal(_csv_get(normalized_row, "Juros_Num", "Juros")),
+            "valor_restante": _parse_br_decimal(_csv_get(normalized_row, "Valor_Restante_Num", "Valor Restante")),
             "situacao": situacao,
-            "forma_pagamento": str(csv_row.get("Forma de Pagamento") or "").strip(),
-            "tipo_despesa": str(csv_row.get("Tipo de despesa") or "").strip(),
-            "centro_custo": str(csv_row.get("Centro de Custo") or "").strip(),
-            "conta_utilizada": str(csv_row.get("Conta Utilizada") or "").strip(),
-            "competencia": str(csv_row.get("Competência") or csv_row.get("Competencia") or "").strip(),
-            "natureza_despesa": str(csv_row.get("Natureza da Despesa") or "").strip(),
-            "recorrente": _parse_bool(csv_row.get("Recorrente")),
-            "tipo_parcela": str(csv_row.get("Tipo de Parcela") or "").strip(),
-            "numero_parcela": _parse_optional_int(csv_row.get("Nº da Parcela") or csv_row.get("No da Parcela")),
-            "total_parcelas": _parse_optional_int(csv_row.get("Total de Parcelas")),
-            "prioridade": str(csv_row.get("Prioridade") or "").strip(),
-            "comentario": str(csv_row.get("Comentário") or csv_row.get("Comentario") or "").strip(),
-            "comprovante_anexo": str(csv_row.get("Comprovante / Anexo") or "").strip(),
+            "forma_pagamento": str(_csv_get(normalized_row, "Forma de Pagamento") or "").strip(),
+            "tipo_despesa": str(_csv_get(normalized_row, "Tipo de despesa") or "").strip(),
+            "centro_custo": str(_csv_get(normalized_row, "Centro de Custo") or "").strip(),
+            "conta_utilizada": str(_csv_get(normalized_row, "Conta Utilizada") or "").strip(),
+            "competencia": str(_csv_get(normalized_row, "Competência", "Competencia") or "").strip(),
+            "natureza_despesa": str(_csv_get(normalized_row, "Natureza da Despesa") or "").strip(),
+            "recorrente": _parse_bool(_csv_get(normalized_row, "Recorrente")),
+            "tipo_parcela": str(_csv_get(normalized_row, "Tipo de Parcela") or "").strip(),
+            "numero_parcela": _parse_optional_int(_csv_get(normalized_row, "Nº da Parcela", "No da Parcela")),
+            "total_parcelas": _parse_optional_int(_csv_get(normalized_row, "Total de Parcelas")),
+            "prioridade": str(_csv_get(normalized_row, "Prioridade") or "").strip(),
+            "comentario": str(_csv_get(normalized_row, "Comentário", "Comentario") or "").strip(),
+            "comprovante_anexo": str(_csv_get(normalized_row, "Comprovante / Anexo") or "").strip(),
             "pago": paid,
-            "data_lancamento": _parse_date_value(csv_row.get("Data_Lancamento") or csv_row.get("Dia")) or date.today().isoformat(),
-            "data_pagamento_ref": _parse_date_value(csv_row.get("Data_Pagamento_Ref") or csv_row.get("Pagamento")),
-            "data_reproducao": _parse_date_value(csv_row.get("Data_Reproducao_ISO") or csv_row.get("Data de Reprodução")),
+            "data_lancamento": _parse_date_value(_csv_get(normalized_row, "Data_Lancamento", "Dia")) or date.today().isoformat(),
+            "data_pagamento_ref": _parse_date_value(_csv_get(normalized_row, "Data_Pagamento_Ref", "Pagamento")),
+            "data_reproducao": _parse_date_value(_csv_get(normalized_row, "Data_Reproducao_ISO", "Data de Reprodução")),
             "updated_at": now_iso,
             "updated_by_id": str(current_user.id),
             "updated_by_name": str(current_user.name),

@@ -236,7 +236,8 @@ def convert_to_dict(obj, exclude_relations=False):
                            'documentos_anexos', 'documentos_necessarios', 'arquivos_entrega',
                            'historico_alteracoes', 'checklist_items', 'documentos', 'impostos',
                            'tickets_relacionados', 'documentos_relacionados', 'arquivos',
-                           'historico_status', 'anexos', 'log_processamento']:
+                           'historico_status', 'anexos', 'log_processamento', 'items',
+                           'metadata_json', 'candidatos_json', 'details']:
             value = json_loads(value)
         
         result[column.name] = value

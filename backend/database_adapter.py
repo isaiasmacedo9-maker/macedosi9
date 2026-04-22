@@ -174,6 +174,7 @@ class DatabaseAdapter:
             'users': UserSQL,
             'clients': ClientSQL,
             'financial_clients': FinancialClientSQL,
+            'financial_settings': FinancialSettingSQL,
             'contas_receber': ContaReceberSQL,
             'historico_alteracoes': HistoricoAlteracaoSQL,
             'contatos_cobranca': ContatoCobrancaSQL,
