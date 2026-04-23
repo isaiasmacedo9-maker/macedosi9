@@ -67,6 +67,21 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
     [allUsers],
   );
 
+  const dedupedUsersNormalized = useMemo(() => {
+    const seen = new Set();
+    const seenIdentity = new Set();
+    const normalized = [];
+    usersNormalized.forEach((user) => {
+      const id = String(user?.id || '');
+      const identity = normalize(user?.name || id);
+      if (!id || seen.has(id) || (identity && seenIdentity.has(identity))) return;
+      seen.add(id);
+      if (identity) seenIdentity.add(identity);
+      normalized.push({ id, name: user?.name || 'Usuário' });
+    });
+    return normalized;
+  }, [usersNormalized]);
+
   const clientsNormalized = useMemo(
     () =>
       allClients.map((client, index) => ({
@@ -84,8 +99,13 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
   );
 
   const currentDeptMembers = useMemo(
-    () => usersNormalized.filter((item) => currentDeptMemberIds.includes(item.id)),
-    [usersNormalized, currentDeptMemberIds],
+    () => dedupedUsersNormalized.filter((item) => currentDeptMemberIds.includes(item.id)),
+    [dedupedUsersNormalized, currentDeptMemberIds],
+  );
+
+  const availableUsers = useMemo(
+    () => dedupedUsersNormalized.filter((item) => !currentDeptMemberIds.includes(item.id)),
+    [dedupedUsersNormalized, currentDeptMemberIds],
   );
 
   const currentDeptManagerId = assignmentsByDepartment[selectedDepartment?.id]?.managerId || '';
@@ -117,6 +137,40 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
   useEffect(() => {
     if (!selectedDepartmentId && departments.length) setSelectedDepartmentId(departments[0].id);
   }, [departments, selectedDepartmentId]);
+
+  useEffect(() => {
+    setAllUsersSelection([]);
+    setDeptUsersSelection([]);
+    setAllClientsSelection([]);
+    setAssignedClientsSelection([]);
+  }, [selectedDepartmentId]);
+
+  useEffect(() => {
+    if (!dedupedUsersNormalized.length) return;
+    const nameToId = new Map(dedupedUsersNormalized.map((user) => [normalize(user.name), user.id]));
+    setMembersByDepartment((prev) => {
+      if (!prev || typeof prev !== 'object') return prev;
+      let changed = false;
+      const next = {};
+      Object.entries(prev).forEach(([depId, values]) => {
+        const normalizedIds = Array.from(
+          new Set(
+            (Array.isArray(values) ? values : [])
+              .map((entry) => {
+                const raw = String(entry || '').trim();
+                if (!raw) return null;
+                if (dedupedUsersNormalized.some((user) => user.id === raw)) return raw;
+                return nameToId.get(normalize(raw)) || null;
+              })
+              .filter(Boolean),
+          ),
+        );
+        if (JSON.stringify(normalizedIds) !== JSON.stringify(Array.isArray(values) ? values : [])) changed = true;
+        next[depId] = normalizedIds;
+      });
+      return changed ? next : prev;
+    });
+  }, [dedupedUsersNormalized]);
 
   useEffect(() => {
     const loadRemoteConfig = async () => {
@@ -229,10 +283,13 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
   };
 
   const addUsersToDepartment = () => {
-    if (!selectedDepartment || !allUsersSelection.length) return;
+    if (!selectedDepartment || !allUsersSelection.length) {
+      toast.error('Selecione ao menos um usuário para adicionar.');
+      return;
+    }
     setMembersByDepartment((prev) => ({
-      ...prev,
-      [selectedDepartment.id]: [...new Set([...(prev[selectedDepartment.id] || []), ...allUsersSelection])],
+      ...(prev || {}),
+      [selectedDepartment.id]: [...new Set([...(prev?.[selectedDepartment.id] || []), ...allUsersSelection])],
     }));
     pushLog('Configurações', 'add', `Adicionou ${allUsersSelection.length} membro(s) em ${selectedDepartment.name}.`);
     setAllUsersSelection([]);
@@ -240,7 +297,10 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
   };
 
   const removeUsersFromDepartment = () => {
-    if (!selectedDepartment || !deptUsersSelection.length) return;
+    if (!selectedDepartment || !deptUsersSelection.length) {
+      toast.error('Selecione ao menos um usuário para remover.');
+      return;
+    }
     setMembersByDepartment((prev) => ({
       ...prev,
       [selectedDepartment.id]: (prev[selectedDepartment.id] || []).filter((id) => !deptUsersSelection.includes(id)),
@@ -438,7 +498,7 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
                   className="mt-1 w-full rounded-lg border border-white/20 bg-[#1f2736] px-3 py-2 text-white outline-none"
                 >
                   <option value="">Selecione</option>
-                  {usersNormalized.map((u) => (
+                  {dedupedUsersNormalized.map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -449,7 +509,7 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
               <div>
                 <div className="mb-2 text-2xl font-semibold text-white">Todos os usuários</div>
                 <div className="max-h-[260px] overflow-auto rounded-lg border border-white/10">
-                  {usersNormalized.map((u) => (
+                  {availableUsers.map((u) => (
                     <label key={u.id} className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-sm text-gray-200">
                       <span>{u.name}</span>
                       <input
@@ -463,6 +523,9 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
                       />
                     </label>
                   ))}
+                  {!availableUsers.length ? (
+                    <div className="px-3 py-3 text-sm text-gray-400">Todos os usuários já estão neste setor.</div>
+                  ) : null}
                 </div>
                 <button type="button" onClick={addUsersToDepartment} className="mt-2 w-full rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 font-semibold text-emerald-200">
                   Adicionar ao departamento
@@ -533,7 +596,7 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
                 Escolha o responsável
                 <select value={currentDeptManagerId} onChange={(e) => setDepartmentManager(e.target.value)} className="mt-1 w-full rounded-lg border border-white/20 bg-[#1f2736] px-3 py-2 text-white outline-none">
                   <option value="">Selecione</option>
-                  {usersNormalized.map((u) => (
+                  {dedupedUsersNormalized.map((u) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
@@ -587,7 +650,7 @@ const ServicesSettingsPanel = ({ allUsers = [], allClients = [], currentUser }) 
 
               <div>
                 <div className="mb-2 text-2xl font-semibold text-white">
-                  Clientes de {usersNormalized.find((u) => u.id === currentDeptManagerId)?.name || 'não atribuído'}
+                  Clientes de {dedupedUsersNormalized.find((u) => u.id === currentDeptManagerId)?.name || 'não atribuído'}
                 </div>
                 <div className="flex items-center rounded-lg border border-white/20 bg-[#1f2736] px-3">
                   <Search className="h-4 w-4 text-gray-400" />

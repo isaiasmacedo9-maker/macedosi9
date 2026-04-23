@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Building2, History, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Eye, EyeOff, Building2, History, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ALL_INTERNAL_MODULE_KEYS, deriveAllowedModules, getEmailFromName, INTERNAL_MODULES } from '../../config/modules';
 import api from '../../config/api';
@@ -138,8 +138,12 @@ const mergeConfigWithDefaults = (incomingConfig = {}) => {
     ...normalizedIncomingSetores,
   };
 
-  const clientesBase = Array.isArray(mergedSetores.Clientes) ? mergedSetores.Clientes : [];
-  mergedSetores.Clientes = [...new Set([...DEFAULT_CONFIG.setores.Clientes, ...clientesBase])];
+  if (Array.isArray(normalizedIncomingSetores.Clientes) && normalizedIncomingSetores.Clientes.length) {
+    mergedSetores.Clientes = [...new Set(normalizedIncomingSetores.Clientes)];
+  } else {
+    const clientesBase = Array.isArray(mergedSetores.Clientes) ? mergedSetores.Clientes : [];
+    mergedSetores.Clientes = [...new Set([...DEFAULT_CONFIG.setores.Clientes, ...clientesBase])];
+  }
 
   return {
     ...DEFAULT_CONFIG,
@@ -173,6 +177,7 @@ const Users = () => {
   const [logsActionFilter, setLogsActionFilter] = useState('todos');
   const [logsSearch, setLogsSearch] = useState('');
   const [selectedClientLog, setSelectedClientLog] = useState(null);
+  const [usersSort, setUsersSort] = useState({ key: 'name', direction: 'asc' });
   const [clientCatalog, setClientCatalog] = useState([]);
   const [setupMap, setSetupMap] = useState({});
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -521,12 +526,21 @@ const Users = () => {
     const normalizedPassword = String(formData.password || '').trim();
     const emailFromForm = getEmailFromName(formData.name);
 
+    const normalizedPermissoes = (Array.isArray(formData.permissoes) ? formData.permissoes : [])
+      .map((perm) => {
+        const setor = String(perm?.setor || '').trim();
+        const visualizacoes = Array.isArray(perm?.visualizacoes)
+          ? [...new Set(perm.visualizacoes.map((item) => String(item || '').trim()).filter(Boolean))]
+          : [];
+        return { setor, visualizacoes };
+      })
+      .filter((perm) => perm.setor);
+
     const payload = {
-      ...formData,
       name: normalizedName,
-      allowed_modules: formData.role === 'admin'
-        ? [...ALL_INTERNAL_MODULE_KEYS]
-        : ['dashboard', ...formData.allowed_modules.filter((item) => item !== 'dashboard')],
+      role: formData.role,
+      allowed_cities: Array.isArray(formData.allowed_cities) ? formData.allowed_cities : [],
+      permissoes: normalizedPermissoes,
       password: editingUser
         ? (isChangingPassword && normalizedPassword ? normalizedPassword : undefined)
         : normalizedPassword,
@@ -548,10 +562,22 @@ const Users = () => {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error('Falha no backend');
+      if (!response.ok) {
+        let message = 'Falha no backend';
+        try {
+          const errPayload = await response.json();
+          message = errPayload?.detail || message;
+        } catch (_) {
+          // keep default message
+        }
+        throw new Error(message);
+      }
 
       const userEmail = editingUser?.email || emailFromForm;
-      saveModuleOverride(userEmail, payload.role, payload.allowed_modules);
+      const modulesForOverride = formData.role === 'admin'
+        ? [...ALL_INTERNAL_MODULE_KEYS]
+        : ['dashboard', ...formData.allowed_modules.filter((item) => item !== 'dashboard')];
+      saveModuleOverride(userEmail, payload.role, modulesForOverride);
       await loadUsers();
       resetForm();
       alert(editingUser ? 'Usuário atualizado!' : 'Usuário criado!');
@@ -684,10 +710,15 @@ const Users = () => {
     if (!primaryClient || !senha || !email) return;
 
     const nome = primaryClient.nome;
-    const clientRefId = String(clientFormData.fixedClientRefId || primaryClient.clientRefId || '').trim();
+    const clientRefId = String(clientFormData.fixedClientRefId || primaryClient.clientRefId || primaryClient.id || '').trim();
     const clienteId = String(clientFormData.fixedClienteId || primaryClient.clienteId || '').trim();
     const linkedClientRefs = [...new Set(selectedClients.map((item) => String(item.clientRefId || '').trim()).filter(Boolean))];
     const linkedClientIds = [...new Set(selectedClients.map((item) => String(item.clienteId || '').trim()).filter(Boolean))];
+
+    if (!clientRefId) {
+      alert('Selecione uma empresa válida para vincular o usuário cliente.');
+      return;
+    }
 
     try {
       await api.put(`/clients/portal-users/${clientRefId}`, {
@@ -732,21 +763,8 @@ const Users = () => {
       })
       .filter((item) => item.clientRefId && !linkedToOtherUsers.has(String(item.clientRefId)));
 
-    const fromSetupMap = Object.entries(setupMap || {}).map(([clientRefId, setup]) => {
-      const refId = String(clientRefId || '').trim();
-      const nome = getSetupClientName(setup, refId);
-      const clienteId = String(setup?.acessoCliente?.clienteId || refId);
-      return {
-        id: refId,
-        nome,
-        email: buildClientEmail(nome),
-        clientRefId: refId,
-        clienteId,
-      };
-    }).filter((item) => item.clientRefId && !linkedToOtherUsers.has(String(item.clientRefId)));
-
     const byId = new Map();
-    [...fromCatalog, ...fromSetupMap].forEach((item) => {
+    fromCatalog.forEach((item) => {
       const key = String(item.clientRefId || '').trim();
       if (!key) return;
       if (!byId.has(key)) {
@@ -773,7 +791,7 @@ const Users = () => {
     }
 
     return merged;
-  }, [clientCatalog, clientUsers, editingClientUser, setupMap]);
+  }, [clientCatalog, clientUsers, editingClientUser]);
 
   const selectedClientOption = useMemo(
     () => availableClientOptions.find((item) => String(item.id) === String(selectedClientId)) || null,
@@ -828,6 +846,52 @@ const Users = () => {
       return actor.includes(term) || actorEmail.includes(term) || clientName.includes(term) || action.includes(term);
     });
   }, [clientActivityLogs, logsSearch]);
+
+  const getUserSortValue = (user, key) => {
+    if (key === 'name') return String(user?.name || '');
+    if (key === 'email') return String(user?.email || '');
+    if (key === 'role') return user?.role === 'admin' ? 'admin' : 'colaborador';
+    if (key === 'modules') {
+      const modules = user?.role === 'admin'
+        ? ['Todos']
+        : INTERNAL_MODULES
+            .filter((module) => (user?.display_allowed_modules || []).includes(module.key))
+            .filter((module) => module.key !== 'dashboard')
+            .map((module) => module.label);
+      return modules.join(', ');
+    }
+    if (key === 'cities') return String((user?.allowed_cities || []).join(', '));
+    if (key === 'sectors') return String((user?.permissoes || []).map((perm) => perm.setor).join(', '));
+    if (key === 'status') return user?.is_active ? 'ativo' : 'inativo';
+    return '';
+  };
+
+  const sortedUsers = useMemo(() => {
+    const list = [...users];
+    list.sort((a, b) => {
+      const aValue = getUserSortValue(a, usersSort.key);
+      const bValue = getUserSortValue(b, usersSort.key);
+      const result = String(aValue).localeCompare(String(bValue), 'pt-BR', { numeric: true, sensitivity: 'base' });
+      return usersSort.direction === 'asc' ? result : -result;
+    });
+    return list;
+  }, [users, usersSort]);
+
+  const toggleUsersSort = (key) => {
+    setUsersSort((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const sortIcon = (key) => {
+    if (usersSort.key !== key) return <ArrowUpDown size={14} className="text-gray-400" />;
+    return usersSort.direction === 'asc'
+      ? <ArrowUp size={14} className="text-red-300" />
+      : <ArrowDown size={14} className="text-red-300" />;
+  };
 
   if (loading) {
     return (
@@ -1394,18 +1458,18 @@ const Users = () => {
           <table className="w-full">
             <thead className="bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Nome</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Tipo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300"><button type="button" onClick={() => toggleUsersSort('name')} className="inline-flex items-center gap-1 hover:text-white">Nome {sortIcon('name')}</button></th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300"><button type="button" onClick={() => toggleUsersSort('email')} className="inline-flex items-center gap-1 hover:text-white">Email {sortIcon('email')}</button></th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300"><button type="button" onClick={() => toggleUsersSort('role')} className="inline-flex items-center gap-1 hover:text-white">Tipo {sortIcon('role')}</button></th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Módulos liberados</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Cidades</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Setores</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300"><button type="button" onClick={() => toggleUsersSort('cities')} className="inline-flex items-center gap-1 hover:text-white">Cidades {sortIcon('cities')}</button></th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300"><button type="button" onClick={() => toggleUsersSort('sectors')} className="inline-flex items-center gap-1 hover:text-white">Setores {sortIcon('sectors')}</button></th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-300"><button type="button" onClick={() => toggleUsersSort('status')} className="inline-flex items-center gap-1 hover:text-white">Status {sortIcon('status')}</button></th>
                 <th className="px-6 py-3 text-right text-xs font-medium uppercase text-gray-300">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {users.map((user) => (
+              {sortedUsers.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-700/50">
                   <td className="whitespace-nowrap px-6 py-4">
                     <div className="flex items-center gap-2">

@@ -36,8 +36,8 @@ const AtendimentoAgendamento = () => {
   });
 
   const [filters, setFilters] = useState({
-    data_inicio: '',
-    data_fim: '',
+    data_inicio: new Date().toISOString().split('T')[0],
+    data_fim: new Date().toISOString().split('T')[0],
     status: '',
     contador_id: ''
   });

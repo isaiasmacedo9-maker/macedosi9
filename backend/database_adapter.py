@@ -196,6 +196,7 @@ class DatabaseAdapter:
             'base_conhecimento': ArtigoBaseConhecimentoSQL,
             'avaliacoes_atendimento': AvaliacaoAtendimentoSQL,
             'configuracoes': ConfiguracaoSQL,
+            'documents_center': DocumentCenterSQL,
             'chats': ChatSQL,
             'tasks': TaskSQL,
             'guias_fiscais': GuiaFiscalSQL,

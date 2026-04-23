@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { INTERNAL_MODULES } from '../../config/modules';
@@ -78,11 +78,49 @@ const daysBetween = (fromDate, toDate) => {
 };
 
 const normalizeIdentity = (value = '') => String(value).trim().toLowerCase();
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const SERVICES_STORAGE_KEY = 'mock_internal_services';
 
 const Dashboard = () => {
   const { user, hasModuleAccess } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
+  const [liveServices, setLiveServices] = useState([]);
+
+  useEffect(() => {
+    const loadServices = async () => {
+      let backend = [];
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/services/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const payload = await response.json();
+          backend = Array.isArray(payload) ? payload : [];
+        }
+      } catch {}
+
+      let local = [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem(SERVICES_STORAGE_KEY) || '[]');
+        local = Array.isArray(parsed) ? parsed : [];
+      } catch {}
+
+      const merged = [...backend, ...local];
+      const seen = new Set();
+      const deduped = [];
+      merged.forEach((item, index) => {
+        const id = String(item?.id || `srv-${index}`);
+        if (seen.has(id)) return;
+        seen.add(id);
+        deduped.push({ ...item, id });
+      });
+      setLiveServices(deduped.length ? deduped : MOCK_SERVICES);
+    };
+
+    loadServices();
+  }, []);
 
   const quickSectorCards = useMemo(
     () => [
@@ -142,17 +180,58 @@ const Dashboard = () => {
     return viewerIdentity.some((identity) => assigned.includes(identity));
   };
 
+  const serviceTasks = useMemo(
+    () =>
+      liveServices.map((item) => ({
+        id: `srv-task-${item.id}`,
+        titulo: item.tipo_servico || item.titulo || 'Serviço',
+        moduleKey: 'servicos',
+        status:
+          item.status === 'concluido' || item.status === 'concluida' || item.status_ui === 'concluido'
+            ? 'concluido'
+            : item.status === 'em_andamento' || item.status_ui === 'em_andamento'
+              ? 'em_andamento'
+              : 'pendente',
+        prioridade: item.urgencia || item.prioridade || 'media',
+        vencimento: (item.data_prazo || item.created_at || '').slice(0, 10),
+        atribuidoEm: (item.data_inicio || item.created_at || '').slice(0, 10),
+        assignedTo: [
+          item.responsavel_id,
+          item.responsavel_email,
+          item.responsavel_nome,
+          ...(Array.isArray(item.assigned_to) ? item.assigned_to : []),
+        ].filter(Boolean),
+      })),
+    [liveServices],
+  );
+
   const tasks = useMemo(
-    () => getDashboardTasks({ user, isAdmin, hasModuleAccess }),
-    [user, isAdmin, hasModuleAccess],
+    () => [...getDashboardTasks({ user, isAdmin, hasModuleAccess }), ...serviceTasks],
+    [user, isAdmin, hasModuleAccess, serviceTasks],
   );
 
   const services = useMemo(
     () =>
-      MOCK_SERVICES.filter(
-        (item) => isAssignedToViewer(item) && hasModuleAccess(item.moduleKey),
-      ),
-    [user, hasModuleAccess],
+      liveServices
+        .map((item) => ({
+          id: item.id,
+          cliente: item.empresa_nome || 'Cliente não informado',
+          tipo: item.tipo_servico || item.titulo || 'Serviço',
+          status:
+            item.status_ui
+            || (item.status === 'pendente' ? 'novo' : item.status)
+            || 'novo',
+          moduleKey: 'servicos',
+          criadoEm: (item.created_at || item.data_inicio || new Date().toISOString()).slice(0, 10),
+          assignedTo: [
+            item.responsavel_id,
+            item.responsavel_email,
+            item.responsavel_nome,
+            ...(Array.isArray(item.assigned_to) ? item.assigned_to : []),
+          ].filter(Boolean),
+        }))
+        .filter((item) => isAssignedToViewer(item) && hasModuleAccess(item.moduleKey)),
+    [liveServices, hasModuleAccess, isAdmin, viewerIdentity],
   );
 
   const alerts = useMemo(() => {
@@ -190,23 +269,68 @@ const Dashboard = () => {
     );
   }, [tasks, services]);
 
-  const activities = useMemo(
-    () =>
-      MOCK_ACTIVITIES.filter(
-        (item) => isAssignedToViewer(item) && hasModuleAccess(item.moduleKey),
-      ),
-    [user, hasModuleAccess],
-  );
+  const activities = useMemo(() => {
+    const generated = services
+      .slice()
+      .sort((a, b) => new Date(b.criadoEm) - new Date(a.criadoEm))
+      .slice(0, 10)
+      .map((item, index) => ({
+        id: `act-live-${item.id}`,
+        titulo: `Serviço ${item.status === 'concluido' ? 'concluído' : 'atualizado'}`,
+        detalhe: `${item.tipo} - ${item.cliente}`,
+        moduleKey: 'servicos',
+        when: index === 0 ? 'Agora' : new Date(item.criadoEm).toLocaleDateString('pt-BR'),
+        assignedTo: item.assignedTo,
+      }));
+    const taskActivities = tasks
+      .slice()
+      .sort((a, b) => new Date(b.atribuidoEm || b.vencimento || 0) - new Date(a.atribuidoEm || a.vencimento || 0))
+      .slice(0, 10)
+      .map((task, index) => ({
+        id: `act-task-${task.id}`,
+        titulo: `Tarefa ${task.status === 'concluido' || task.status === 'concluida' ? 'concluida' : 'atualizada'}`,
+        detalhe: task.titulo,
+        moduleKey: task.moduleKey || 'servicos',
+        when: index === 0 ? 'Agora' : new Date(`${task.atribuidoEm || task.vencimento}T00:00:00`).toLocaleDateString('pt-BR'),
+        assignedTo: task.assignedTo,
+      }));
+    return [...generated, ...taskActivities, ...MOCK_ACTIVITIES]
+      .filter((item) => isAssignedToViewer(item) && hasModuleAccess(item.moduleKey))
+      .slice(0, 20);
+  }, [services, tasks, user, hasModuleAccess, isAdmin, viewerIdentity]);
 
-  const deadlines = useMemo(
-    () => MOCK_DEADLINES.filter((item) => hasModuleAccess(item.moduleKey)),
-    [hasModuleAccess],
-  );
+  const deadlines = useMemo(() => {
+    const fromTasks = tasks
+      .filter((item) => item.status !== 'concluido' && item.status !== 'concluida')
+      .map((item, index) => ({
+        id: `ddl-task-${item.id || index}`,
+        titulo: item.titulo || 'Tarefa',
+        cliente: item.clienteNome || item.cliente || item.moduleKey || 'Serviços',
+        valor: Number(item.valor || 0),
+        moduleKey: item.moduleKey || 'servicos',
+        vencimento: String(item.vencimento || new Date().toISOString().slice(0, 10)).slice(0, 10),
+      }))
+      .filter((item) => hasModuleAccess(item.moduleKey))
+      .sort((a, b) => new Date(`${a.vencimento}T00:00:00`) - new Date(`${b.vencimento}T00:00:00`));
+    const fromMock = MOCK_DEADLINES.filter((item) => hasModuleAccess(item.moduleKey));
+    return [...fromTasks, ...fromMock].sort((a, b) => new Date(`${a.vencimento}T00:00:00`) - new Date(`${b.vencimento}T00:00:00`));
+  }, [hasModuleAccess, tasks]);
 
-  const ownedClients = useMemo(
-    () => MOCK_CLIENT_OWNERS.filter((item) => isAssignedToViewer(item)),
-    [user],
-  );
+  const ownedClients = useMemo(() => {
+    const fromServices = new Map();
+    services.forEach((item) => {
+      const key = normalizeIdentity(item.cliente);
+      if (!key) return;
+      if (!fromServices.has(key)) {
+        fromServices.set(key, {
+          id: `cli-live-${key}`,
+          nome: item.cliente,
+          assignedTo: item.assignedTo || [],
+        });
+      }
+    });
+    return [...fromServices.values(), ...MOCK_CLIENT_OWNERS].filter((item) => isAssignedToViewer(item));
+  }, [services, user, isAdmin, viewerIdentity]);
   const hasSingleCityAccess = useMemo(() => {
     if (isAdmin) return false;
     const allowedCities = Array.isArray(user?.allowed_cities) ? user.allowed_cities.filter(Boolean) : [];
@@ -217,7 +341,7 @@ const Dashboard = () => {
   const topCards = useMemo(() => {
     const pendingTasks = getPendingTasks(tasks);
     const novasTarefas = getNewTasksForToday({ user, tasks, todayIso: new Date().toISOString().slice(0, 10) });
-    const highAlerts = alerts.filter((item) => item.criticidade === 'alta');
+    const toneNovoCadastro = 'border-red-500/45 bg-red-500/20';
 
     return [
       {
@@ -236,7 +360,7 @@ const Dashboard = () => {
         value: novasTarefas.length,
         subtitle: novasTarefas[0] ? novasTarefas[0].titulo : 'Nenhuma nova tarefa não visualizada',
         icon: FolderKanban,
-        tone: 'border-sky-500/30 bg-sky-500/10',
+        tone: novasTarefas.length > 0 ? toneNovoCadastro : 'border-sky-500/30 bg-sky-500/10',
         visible: true,
         path: '/dashboard/novas-tarefas',
       },
@@ -246,19 +370,9 @@ const Dashboard = () => {
         value: ownedClients.length,
         subtitle: ownedClients[0] ? ownedClients[0].nome : 'Sem clientes vinculados',
         icon: Users,
-        tone: 'border-violet-500/30 bg-violet-500/10',
+        tone: ownedClients.length > 0 ? toneNovoCadastro : 'border-violet-500/30 bg-violet-500/10',
         visible: true,
         path: '/clientes',
-      },
-      {
-        key: 'alertas',
-        title: 'Alertas do setor',
-        value: alerts.length,
-        subtitle: highAlerts.length > 0 ? `${highAlerts.length} alertas de alta prioridade` : 'Sem alertas criticos',
-        icon: ShieldAlert,
-        tone: 'border-rose-500/30 bg-rose-500/10',
-        visible: true,
-        path: '/dashboard/alertas-setor',
       },
       {
         key: 'todas_tarefas',
@@ -271,7 +385,7 @@ const Dashboard = () => {
         path: '/dashboard/tarefas-gerais',
       },
     ].filter((item) => item.visible);
-  }, [tasks, ownedClients, alerts, user, hasSingleCityAccess]);
+  }, [tasks, ownedClients, user, hasSingleCityAccess]);
 
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 

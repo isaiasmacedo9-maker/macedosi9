@@ -17,6 +17,8 @@ const MOCK_ADMIN_CLIENTS_KEY = 'mock_admin_clients_v1';
 const MOCK_USERS_KEY = 'mock_users_management_v1';
 const MODELS_KEY = 'mock_macedo_academy_process_models_v1';
 const NOTIFICATIONS_KEY = 'mock_internal_notifications_v1';
+const PROCESS_DETAILS_KEY = 'mock_services_process_details_v1';
+const DELETED_SERVICE_IDS_KEY = 'mock_deleted_service_ids_v1';
 
 const statusOptions = [
   { value: 'novo', label: 'A fazer', className: 'border border-white/10 bg-[#2a3446] text-white' },
@@ -41,6 +43,13 @@ const normalizeText = (value) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+
+const getInitials = (name = '') => {
+  const parts = String(name).split(/\s+/).filter(Boolean);
+  if (!parts.length) return '--';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+};
 
 const normalizeSectorKey = (raw = '') => {
   const value = normalizeText(raw);
@@ -92,6 +101,24 @@ const parseStorageArray = (key) => {
   }
 };
 
+const parseStorageObject = (key) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const getDeletedServiceIds = () => {
+  const parsed = parseStorageArray(DELETED_SERVICE_IDS_KEY);
+  return new Set(parsed.map((id) => String(id)));
+};
+
+const persistDeletedServiceIds = (idsSet) => {
+  localStorage.setItem(DELETED_SERVICE_IDS_KEY, JSON.stringify(Array.from(idsSet)));
+};
+
 const pushInternalNotification = (message, scope = 'servicos') => {
   const current = parseStorageArray(NOTIFICATIONS_KEY);
   const next = [
@@ -136,6 +163,15 @@ const pickBestCityLabel = (currentLabel, nextLabel) => {
 };
 
 const getUserIdentifier = (record = {}) => record.id || record.email || '';
+const looksLikeUuid = (value = '') => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+const hasLetters = (value = '') => /[a-zA-ZÀ-ÿ]/.test(String(value || ''));
+const isValidInternalDisplayName = (value = '') => {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (looksLikeUuid(text)) return false;
+  if (!hasLetters(text)) return false;
+  return true;
+};
 
 const userCanWorkOnSector = (record = {}, sectorKey) => {
   if (!record) return false;
@@ -183,11 +219,17 @@ const isOrderService = (service = {}) => {
   return origem.includes('servicos_avulsos') || numero.startsWith('OS-');
 };
 
-const Services = () => {
+const Services = ({ contextSector = '', allowedTopTabs = null, defaultTopTab = 'processos' }) => {
   const { user } = useAuth();
   const location = useLocation();
+  const isAdminUser = user?.role === 'admin';
   const creatorId = user?.id || user?.email || 'dev-user';
   const creatorName = user?.name || user?.email || 'Colaborador';
+  const normalizedContextSector = contextSector ? normalizeSectorKey(contextSector) : '';
+  const topTabsAllowed = Array.isArray(allowedTopTabs) && allowedTopTabs.length
+    ? allowedTopTabs
+    : ['dashboard', 'processos', 'ordem_servico', 'modelos', 'configuracoes'];
+  const initialTopTab = topTabsAllowed.includes(defaultTopTab) ? defaultTopTab : topTabsAllowed[0];
 
   const [servicos, setServicos] = useState([]);
   const [allClients, setAllClients] = useState([]);
@@ -197,8 +239,7 @@ const Services = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [showBatchEditModal, setShowBatchEditModal] = useState(false);
-  const [showBatchSendModal, setShowBatchSendModal] = useState(false);
-  const [topViewTab, setTopViewTab] = useState('processos');
+  const [topViewTab, setTopViewTab] = useState(initialTopTab);
   const [processViewMode, setProcessViewMode] = useState('tabela');
   const [scopeTab, setScopeTab] = useState('cliente');
   const [teamPerformanceScope, setTeamPerformanceScope] = useState('equipe');
@@ -211,13 +252,38 @@ const Services = () => {
   const [createMode, setCreateMode] = useState('modelo');
   const [expandedProcessRows, setExpandedProcessRows] = useState({});
   const [selectedProcessService, setSelectedProcessService] = useState(null);
+  const [processDetailTab, setProcessDetailTab] = useState('anexos');
+  const [processDetailDraftComment, setProcessDetailDraftComment] = useState('');
+  const [processDetailsByService, setProcessDetailsByService] = useState(() => parseStorageObject(PROCESS_DETAILS_KEY));
   const [batchStatus, setBatchStatus] = useState('novo');
   const [quickSearch, setQuickSearch] = useState('');
-  const [quickSearchDate, setQuickSearchDate] = useState('');
+  const [useProcessDateFilter, setUseProcessDateFilter] = useState(false);
+  const [quickSearchDateStart, setQuickSearchDateStart] = useState(() => getTodayInputDate());
+  const [quickSearchDateEnd, setQuickSearchDateEnd] = useState(() => getTodayInputDate());
+  const [orderSearch, setOrderSearch] = useState('');
+  const [useOrderDateFilter, setUseOrderDateFilter] = useState(false);
+  const [orderDateStart, setOrderDateStart] = useState(() => getTodayInputDate());
+  const [orderDateEnd, setOrderDateEnd] = useState(() => getTodayInputDate());
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [showOrderCreateModal, setShowOrderCreateModal] = useState(false);
+  const [orderDraft, setOrderDraft] = useState({
+    sourceServiceId: '',
+    empresa_nome: '',
+    tipo_servico: '',
+    setor_key: 'atendimento',
+    data_inicio: getTodayInputDate(),
+    descricao: '',
+  });
   const [selectedServiceIds, setSelectedServiceIds] = useState([]);
   const [showCustomServiceInput, setShowCustomServiceInput] = useState(false);
   const [customServiceName, setCustomServiceName] = useState('');
   const [serviceTypeSearchTerm, setServiceTypeSearchTerm] = useState('');
+  const [dashboardPeriodo, setDashboardPeriodo] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [teamReportTarget, setTeamReportTarget] = useState(null);
   const [includeAdmins, setIncludeAdmins] = useState(false);
   const [enableAdditionalCollaborators, setEnableAdditionalCollaborators] = useState(false);
   const [customServicesBySector, setCustomServicesBySector] = useState({});
@@ -242,6 +308,7 @@ const Services = () => {
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showBatchGenerateModal, setShowBatchGenerateModal] = useState(false);
+  const [highlightedServiceId, setHighlightedServiceId] = useState('');
   const [batchGenerateServiceName, setBatchGenerateServiceName] = useState('');
   const [batchGenerateModelId, setBatchGenerateModelId] = useState('');
   const [batchGenerateSectorKey, setBatchGenerateSectorKey] = useState('atendimento');
@@ -276,6 +343,11 @@ const Services = () => {
   });
   const clientDropdownRef = useRef(null);
   const responsibleDropdownRef = useRef(null);
+  const processAttachmentInputRef = useRef(null);
+  const quickDateStartInputRef = useRef(null);
+  const quickDateEndInputRef = useRef(null);
+  const orderDateStartInputRef = useRef(null);
+  const orderDateEndInputRef = useRef(null);
 
   const isDashboardTab = topViewTab === 'dashboard';
   const isProcessosTab = topViewTab === 'processos';
@@ -283,6 +355,20 @@ const Services = () => {
   const isModelosTab = topViewTab === 'modelos';
   const isConfiguracoesTab = topViewTab === 'configuracoes';
   const isProcessWorkspaceTab = isProcessosTab;
+
+  useEffect(() => {
+    if (!topTabsAllowed.includes(topViewTab)) {
+      setTopViewTab(initialTopTab);
+    }
+  }, [topViewTab, topTabsAllowed, initialTopTab]);
+
+  const serviceMatchesContextSector = (item) => {
+    if (!normalizedContextSector) return true;
+    const direct = normalizeSectorKey(item?.setor || item?.setor_key || item?.setorDestino || item?.setor_destino || '');
+    if (direct === normalizedContextSector) return true;
+    const responsibles = Array.isArray(item?.setores_responsaveis) ? item.setores_responsaveis : [];
+    return responsibles.map((sector) => normalizeSectorKey(sector)).includes(normalizedContextSector);
+  };
 
   const getServiceResponsibleName = (service) => {
     if (!service) return 'Não atribuído';
@@ -294,6 +380,21 @@ const Services = () => {
     const byId = allUsers.find((userItem) => getUserIdentifier(userItem) === firstAssigned);
     return byId?.name || byId?.email || 'Não atribuído';
   };
+
+  useEffect(() => {
+    localStorage.setItem(PROCESS_DETAILS_KEY, JSON.stringify(processDetailsByService || {}));
+  }, [processDetailsByService]);
+
+  useEffect(() => {
+    if (!isAdminUser && teamPerformanceScope !== 'equipe') {
+      setTeamPerformanceScope('equipe');
+    }
+  }, [isAdminUser, teamPerformanceScope]);
+
+  useEffect(() => {
+    setProcessDetailTab('anexos');
+    setProcessDetailDraftComment('');
+  }, [selectedProcessService?.id]);
 
   useEffect(() => {
     loadServicos();
@@ -337,16 +438,46 @@ const Services = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const targetId = params.get('servicoId');
+    const targetTab = normalizeText(params.get('tab') || '');
+    const targetScope = normalizeText(params.get('scope') || '');
+    if (targetTab === 'processos') {
+      setTopViewTab('processos');
+      setProcessViewMode('tabela');
+    }
+    if (targetScope === 'cliente' || targetScope === 'processo' || targetScope === 'tarefa') {
+      setScopeTab(targetScope);
+    }
     if (!targetId || !servicos.length) return;
     const target = servicos.find((item) => String(item.id) === String(targetId));
     if (target) {
       setSelectedServico(target);
+      setSelectedProcessService(target);
+      setHighlightedServiceId(String(target.id));
     }
   }, [location.search, servicos]);
 
   useEffect(() => {
+    if (!highlightedServiceId) return undefined;
+    const rowId = `service-row-${highlightedServiceId}`;
+    const row = document.getElementById(rowId);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const timer = window.setTimeout(() => setHighlightedServiceId(''), 2400);
+    return () => window.clearTimeout(timer);
+  }, [highlightedServiceId]);
+
+  const processModelsScoped = useMemo(() => {
+    if (!normalizedContextSector) return processModels;
+    return processModels.filter((model) => {
+      const direct = normalizeSectorKey(model?.setorDestino || model?.setorInicial || '');
+      if (direct === normalizedContextSector) return true;
+      const etapas = Array.isArray(model?.etapas) ? model.etapas : [];
+      return etapas.some((step) => normalizeSectorKey(step?.setorResponsavel || step?.departmentKey || '') === normalizedContextSector);
+    });
+  }, [processModels, normalizedContextSector]);
+
+  useEffect(() => {
     if (!showCreateModal) return;
-    const selectedModel = processModels.find((item) => item.id === newService.modelo_id) || null;
+    const selectedModel = processModelsScoped.find((item) => item.id === newService.modelo_id) || null;
     const responsibleSectors = deriveResponsibleSectors(selectedModel, newService.setor_key);
     const nextAssigned = {};
     responsibleSectors.forEach((sectorKey) => {
@@ -357,7 +488,7 @@ const Services = () => {
       }
     });
     setAssignedBySector(nextAssigned);
-  }, [newService.modelo_id, newService.setor_key, showCreateModal, creatorId, processModels]);
+  }, [newService.modelo_id, newService.setor_key, showCreateModal, creatorId, processModelsScoped]);
 
   const loadSupportData = async () => {
     const token = localStorage.getItem('token');
@@ -405,7 +536,7 @@ const Services = () => {
     }
 
     const localUsers = parseStorageArray(MOCK_USERS_KEY);
-    const mergedUsers = [...backendUsers, ...localUsers];
+    const mergedUsers = backendUsers.length ? [...backendUsers] : [...localUsers];
     const withCreator = mergedUsers.some((item) => getUserIdentifier(item) === creatorId)
       ? mergedUsers
       : [
@@ -418,7 +549,23 @@ const Services = () => {
             allowed_modules: user?.allowed_modules || [],
           },
         ];
-    setAllUsers(withCreator);
+    const dedupedUsers = [];
+    const seenUserIds = new Set();
+    const seenUserIdentity = new Set();
+    withCreator.forEach((record, index) => {
+      const id = String(getUserIdentifier(record) || `user-${index}`);
+      const identity = normalizeText(record.email || record.name || id);
+      const displayName = String(record?.name || record?.email || '').trim();
+      if (!displayName || !isValidInternalDisplayName(displayName)) return;
+      if (seenUserIds.has(id) || (identity && seenUserIdentity.has(identity))) return;
+      seenUserIds.add(id);
+      if (identity) seenUserIdentity.add(identity);
+      dedupedUsers.push({
+        ...record,
+        id,
+      });
+    });
+    setAllUsers(dedupedUsers);
 
     try {
       const response = await fetch(`${API_URL}/api/services/configuration`, {
@@ -444,8 +591,10 @@ const Services = () => {
   const loadServicos = async () => {
     try {
       setLoading(true);
+      const deletedIds = getDeletedServiceIds();
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/services/`, {
+      const query = normalizedContextSector ? `?setor=${encodeURIComponent(normalizedContextSector)}` : '';
+      const response = await fetch(`${API_URL}/api/services/${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -453,18 +602,25 @@ const Services = () => {
       const backendServices = Array.isArray(backendData) ? backendData : [];
       const mockServices = getMockInternalServices();
 
-      const merged = [...backendServices, ...mockServices].map((item) => ({
-        ...item,
-        status_ui: normalizeStatus(item.status),
-      }));
+      const merged = [...backendServices, ...mockServices]
+        .filter((item) => !deletedIds.has(String(item?.id)))
+        .filter((item) => serviceMatchesContextSector(item))
+        .map((item) => ({
+          ...item,
+          status_ui: normalizeStatus(item.status),
+        }));
 
       setServicos(merged);
     } catch (error) {
       console.error('Erro ao carregar servicos:', error);
-      const mockServices = getMockInternalServices().map((item) => ({
-        ...item,
-        status_ui: normalizeStatus(item.status),
-      }));
+      const deletedIds = getDeletedServiceIds();
+      const mockServices = getMockInternalServices()
+        .filter((item) => !deletedIds.has(String(item?.id)))
+        .filter((item) => serviceMatchesContextSector(item))
+        .map((item) => ({
+          ...item,
+          status_ui: normalizeStatus(item.status),
+        }));
       setServicos(mockServices);
     } finally {
       setLoading(false);
@@ -555,35 +711,16 @@ const Services = () => {
     const map = new Map();
 
     allUsers.forEach((record) => {
-      const label = record?.name || record?.email || '';
+      const label = String(record?.name || record?.email || '').trim();
       const value = normalizeText(label);
-      if (!label || !value) return;
+      if (!label || !value || !isValidInternalDisplayName(label)) return;
       if (!map.has(value)) map.set(value, label);
-    });
-
-    userVisibleServicos.forEach((item) => {
-      const name = getServiceResponsibleName(item);
-      if (!name) return;
-      const key = normalizeText(name);
-      if (!map.has(key)) map.set(key, name);
-    });
-
-    const membersByDepartment = servicesConfig?.membersByDepartment || {};
-    Object.values(membersByDepartment).forEach((members) => {
-      if (!Array.isArray(members)) return;
-      members.forEach((member) => {
-        const label =
-          (typeof member === 'string' ? member : (member?.name || member?.nome || member?.email || '')) || '';
-        const key = normalizeText(label);
-        if (!label || !key) return;
-        if (!map.has(key)) map.set(key, label);
-      });
     });
 
     return Array.from(map.entries())
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR'));
-  }, [userVisibleServicos, allUsers, servicesConfig]);
+  }, [allUsers]);
 
   const rankedClienteOptions = useMemo(() => {
     const term = normalizeText(clientSearchTerm);
@@ -604,12 +741,78 @@ const Services = () => {
   );
 
   const sectorOptions = useMemo(() => {
-    const fromModels = processModels.map((model) => normalizeSectorKey(model.setorDestino || model.setorInicial));
+    const fromModels = processModelsScoped.map((model) => normalizeSectorKey(model.setorDestino || model.setorInicial));
     const fromServices = servicos.map((item) => normalizeSectorKey(item.setor));
     const fromUsers = (user?.permissoes || []).map((perm) => normalizeSectorKey(perm?.setor));
     const merged = Array.from(new Set([...fromModels, ...fromServices, ...fromUsers].filter(Boolean)));
     return merged.map((key) => ({ key, label: sectorLabelMap[key] || key }));
-  }, [servicos, user, processModels]);
+  }, [servicos, user, processModelsScoped]);
+
+  const configuredSectorOptions = useMemo(() => {
+    const map = new Map();
+    const departments = Array.isArray(servicesConfig?.departments) ? servicesConfig.departments : [];
+
+    departments.forEach((department) => {
+      const departmentName = String(department?.name || department?.nome || '').trim();
+      const key = normalizeSectorKey(departmentName);
+      if (!key || key === 'todos') return;
+      if (!map.has(key)) {
+        map.set(key, sectorLabelMap[key] || departmentName || key);
+      }
+    });
+
+    if (!map.size) {
+      sectorOptions.forEach((item) => {
+        if (!item?.key || item.key === 'todos') return;
+        if (!map.has(item.key)) map.set(item.key, item.label);
+      });
+    }
+
+    return Array.from(map.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label), 'pt-BR'));
+  }, [servicesConfig, sectorOptions]);
+
+  const dashboardPeriodoOptions = useMemo(() => {
+    const list = [];
+    const base = new Date();
+    const currentMonthStart = new Date(base.getFullYear(), base.getMonth(), 1);
+    for (let i = 0; i < 12; i += 1) {
+      const date = new Date(currentMonthStart.getFullYear(), currentMonthStart.getMonth() - i, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const label = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      list.push({ value, label });
+    }
+    return list;
+  }, []);
+
+  const dashboardUserName = useMemo(
+    () => String(user?.name || user?.email || 'Usuário').trim() || 'Usuário',
+    [user],
+  );
+
+  useEffect(() => {
+    if (!configuredSectorOptions.length) return;
+    const hasNewServiceSector = configuredSectorOptions.some((item) => item.key === newService.setor_key);
+    if (!hasNewServiceSector) {
+      const firstKey = configuredSectorOptions[0].key;
+      setNewService((prev) => ({ ...prev, setor_key: firstKey }));
+    }
+
+    const hasProcessSector = configuredSectorOptions.some((item) => item.key === processDraft.setorDestinoKey);
+    if (!hasProcessSector) {
+      const firstKey = configuredSectorOptions[0].key;
+      setProcessDraft((prev) => ({
+        ...prev,
+        setorDestinoKey: firstKey,
+        etapas: Array.isArray(prev.etapas)
+          ? prev.etapas.map((etapa, index) =>
+              index === 0 ? { ...etapa, setorResponsavelKey: firstKey } : etapa
+            )
+          : prev.etapas,
+      }));
+    }
+  }, [configuredSectorOptions, newService.setor_key, processDraft.setorDestinoKey]);
 
   const cityOptions = useMemo(() => {
     const uniqueCitiesMap = new Map();
@@ -650,7 +853,7 @@ const Services = () => {
         if (serviceName) usageByName.set(serviceName, (usageByName.get(serviceName) || 0) + 1);
       });
 
-    processModels.forEach((model) => {
+    processModelsScoped.forEach((model) => {
       const modelSector = normalizeSectorKey(model.setorDestino || model.setorInicial);
       if (modelSector !== selectedSector) return;
       const byIdCount = usageByModelId.get(String(model.id)) || 0;
@@ -699,7 +902,7 @@ const Services = () => {
       if (countDiff !== 0) return countDiff;
       return a.label.localeCompare(b.label, 'pt-BR');
     });
-  }, [newService.setor_key, servicos, customServicesBySector, processModels]);
+  }, [newService.setor_key, servicos, customServicesBySector, processModelsScoped]);
 
   const filteredServiceTypeOptions = useMemo(() => {
     const term = normalizeText(serviceTypeSearchTerm);
@@ -714,8 +917,8 @@ const Services = () => {
   }, [serviceTypeOptions, serviceTypeSearchTerm]);
 
   const selectedModel = useMemo(
-    () => processModels.find((item) => item.id === newService.modelo_id) || null,
-    [newService.modelo_id, processModels],
+    () => processModelsScoped.find((item) => item.id === newService.modelo_id) || null,
+    [newService.modelo_id, processModelsScoped],
   );
 
   const responsibleSectors = useMemo(
@@ -894,11 +1097,14 @@ const Services = () => {
         || normalizeText(item.tipo_servico).includes(term)
         || normalizeText(item.titulo).includes(term);
       if (!textMatch) return false;
-      if (!quickSearchDate) return true;
+      if (!useProcessDateFilter) return true;
       const itemDate = String(item.data_prazo || item.created_at || '').slice(0, 10);
-      return itemDate === quickSearchDate;
+      if (!itemDate) return false;
+      if (quickSearchDateStart && itemDate < quickSearchDateStart) return false;
+      if (quickSearchDateEnd && itemDate > quickSearchDateEnd) return false;
+      return true;
     });
-  }, [filteredServicos, quickSearch, quickSearchDate]);
+  }, [filteredServicos, quickSearch, useProcessDateFilter, quickSearchDateStart, quickSearchDateEnd]);
 
   const groupedByClient = useMemo(() => {
     const grouped = new Map();
@@ -962,6 +1168,263 @@ const Services = () => {
     });
     return rows;
   }, [visibleServicos]);
+
+  const orderServices = useMemo(() => {
+    return userVisibleServicos.filter((item) => {
+      const numero = String(item?.numero || item?.numero_os || '').toUpperCase();
+      return isOrderService(item) || Boolean(item?.vincular_ordem_servico) || numero.startsWith('OS-');
+    });
+  }, [userVisibleServicos]);
+
+  const visibleOrderServices = useMemo(() => {
+    const term = normalizeText(orderSearch || '');
+    return orderServices.filter((item) => {
+      const statusMatch = orderStatusFilter === 'all' || item.status_ui === orderStatusFilter;
+      if (!statusMatch) return false;
+      const itemDate = String(item?.data_inicio || item?.created_at || '').slice(0, 10);
+      const dateMatch = !useOrderDateFilter
+        || (
+          Boolean(itemDate)
+          && (!orderDateStart || itemDate >= orderDateStart)
+          && (!orderDateEnd || itemDate <= orderDateEnd)
+        );
+      if (!dateMatch) return false;
+      const textMatch =
+        !term ||
+        normalizeText(item?.empresa_nome || '').includes(term) ||
+        normalizeText(item?.tipo_servico || item?.titulo || '').includes(term) ||
+        normalizeText(item?.numero || item?.numero_os || '').includes(term);
+      return textMatch;
+    });
+  }, [useOrderDateFilter, orderDateStart, orderDateEnd, orderSearch, orderServices, orderStatusFilter]);
+
+  const orderResumo = useMemo(() => {
+    return {
+      total: visibleOrderServices.length,
+      novo: visibleOrderServices.filter((item) => item.status_ui === 'novo').length,
+      emAndamento: visibleOrderServices.filter((item) => item.status_ui === 'em_andamento').length,
+      concluidos: visibleOrderServices.filter((item) => item.status_ui === 'concluido').length,
+    };
+  }, [visibleOrderServices]);
+
+  const sourceProcessOptions = useMemo(() => {
+    return filteredServicos
+      .filter((item) => !isOrderService(item))
+      .sort((a, b) => String(a?.tipo_servico || a?.titulo || '').localeCompare(String(b?.tipo_servico || b?.titulo || ''), 'pt-BR'));
+  }, [filteredServicos]);
+
+  const selectedOrderSource = useMemo(
+    () => sourceProcessOptions.find((item) => String(item.id) === String(orderDraft.sourceServiceId)) || null,
+    [orderDraft.sourceServiceId, sourceProcessOptions],
+  );
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleOrderServices.map((item) => String(item.id)));
+    setSelectedOrderIds((prev) => prev.filter((id) => visibleIds.has(String(id))));
+  }, [visibleOrderServices]);
+
+  const teamPerformanceRows = useMemo(() => {
+    const usersById = new Map();
+    allUsers.forEach((record, index) => {
+      const id = String(getUserIdentifier(record) || `user-${index}`);
+      if (!id || usersById.has(id)) return;
+      usersById.set(id, {
+        id,
+        name: record.name || record.email || `Usuário ${index + 1}`,
+        email: record.email || '',
+      });
+    });
+
+    const departments = Array.isArray(servicesConfig?.departments) ? servicesConfig.departments : [];
+    const membersByDepartment =
+      servicesConfig?.membersByDepartment && typeof servicesConfig.membersByDepartment === 'object'
+        ? servicesConfig.membersByDepartment
+        : {};
+
+    const userDepartments = new Map();
+    Object.entries(membersByDepartment).forEach(([departmentId, memberIds]) => {
+      const department = departments.find((dep) => String(dep.id) === String(departmentId));
+      if (!department || !Array.isArray(memberIds)) return;
+      memberIds.forEach((memberId) => {
+        const key = String(memberId);
+        if (!userDepartments.has(key)) userDepartments.set(key, []);
+        userDepartments.get(key).push(department);
+      });
+    });
+
+    const servicesByOwner = (owner) => {
+      const ownerName = normalizeText(owner?.name || '');
+      const ownerIds = new Set([owner?.id, owner?.email].filter(Boolean).map(String));
+      return servicos.filter((service) => {
+        const assignedIds = getServiceAssignedIds(service);
+        const byId = Array.from(ownerIds).some((id) => assignedIds.has(id));
+        if (byId) return true;
+        return normalizeText(getServiceResponsibleName(service)) === ownerName;
+      });
+    };
+
+    if (teamPerformanceScope === 'departamento') {
+      return departments.map((department) => {
+        const depMembers = Array.isArray(membersByDepartment[department.id]) ? membersByDepartment[department.id] : [];
+        const depServices = servicos.filter((service) => normalizeSectorKey(service.setor) === normalizeSectorKey(department.name));
+        const pending = depServices.filter((item) => item.status_ui === 'novo').length;
+        const progress = depServices.filter((item) => item.status_ui === 'em_andamento').length;
+        const done = depServices.filter((item) => item.status_ui === 'concluido').length;
+        const total = depServices.length;
+        return {
+          id: `dep-${department.id}`,
+          nome: department.name,
+          departamentos: [getInitials(department.name).slice(0, 1)],
+          departamentosMeta: [{ name: department.name, color: department.color }],
+          pendente: pending,
+          progresso: progress,
+          concluidas: done,
+          desempenho: total ? Math.round((done / total) * 100) : 0,
+          tipo: 'departamento',
+          totalMembros: depMembers.length,
+        };
+      });
+    }
+
+    const collaboratorRows = Array.from(usersById.values())
+      .map((owner) => {
+        const ownerServices = servicesByOwner(owner);
+        const pending = ownerServices.filter((item) => item.status_ui === 'novo').length;
+        const progress = ownerServices.filter((item) => item.status_ui === 'em_andamento').length;
+        const done = ownerServices.filter((item) => item.status_ui === 'concluido').length;
+        const total = ownerServices.length;
+        const deps = userDepartments.get(owner.id) || [];
+        return {
+          id: owner.id,
+          nome: owner.name,
+          departamentos: deps.map((dep) => getInitials(dep.name).slice(0, 1)),
+          departamentosMeta: deps.map((dep) => ({ name: dep.name, color: dep.color })),
+          pendente: pending,
+          progresso: progress,
+          concluidas: done,
+          desempenho: total ? Math.round((done / total) * 100) : 0,
+          tipo: 'colaborador',
+        };
+      })
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+    if (isAdminUser) return collaboratorRows;
+
+    const myIds = new Set([user?.id, user?.email].filter(Boolean).map(String));
+    const myName = normalizeText(user?.name || '');
+    const myRow = collaboratorRows.find((row) => {
+      if (myIds.has(String(row.id))) return true;
+      return myName && normalizeText(row.nome) === myName;
+    }) || {
+      id: String(user?.id || user?.email || 'me'),
+      nome: user?.name || user?.email || 'Meu desempenho',
+      departamentos: [],
+      departamentosMeta: [],
+      pendente: 0,
+      progresso: 0,
+      concluidas: 0,
+      desempenho: 0,
+      tipo: 'colaborador',
+    };
+
+    const totals = collaboratorRows.reduce(
+      (acc, row) => ({
+        pendente: acc.pendente + Number(row.pendente || 0),
+        progresso: acc.progresso + Number(row.progresso || 0),
+        concluidas: acc.concluidas + Number(row.concluidas || 0),
+      }),
+      { pendente: 0, progresso: 0, concluidas: 0 },
+    );
+    const totalTasks = totals.pendente + totals.progresso + totals.concluidas;
+    const overallRow = {
+      id: 'team-overall',
+      nome: 'Equipe (geral)',
+      departamentos: ['E'],
+      departamentosMeta: [{ name: 'Equipe (geral)', color: '#475569' }],
+      pendente: totals.pendente,
+      progresso: totals.progresso,
+      concluidas: totals.concluidas,
+      desempenho: totalTasks ? Math.round((totals.concluidas / totalTasks) * 100) : 0,
+      tipo: 'resumo',
+    };
+
+    return [overallRow, myRow];
+  }, [allUsers, isAdminUser, servicesConfig, servicos, teamPerformanceScope, user?.email, user?.id, user?.name]);
+
+  const processDetails = useMemo(() => {
+    const serviceId = String(selectedProcessService?.id || '');
+    const stored = processDetailsByService?.[serviceId];
+    const attachments = Array.isArray(stored?.attachments) ? stored.attachments : [];
+    const comments = Array.isArray(stored?.comments) ? stored.comments : [];
+    return { attachments, comments };
+  }, [processDetailsByService, selectedProcessService?.id]);
+
+  const addProcessAttachments = (files = []) => {
+    const serviceId = String(selectedProcessService?.id || '');
+    if (!serviceId || !Array.isArray(files) || !files.length) return;
+    const mapped = files.map((file, index) => ({
+      id: `att-${Date.now()}-${index}`,
+      name: file?.name || 'Arquivo',
+      size: Number(file?.size || 0),
+      type: String(file?.type || ''),
+      createdAt: new Date().toISOString(),
+      createdBy: creatorName,
+    }));
+    setProcessDetailsByService((prev) => {
+      const current = prev?.[serviceId] || {};
+      const currentAttachments = Array.isArray(current.attachments) ? current.attachments : [];
+      return {
+        ...(prev || {}),
+        [serviceId]: {
+          ...current,
+          attachments: [...mapped, ...currentAttachments],
+          comments: Array.isArray(current.comments) ? current.comments : [],
+        },
+      };
+    });
+  };
+
+  const removeProcessAttachment = (attachmentId) => {
+    const serviceId = String(selectedProcessService?.id || '');
+    if (!serviceId || !attachmentId) return;
+    setProcessDetailsByService((prev) => {
+      const current = prev?.[serviceId] || {};
+      const currentAttachments = Array.isArray(current.attachments) ? current.attachments : [];
+      return {
+        ...(prev || {}),
+        [serviceId]: {
+          ...current,
+          attachments: currentAttachments.filter((item) => String(item.id) !== String(attachmentId)),
+          comments: Array.isArray(current.comments) ? current.comments : [],
+        },
+      };
+    });
+  };
+
+  const submitProcessComment = () => {
+    const serviceId = String(selectedProcessService?.id || '');
+    const content = String(processDetailDraftComment || '').trim();
+    if (!serviceId || !content) return;
+    const entry = {
+      id: `cmt-${Date.now()}`,
+      content,
+      createdAt: new Date().toISOString(),
+      createdBy: creatorName,
+    };
+    setProcessDetailsByService((prev) => {
+      const current = prev?.[serviceId] || {};
+      const currentComments = Array.isArray(current.comments) ? current.comments : [];
+      return {
+        ...(prev || {}),
+        [serviceId]: {
+          ...current,
+          attachments: Array.isArray(current.attachments) ? current.attachments : [],
+          comments: [entry, ...currentComments],
+        },
+      };
+    });
+    setProcessDetailDraftComment('');
+  };
 
   const selectedTargetServicos = useMemo(
     () => visibleServicos.filter((item) => selectedServiceIds.includes(String(item.id))),
@@ -1055,12 +1518,6 @@ const Services = () => {
     toast.success(`Status atualizado em lote para ${targets.length} processos.`);
   };
 
-  const handleBatchSend = () => {
-    const targets = selectedTargetServicos.length ? selectedTargetServicos : filteredServicos;
-    setShowBatchSendModal(false);
-    toast.success(`${targets.length} processos enviados para fila de envio em lote.`);
-  };
-
   const removeServicesFromStorage = (idsToRemove = []) => {
     if (!idsToRemove.length) return;
     try {
@@ -1081,19 +1538,32 @@ const Services = () => {
     const ids = targets.map((item) => String(item.id));
     setServicos((current) => current.filter((item) => !ids.includes(String(item.id))));
     removeServicesFromStorage(ids);
+    const deletedIds = getDeletedServiceIds();
+    ids.forEach((id) => deletedIds.add(String(id)));
+    persistDeletedServiceIds(deletedIds);
     setSelectedServiceIds([]);
 
     const token = localStorage.getItem('token');
+    let failedBackendDeletes = 0;
     await Promise.all(
       targets
         .filter((item) => !item.mock_origin)
-        .map((item) =>
-          fetch(`${API_URL}/api/services/${item.id}`, {
+        .map(async (item) => {
+          try {
+            const response = await fetch(`${API_URL}/api/services/${item.id}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
-          }).catch(() => null),
-        ),
+            });
+            if (!response.ok) failedBackendDeletes += 1;
+          } catch {
+            failedBackendDeletes += 1;
+          }
+        }),
     );
+    if (failedBackendDeletes > 0) {
+      toast.warning(`${targets.length} processo(s) removido(s) localmente. ${failedBackendDeletes} não puderam ser excluídos no backend agora.`);
+      return;
+    }
     toast.success(`${targets.length} processo(s) removido(s).`);
   };
 
@@ -1127,7 +1597,7 @@ const Services = () => {
 
   const handleGenerateBatch = () => {
     const selectedServiceLabel = batchGenerateServiceName.trim()
-      || processModels.find((item) => item.id === batchGenerateModelId)?.nome
+      || processModelsScoped.find((item) => item.id === batchGenerateModelId)?.nome
       || '';
     if (!selectedServiceLabel) {
       toast.error('Selecione o servico para geracao em lote.');
@@ -1377,6 +1847,17 @@ const Services = () => {
     if (!newService.empresa_nome || !newService.tipo_servico || !newService.setor_key) return;
 
     const now = new Date();
+    const primaryAssigned =
+      (assignedBySector?.[newService.setor_key] || [])[0]
+      || creatorId;
+    const responsibleUser = allUsers.find((record) => String(getUserIdentifier(record)) === String(primaryAssigned));
+    const allAssignedUsers = Array.from(
+      new Set(
+        Object.values(assignedBySector || {})
+          .flatMap((list) => (Array.isArray(list) ? list : []))
+          .filter(Boolean),
+      ),
+    );
     const item = {
       id: `mock-manual-${now.getTime()}`,
       numero: `SVC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getTime()).slice(-4)}`,
@@ -1395,6 +1876,10 @@ const Services = () => {
       gerar_cobranca: Boolean(newService.gerar_cobranca),
       setores_responsaveis: responsibleSectors,
       colaboradores_por_setor: assignedBySector,
+      responsavel_id: primaryAssigned,
+      responsavel_email: responsibleUser?.email || '',
+      responsavel_nome: responsibleUser?.name || creatorName,
+      assigned_to: allAssignedUsers.length ? allAssignedUsers : [primaryAssigned],
       status: 'pendente',
       status_ui: 'novo',
       prioridade: 'media',
@@ -1413,10 +1898,199 @@ const Services = () => {
     setShowCreateModal(false);
   };
 
+  const handleOpenOrderCreate = () => {
+    setOrderDraft({
+      sourceServiceId: '',
+      empresa_nome: '',
+      tipo_servico: '',
+      setor_key: 'atendimento',
+      data_inicio: getTodayInputDate(),
+      descricao: '',
+    });
+    setShowOrderCreateModal(true);
+  };
+
+  const generateOrderNumber = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const suffix = String(now.getTime()).slice(-4);
+    return `OS-${year}${month}-${suffix}`;
+  };
+
+  const handleCreateOrderService = () => {
+    const source = filteredServicos.find((item) => String(item.id) === String(orderDraft.sourceServiceId)) || null;
+    const tipoServico = (orderDraft.tipo_servico || source?.tipo_servico || source?.titulo || '').trim();
+    const empresaNome = (orderDraft.empresa_nome || source?.empresa_nome || '').trim();
+    if (!tipoServico || !empresaNome) {
+      toast.error('Informe empresa e tipo da ordem de serviço.');
+      return;
+    }
+
+    const now = new Date();
+    const setorKey = orderDraft.setor_key || normalizeSectorKey(source?.setor || '') || 'atendimento';
+    const responsavelId = source?.responsavel_id || creatorId;
+    const responsavelUser = allUsers.find((record) => String(getUserIdentifier(record)) === String(responsavelId));
+    const numeroOs = generateOrderNumber();
+
+    const orderItem = {
+      id: `mock-os-${now.getTime()}`,
+      numero: numeroOs,
+      numero_os: numeroOs,
+      titulo: tipoServico,
+      empresa_id: source?.empresa_id || '',
+      empresa_nome: empresaNome,
+      tipo_servico: tipoServico,
+      process_model_id: source?.process_model_id || source?.modelo_id || '',
+      descricao: orderDraft.descricao || source?.descricao || 'Ordem de serviço criada pelo painel interno.',
+      setor: sectorLabelMap[setorKey] || source?.setor || 'Atendimento',
+      cidade: source?.cidade || '',
+      urgencia: source?.urgencia || 'normal',
+      data_inicio: orderDraft.data_inicio || getTodayInputDate(),
+      data_prazo: source?.data_prazo || orderDraft.data_inicio || getTodayInputDate(),
+      canal_atendimento: source?.canal_atendimento || 'interno',
+      vincular_ordem_servico: true,
+      gerar_cobranca: Boolean(source?.gerar_cobranca),
+      origem: 'ordem_servico',
+      origem_servico_id: source?.id || null,
+      setores_responsaveis: source?.setores_responsaveis || [setorKey],
+      colaboradores_por_setor: source?.colaboradores_por_setor || { [setorKey]: [responsavelId] },
+      responsavel_id: responsavelId,
+      responsavel_email: source?.responsavel_email || responsavelUser?.email || '',
+      responsavel_nome: source?.responsavel_nome || responsavelUser?.name || creatorName,
+      assigned_to: Array.isArray(source?.assigned_to) && source.assigned_to.length ? source.assigned_to : [responsavelId],
+      status: 'pendente',
+      status_ui: 'novo',
+      prioridade: source?.prioridade || 'media',
+      created_at: now.toISOString(),
+      mock_origin: 'manual_os',
+      criado_por: {
+        id: creatorId,
+        nome: creatorName,
+      },
+    };
+
+    const current = getMockInternalServices();
+    localStorage.setItem(MOCK_INTERNAL_SERVICES_KEY, JSON.stringify([orderItem, ...current]));
+    setServicos((prev) => [orderItem, ...prev]);
+    pushInternalNotification(`Nova ordem de serviço criada: ${orderItem.titulo} (${orderItem.empresa_nome}).`);
+    setShowOrderCreateModal(false);
+    toast.success('Ordem de serviço criada com sucesso.');
+  };
+
+  const toggleOrderSelection = (orderId, checked) => {
+    const id = String(orderId);
+    setSelectedOrderIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((item) => item !== id);
+    });
+  };
+
+  const toggleAllOrderSelection = (checked) => {
+    if (!checked) {
+      setSelectedOrderIds([]);
+      return;
+    }
+    setSelectedOrderIds(visibleOrderServices.map((item) => String(item.id)));
+  };
+
+  const handleDuplicateSelectedOrders = () => {
+    if (!selectedOrderIds.length) return;
+    const selected = visibleOrderServices.filter((item) => selectedOrderIds.includes(String(item.id)));
+    if (!selected.length) return;
+    const now = Date.now();
+    const cloned = selected.map((item, index) => {
+      const numeroOs = generateOrderNumber();
+      return {
+        ...item,
+        id: `mock-os-dup-${now + index}`,
+        numero: numeroOs,
+        numero_os: numeroOs,
+        created_at: new Date(now + index * 1000).toISOString(),
+        mock_origin: 'manual_os',
+      };
+    });
+
+    const current = getMockInternalServices();
+    localStorage.setItem(MOCK_INTERNAL_SERVICES_KEY, JSON.stringify([...cloned, ...current]));
+    setServicos((prev) => [...cloned, ...prev]);
+    toast.success(`${cloned.length} ordem(ns) de serviço duplicada(s).`);
+  };
+
+  const handleDeleteSelectedOrders = async () => {
+    if (!selectedOrderIds.length) return;
+    const ids = new Set(selectedOrderIds.map(String));
+    setServicos((prev) => prev.filter((item) => !ids.has(String(item.id))));
+    const current = getMockInternalServices();
+    localStorage.setItem(
+      MOCK_INTERNAL_SERVICES_KEY,
+      JSON.stringify(current.filter((item) => !ids.has(String(item.id)))),
+    );
+
+    try {
+      const token = localStorage.getItem('token');
+      await Promise.all(
+        selectedOrderIds.map(async (id) => {
+          if (String(id).startsWith('mock-')) return;
+          await fetch(`${API_URL}/api/services/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }),
+      );
+    } catch {}
+
+    setSelectedOrderIds([]);
+    toast.success('Ordens de serviço removidas.');
+  };
+
+  const handleDeleteSelectedOrdersSafe = async () => {
+    if (!selectedOrderIds.length) return;
+    const ids = new Set(selectedOrderIds.map(String));
+    setServicos((prev) => prev.filter((item) => !ids.has(String(item.id))));
+    const current = getMockInternalServices();
+    localStorage.setItem(
+      MOCK_INTERNAL_SERVICES_KEY,
+      JSON.stringify(current.filter((item) => !ids.has(String(item.id)))),
+    );
+
+    const deletedIds = getDeletedServiceIds();
+    selectedOrderIds.forEach((id) => deletedIds.add(String(id)));
+    persistDeletedServiceIds(deletedIds);
+
+    const token = localStorage.getItem('token');
+    let failedBackendDeletes = 0;
+    await Promise.all(
+      selectedOrderIds.map(async (id) => {
+        if (String(id).startsWith('mock-')) return;
+        try {
+          const response = await fetch(`${API_URL}/api/services/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) failedBackendDeletes += 1;
+        } catch {
+          failedBackendDeletes += 1;
+        }
+      }),
+    );
+
+    setSelectedOrderIds([]);
+    if (failedBackendDeletes > 0) {
+      toast.warning(`Ordens removidas localmente. ${failedBackendDeletes} não puderam ser excluídas no backend agora.`);
+      return;
+    }
+    toast.success('Ordens de serviço removidas.');
+  };
+
   return (
     <div className="services-dark space-y-4 p-4">
       <div className="glass border-x-0 border-t-0 border-b border-white/10 rounded-none px-2 pb-0 pt-2">
         <div className="mb-4 flex items-center gap-4">
+          {topTabsAllowed.includes('dashboard') ? (
           <button
             type="button"
             onClick={() => setTopViewTab('dashboard')}
@@ -1426,6 +2100,8 @@ const Services = () => {
           >
             Dashboard
           </button>
+          ) : null}
+          {topTabsAllowed.includes('processos') ? (
           <button
             type="button"
             onClick={() => setTopViewTab('processos')}
@@ -1436,6 +2112,8 @@ const Services = () => {
             Processos
             
           </button>
+          ) : null}
+          {topTabsAllowed.includes('ordem_servico') ? (
           <button
             type="button"
             onClick={() => setTopViewTab('ordem_servico')}
@@ -1443,8 +2121,10 @@ const Services = () => {
               isOrdemServicoTab ? 'border-red-500 text-white' : 'border-transparent text-gray-400'
             }`}
           >
-            Ordem de servico
+            Ordem de servi\u00e7o
           </button>
+          ) : null}
+          {topTabsAllowed.includes('modelos') ? (
           <button
             type="button"
             onClick={() => setTopViewTab('modelos')}
@@ -1454,6 +2134,8 @@ const Services = () => {
           >
             Modelos
           </button>
+          ) : null}
+          {topTabsAllowed.includes('configuracoes') ? (
           <button
             type="button"
             onClick={() => setTopViewTab('configuracoes')}
@@ -1463,6 +2145,7 @@ const Services = () => {
           >
             Configurações
           </button>
+          ) : null}
         </div>
 
         {isProcessWorkspaceTab ? (
@@ -1488,7 +2171,7 @@ const Services = () => {
           </>
         ) : isOrdemServicoTab ? (
           <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-gray-200">
-            Ordem de servico em preparacao.
+            \u00c1rea de Ordem de servi\u00e7o carregada.
           </div>
         ) : isModelosTab ? (
           <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-gray-200">
@@ -1501,7 +2184,7 @@ const Services = () => {
 
       {isModelosTab ? (
         <div className="rounded-[24px] border border-white/10 bg-transparent p-0">
-          <MacedoAcademy />
+          <MacedoAcademy sectorFilter={normalizedContextSector || undefined} />
         </div>
       ) : null}
 
@@ -1509,16 +2192,22 @@ const Services = () => {
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-4xl font-semibold text-white">Bem-vindo de volta, Sara Macedo</h2>
+              <h2 className="text-4xl font-semibold text-white">Bem-vindo de volta, {dashboardUserName}</h2>
               <p className="mt-1 text-sm text-gray-400">Confira abaixo um panorama da sua performance e da sua equipe.</p>
             </div>
             <div className="flex items-end gap-2">
               <div>
-                <div className="mb-1 text-xs text-gray-400">Selecione o periodo</div>
-                <select className="rounded-lg border border-white/20 bg-[#0f1728] px-3 py-2 text-sm text-white outline-none">
-                  <option>dezembro 2025</option>
-                  <option>novembro 2025</option>
-                  <option>outubro 2025</option>
+                <div className="mb-1 text-xs text-gray-400">Selecione o período</div>
+                <select
+                  value={dashboardPeriodo}
+                  onChange={(event) => setDashboardPeriodo(event.target.value)}
+                  className="rounded-lg border border-white/20 bg-[#0f1728] px-3 py-2 text-sm text-white outline-none"
+                >
+                  {dashboardPeriodoOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <button
@@ -1616,6 +2305,7 @@ const Services = () => {
                 <button
                   type="button"
                   onClick={() => setTeamPerformanceScope('departamento')}
+                  disabled={!isAdminUser}
                   className={`rounded-md px-3 py-1 font-semibold ${teamPerformanceScope === 'departamento' ? 'bg-white text-slate-900' : 'text-gray-300'}`}
                 >
                   Departamento
@@ -1634,30 +2324,18 @@ const Services = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10 text-sm">
-                    {[
-                      { nome: 'Galileu', departamentos: ['P'], pendente: 1, progresso: 0, concluidas: 2, desempenho: 67 },
-                      { nome: 'Sara Macedo', departamentos: ['F', 'A', 'C', 'P'], pendente: 215, progresso: 0, concluidas: 0, desempenho: 0 },
-                    ].map((row) => (
-                      <tr key={row.nome} className="hover:bg-white/5">
+                    {teamPerformanceRows.map((row) => (
+                      <tr key={row.id} className="hover:bg-white/5">
                         <td className="px-3 py-3 text-white">{row.nome}</td>
                         <td className="px-3 py-3">
                           <div className="flex gap-1">
-                            {row.departamentos.map((dep) => (
+                            {(row.departamentosMeta?.length ? row.departamentosMeta : row.departamentos.map((dep) => ({ name: dep, color: null }))).map((depInfo, index) => (
                               <span
-                                key={dep}
-                                className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1.5 text-xs font-semibold text-white ${
-                                  dep === 'F'
-                                    ? 'bg-lime-500'
-                                    : dep === 'A'
-                                      ? 'bg-rose-500'
-                                      : dep === 'C'
-                                        ? 'bg-amber-500'
-                                        : dep === 'P'
-                                          ? 'bg-yellow-500'
-                                          : 'bg-white/15'
-                                }`}
+                                key={`${row.id}-dep-${index}`}
+                                className="inline-flex h-6 min-w-6 items-center justify-center rounded px-1.5 text-xs font-semibold text-white bg-white/15"
+                                style={depInfo?.color ? { backgroundColor: depInfo.color } : undefined}
                               >
-                                {dep}
+                                {(row.departamentos[index] || getInitials(depInfo?.name || '-').slice(0, 1))}
                               </span>
                             ))}
                             {row.departamentos.length > 3 ? <span className="px-1 text-gray-400">...</span> : null}
@@ -1679,14 +2357,21 @@ const Services = () => {
                         <td className="px-3 py-3">
                           <button
                             type="button"
-                            onClick={() => toast.info(`Abrindo relatorio de ${row.nome}.`)}
+                            onClick={() => setTeamReportTarget(row)}
                             className="rounded-lg border border-slate-200/20 bg-slate-100 px-4 py-1.5 text-xs font-semibold text-slate-900"
                           >
-                            Ver
+                            Ver relatório
                           </button>
                         </td>
                       </tr>
                     ))}
+                    {!teamPerformanceRows.length ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-400">
+                          Nenhum colaborador cadastrado para exibição.
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -1694,14 +2379,8 @@ const Services = () => {
 
             <div className="space-y-4">
               <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
-                <h3 className="text-3xl font-semibold text-white">Envio em lote</h3>
-                <p className="text-sm text-gray-400">Confira a quantidade de processos na fila.</p>
-                <div className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-2xl font-semibold text-white">0 na fila de envio</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-[#0f1728] p-5">
-                <h3 className="text-3xl font-semibold text-white">Ordem de servico</h3>
-                <p className="text-sm text-gray-400">Acompanhe o resumo das solicitacoes de servico.</p>
+                <h3 className="text-3xl font-semibold text-white">Ordem de servi\u00e7o</h3>
+                <p className="text-sm text-gray-400">Acompanhe o resumo das solicita\u00e7\u00f5es de servi\u00e7o.</p>
                 <div className="mt-4 space-y-2 text-sm">
                   <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-gray-200">A fazer: {resumo.novo}</div>
                   <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-cyan-100">Em Progresso: {resumo.emAndamento}</div>
@@ -1713,11 +2392,260 @@ const Services = () => {
         </div>
       ) : null}
 
+      <div className={`${isOrdemServicoTab ? '' : 'hidden'}`}>
+        <div className="mb-2 text-sm text-gray-300">Ordens de servi\u00e7o</div>
+        <div className="mb-3 text-[38px] font-semibold leading-none text-white">Situa\u00e7\u00e3o das Ordens de servi\u00e7o</div>
+
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="flex h-[94px] overflow-hidden rounded-[8px] border border-white/15 bg-[#202939]">
+            <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-slate-200"><ClipboardList className="h-5 w-5" /></span>
+              <div><div className="text-xs text-gray-300">Total</div><div className="text-[34px] font-semibold leading-none text-white">{orderResumo.total}</div></div>
+            </div>
+            <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-slate-200"><ClipboardList className="h-5 w-5" /></span>
+              <div><div className="text-xs text-gray-300">A fazer</div><div className="text-[34px] font-semibold leading-none text-white">{orderResumo.novo}</div></div>
+            </div>
+            <div className="flex min-w-0 flex-1 items-center gap-3 border-r border-white/10 px-4">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-300"><RotateCcw className="h-5 w-5" /></span>
+              <div><div className="text-xs text-gray-300">Em progresso</div><div className="text-[34px] font-semibold leading-none text-white">{orderResumo.emAndamento}</div></div>
+            </div>
+            <div className="flex min-w-0 flex-1 items-center gap-3 px-4">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300"><Check className="h-5 w-5" /></span>
+              <div><div className="text-xs text-gray-300">Conclu\u00eddas</div><div className="text-[34px] font-semibold leading-none text-white">{orderResumo.concluidos}</div></div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[34px] font-semibold leading-none text-white">A\u00e7\u00f5es</div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleOpenOrderCreate}
+                className="w-full rounded-lg border border-emerald-500/45 bg-emerald-500/80 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+              >
+                + Nova ordem
+              </button>
+              <button
+                type="button"
+                onClick={handleDuplicateSelectedOrders}
+                disabled={!selectedOrderIds.length}
+                className="w-full rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-cyan-500/20"
+              >
+                Duplicar selecionadas
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelectedOrdersSafe}
+                disabled={!selectedOrderIds.length}
+                className="w-full rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-rose-500/20"
+              >
+                Excluir selecionadas
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-[10px] border border-white/10 bg-[#101827] p-3">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_220px_220px_220px]">
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Buscar</label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                <input
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  placeholder="Busque por cliente, ordem ou servi\u00e7o..."
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-gray-500 focus:border-emerald-400/40"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 inline-flex items-center gap-2 text-xs text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={useOrderDateFilter}
+                  onChange={(e) => setUseOrderDateFilter(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/30 bg-zinc-900 text-emerald-500"
+                />
+                Filtrar por data
+              </label>
+              {useOrderDateFilter ? (
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] text-gray-400">Data inicial</label>
+                    <div className="relative">
+                      <input
+                        ref={orderDateStartInputRef}
+                        type="date"
+                        value={orderDateStart}
+                        onChange={(e) => setOrderDateStart(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 pr-9 text-sm text-white outline-none focus:border-emerald-400/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = orderDateStartInputRef.current;
+                          if (!input) return;
+                          input.focus();
+                          if (typeof input.showPicker === 'function') input.showPicker();
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        aria-label="Abrir calendário inicial"
+                      >
+                        <CalendarDays className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-gray-400">Data final</label>
+                    <div className="relative">
+                      <input
+                        ref={orderDateEndInputRef}
+                        type="date"
+                        value={orderDateEnd}
+                        onChange={(e) => setOrderDateEnd(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 pr-9 text-sm text-white outline-none focus:border-emerald-400/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = orderDateEndInputRef.current;
+                          if (!input) return;
+                          input.focus();
+                          if (typeof input.showPicker === 'function') input.showPicker();
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        aria-label="Abrir calendário final"
+                      >
+                        <CalendarDays className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-gray-300">Status</label>
+              <select
+                value={orderStatusFilter}
+                onChange={(e) => setOrderStatusFilter(e.target.value)}
+                className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+              >
+                <option value="all">Todos</option>
+                {statusOptions.map((item) => (
+                  <option key={`order-filter-${item.value}`} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => toggleAllOrderSelection(true)}
+                className="flex-1 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs text-gray-200 hover:bg-white/10"
+              >
+                Selecionar
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleAllOrderSelection(false)}
+                className="flex-1 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs text-gray-200 hover:bg-white/10"
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 overflow-auto rounded-xl border border-white/10">
+            <table className="w-full min-w-[980px]">
+              <thead className="bg-[#2a3446] text-sm text-gray-100">
+                <tr>
+                  <th className="px-3 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={visibleOrderServices.length > 0 && visibleOrderServices.every((item) => selectedOrderIds.includes(String(item.id)))}
+                      onChange={(e) => toggleAllOrderSelection(e.target.checked)}
+                      className="h-4 w-4 rounded border-white/30 bg-zinc-900 text-emerald-500"
+                    />
+                  </th>
+                  <th className="px-3 py-3 text-left">N\u00famero</th>
+                  <th className="px-3 py-3 text-left">Empresa</th>
+                  <th className="px-3 py-3 text-left">Servi\u00e7o</th>
+                  <th className="px-3 py-3 text-left">Setor</th>
+                  <th className="px-3 py-3 text-left">In\u00edcio</th>
+                  <th className="px-3 py-3 text-left">Status</th>
+                  <th className="px-3 py-3 text-left">A\u00e7\u00f5es</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10 text-sm">
+                {visibleOrderServices.map((item) => {
+                  const statusMeta = getStatusMeta(item.status_ui);
+                  const checked = selectedOrderIds.includes(String(item.id));
+                  return (
+                    <tr key={`order-row-${item.id}`} className="hover:bg-white/5">
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOrderSelection(item.id)}
+                          className="h-4 w-4 rounded border-white/30 bg-zinc-900 text-emerald-500"
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-gray-200">{item.numero || item.numero_os || '-'}</td>
+                      <td className="px-3 py-3 text-white">{item.empresa_nome || '-'}</td>
+                      <td className="px-3 py-3 text-gray-200">{item.tipo_servico || item.titulo || '-'}</td>
+                      <td className="px-3 py-3 text-gray-300">{item.setor || '-'}</td>
+                      <td className="px-3 py-3 text-blue-200">{formatDate(item.data_inicio || item.created_at)}</td>
+                      <td className="px-3 py-3">
+                        <select
+                          value={item.status_ui}
+                          onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                          className={`rounded-md px-2.5 py-1 text-xs font-semibold outline-none ${statusMeta.className}`}
+                        >
+                          {statusOptions.map((status) => (
+                            <option key={`order-status-${item.id}-${status.value}`} value={status.value}>
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedServico(item)}
+                          className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/5 px-2 py-1 text-xs text-gray-200 hover:bg-white/10"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Detalhes
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!visibleOrderServices.length ? (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-400">
+                      Nenhuma ordem de servi\u00e7o encontrada com os filtros atuais.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div className={`${isProcessWorkspaceTab && processViewMode === 'tabela' ? '' : 'hidden'}`}>
         <div className="mb-2 text-sm text-gray-300">Processos</div>
         <div className="mb-3 text-[38px] font-semibold leading-none text-white">Situação dos Processos</div>
 
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[286px_minmax(0,1fr)_164px]">
+        <div className={`grid grid-cols-1 gap-3 ${isAdminUser ? 'xl:grid-cols-[286px_minmax(0,1fr)_164px]' : 'xl:grid-cols-[minmax(0,1fr)_164px]'}`}>
+          {isAdminUser ? (
           <div ref={responsibleDropdownRef} className="rounded-[8px] border border-white/20 bg-[#111a2b] p-3">
             <div className="flex h-[88px] items-center gap-3">
               <span className="inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-slate-500/35 text-slate-100">
@@ -1761,6 +2689,7 @@ const Services = () => {
               </div>
             </div>
           </div>
+          ) : null}
 
           <div>
             <div className="mb-2 flex justify-end">
@@ -1812,13 +2741,6 @@ const Services = () => {
                 className="w-full rounded-lg border border-white/20 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-white"
               >
                 Edição em lote
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowBatchSendModal(true)}
-                className="w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-semibold text-gray-200 hover:bg-white/10"
-              >
-                Envio em lote
               </button>
             </div>
           </div>
@@ -1957,16 +2879,75 @@ const Services = () => {
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-gray-300">Data</label>
-              <div className="relative">
+              <label className="mb-1 inline-flex items-center gap-2 text-xs text-gray-300">
                 <input
-                  type="date"
-                  value={quickSearchDate}
-                  onChange={(e) => setQuickSearchDate(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 pr-9 text-sm text-white outline-none focus:border-emerald-400/40"
+                  type="checkbox"
+                  checked={useProcessDateFilter}
+                  onChange={(e) => setUseProcessDateFilter(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/30 bg-zinc-900 text-emerald-500"
                 />
-                <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-              </div>
+                Filtrar por data
+              </label>
+              {useProcessDateFilter ? (
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] text-gray-400">Data inicial</label>
+                    <div className="relative">
+                      <input
+                        ref={quickDateStartInputRef}
+                        type="date"
+                        value={quickSearchDateStart}
+                        onChange={(e) => setQuickSearchDateStart(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 pr-9 text-sm text-white outline-none focus:border-emerald-400/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = quickDateStartInputRef.current;
+                          if (!input) return;
+                          input.focus();
+                          if (typeof input.showPicker === 'function') {
+                            input.showPicker();
+                          }
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        aria-label="Abrir calendário inicial"
+                        title="Abrir calendário inicial"
+                      >
+                        <CalendarDays className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-gray-400">Data final</label>
+                    <div className="relative">
+                      <input
+                        ref={quickDateEndInputRef}
+                        type="date"
+                        value={quickSearchDateEnd}
+                        onChange={(e) => setQuickSearchDateEnd(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 pr-9 text-sm text-white outline-none focus:border-emerald-400/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const input = quickDateEndInputRef.current;
+                          if (!input) return;
+                          input.focus();
+                          if (typeof input.showPicker === 'function') {
+                            input.showPicker();
+                          }
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        aria-label="Abrir calendário final"
+                        title="Abrir calendário final"
+                      >
+                        <CalendarDays className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div>
@@ -2107,7 +3088,11 @@ const Services = () => {
                           deptBadge === 'C' ? 'bg-amber-500' :
                           deptBadge === 'T' ? 'bg-blue-500' : 'bg-yellow-500';
                         return (
-                          <tr key={servico.id} className="hover:bg-white/5">
+                          <tr
+                            id={`service-row-${servico.id}`}
+                            key={servico.id}
+                            className={`hover:bg-white/5 ${highlightedServiceId === String(servico.id) ? 'bg-red-500/15 ring-1 ring-red-400/50' : ''}`}
+                          >
                             <td className="px-3 py-3">
                               <input
                                 type="checkbox"
@@ -2207,7 +3192,11 @@ const Services = () => {
                             deptBadge === 'T' ? 'bg-blue-500' :
                             deptBadge === 'P' ? 'bg-yellow-500' : 'bg-slate-600';
                           return (
-                            <tr key={`${row.name}-${servico.id}`} className="bg-white/[0.02] hover:bg-white/5">
+                            <tr
+                              id={`service-row-${servico.id}`}
+                              key={`${row.name}-${servico.id}`}
+                              className={`bg-white/[0.02] hover:bg-white/5 ${highlightedServiceId === String(servico.id) ? 'bg-red-500/15 ring-1 ring-red-400/50' : ''}`}
+                            >
                               <td className="px-3 py-3">
                                 <input
                                   type="checkbox"
@@ -2254,7 +3243,11 @@ const Services = () => {
 
                 {scopeTab === 'tarefa'
                   ? taskRows.map((row) => (
-                    <tr key={row.key} className="hover:bg-white/5">
+                    <tr
+                      id={`service-row-${row.sourceId}`}
+                      key={row.key}
+                      className={`hover:bg-white/5 ${highlightedServiceId === String(row.sourceId) ? 'bg-red-500/15 ring-1 ring-red-400/50' : ''}`}
+                    >
                       <td className="px-3 py-3">
                         <input
                           type="checkbox"
@@ -2320,6 +3313,121 @@ const Services = () => {
         )}
       </div>
 
+      {showOrderCreateModal ? (
+        <div className="fixed inset-0 z-[64] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
+            <h3 className="text-lg font-semibold text-white">Nova ordem de servi\u00e7o</h3>
+            <p className="mt-1 text-sm text-gray-400">Preencha os dados e confirme para criar a ordem vinculada.</p>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs text-gray-300">Processo de origem (opcional)</label>
+                <select
+                  value={orderDraft.sourceServiceId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    const source = sourceProcessOptions.find((item) => String(item.id) === String(nextId)) || null;
+                    setOrderDraft((prev) => ({
+                      ...prev,
+                      sourceServiceId: nextId,
+                      empresa_nome: source?.empresa_nome || prev.empresa_nome,
+                      tipo_servico: source?.tipo_servico || source?.titulo || prev.tipo_servico,
+                      setor_key: normalizeSectorKey(source?.setor || prev.setor_key),
+                      descricao: source?.descricao || prev.descricao,
+                    }));
+                  }}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                >
+                  <option value="">Sem v\u00ednculo</option>
+                  {sourceProcessOptions.map((item) => (
+                    <option key={`source-order-${item.id}`} value={item.id}>
+                      {(item.tipo_servico || item.titulo || 'Processo')} - {item.empresa_nome || 'Sem cliente'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Empresa</label>
+                <input
+                  value={orderDraft.empresa_nome}
+                  onChange={(e) => setOrderDraft((prev) => ({ ...prev, empresa_nome: e.target.value }))}
+                  placeholder="Nome da empresa"
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Tipo da ordem</label>
+                <input
+                  value={orderDraft.tipo_servico}
+                  onChange={(e) => setOrderDraft((prev) => ({ ...prev, tipo_servico: e.target.value }))}
+                  placeholder="Ex.: Envio de contrato"
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Setor</label>
+                <select
+                  value={orderDraft.setor_key}
+                  onChange={(e) => setOrderDraft((prev) => ({ ...prev, setor_key: e.target.value }))}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                >
+                  {configuredSectorOptions.map((sector) => (
+                    <option key={`order-sector-${sector.key}`} value={sector.key}>{sector.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-gray-300">Data de in\u00edcio</label>
+                <input
+                  type="date"
+                  value={orderDraft.data_inicio}
+                  onChange={(e) => setOrderDraft((prev) => ({ ...prev, data_inicio: e.target.value }))}
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs text-gray-300">Descri\u00e7\u00e3o</label>
+                <textarea
+                  rows={3}
+                  value={orderDraft.descricao}
+                  onChange={(e) => setOrderDraft((prev) => ({ ...prev, descricao: e.target.value }))}
+                  placeholder="Detalhes da ordem de servi\u00e7o"
+                  className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                />
+              </div>
+            </div>
+
+            {selectedOrderSource ? (
+              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-gray-300">
+                Processo de origem selecionado: <span className="font-semibold text-white">{selectedOrderSource.tipo_servico || selectedOrderSource.titulo}</span>
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowOrderCreateModal(false)}
+                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateOrderService}
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100"
+              >
+                Criar ordem
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showBatchEditModal ? (
         <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/65 p-4">
           <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
@@ -2361,40 +3469,6 @@ const Services = () => {
         </div>
       ) : null}
 
-      {showBatchSendModal ? (
-        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/65 p-4">
-          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
-            <h3 className="text-lg font-semibold text-white">Envio em lote</h3>
-            <p className="mt-1 text-sm text-gray-400">
-              {(selectedTargetServicos.length || filteredServicos.length)} processos serao enviados para fila de processamento.
-            </p>
-            <div className="mt-4 max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-2">
-              {(selectedTargetServicos.length ? selectedTargetServicos : filteredServicos).slice(0, 20).map((item) => (
-                <div key={`send-${item.id}`} className="rounded-lg px-2 py-1.5 text-sm text-gray-200">
-                  {item.empresa_nome} - {item.tipo_servico || item.titulo}
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowBatchSendModal(false)}
-                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleBatchSend}
-                className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100"
-              >
-                Confirmar envio
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {showBatchGenerateModal ? (
         <div className="fixed inset-0 z-[66] flex items-center justify-center bg-black/65 p-4">
           <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
@@ -2411,7 +3485,7 @@ const Services = () => {
                   className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none"
                 >
                   <option value="">Selecionar manualmente</option>
-                  {processModels.map((item) => (
+                  {processModelsScoped.map((item) => (
                     <option key={item.id} value={item.id}>{item.nome}</option>
                   ))}
                 </select>
@@ -2531,18 +3605,101 @@ const Services = () => {
 
                 <div className="mt-4 border-b border-white/10">
                   <div className="inline-flex items-center gap-8 text-sm">
-                    <span className="border-b-2 border-emerald-400 pb-2 font-semibold text-white">Anexos</span>
-                    <span className="pb-2 text-gray-400">ConnectHub</span>
-                    <span className="pb-2 text-gray-400">Comentarios</span>
+                    <button
+                      type="button"
+                      onClick={() => setProcessDetailTab('anexos')}
+                      className={`pb-2 ${processDetailTab === 'anexos' ? 'border-b-2 border-emerald-400 font-semibold text-white' : 'text-gray-400'}`}
+                    >
+                      Anexos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProcessDetailTab('comentarios')}
+                      className={`pb-2 ${processDetailTab === 'comentarios' ? 'border-b-2 border-emerald-400 font-semibold text-white' : 'text-gray-400'}`}
+                    >
+                      Comentarios
+                    </button>
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                  <div className="mb-2 text-lg font-semibold text-white">Tarefas com anexos</div>
-                  <div className="rounded-xl border border-white/10 bg-[#111a2b] p-4 text-gray-300">
-                    Arraste e solte o arquivo aqui
+                {processDetailTab === 'anexos' ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                    <div className="mb-2 text-lg font-semibold text-white">Tarefas com anexos</div>
+                    <input
+                      ref={processAttachmentInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files || []);
+                        addProcessAttachments(files);
+                        event.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => processAttachmentInputRef.current?.click?.()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        addProcessAttachments(Array.from(event.dataTransfer?.files || []));
+                      }}
+                      onDragOver={(event) => event.preventDefault()}
+                      className="w-full rounded-xl border border-dashed border-white/20 bg-[#111a2b] p-4 text-left text-gray-300 hover:border-emerald-400/40 hover:bg-[#131f34]"
+                    >
+                      Arraste e solte o arquivo aqui
+                    </button>
+                    <div className="mt-3 space-y-2">
+                      {processDetails.attachments.map((attachment) => (
+                        <div key={attachment.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200">
+                          <div className="min-w-0">
+                            <p className="truncate">{attachment.name}</p>
+                            <p className="text-xs text-gray-400">{formatDate(attachment.createdAt)} • {attachment.createdBy}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeProcessAttachment(attachment.id)}
+                            className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      ))}
+                      {!processDetails.attachments.length ? (
+                        <p className="text-sm text-gray-400">Nenhum anexo adicionado.</p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                    <div className="mb-2 text-lg font-semibold text-white">Comentarios</div>
+                    <div className="mb-3 space-y-2">
+                      {processDetails.comments.map((comment) => (
+                        <div key={comment.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                          <p className="text-sm text-gray-100">{comment.content}</p>
+                          <p className="mt-1 text-xs text-gray-400">{comment.createdBy} • {formatDate(comment.createdAt)}</p>
+                        </div>
+                      ))}
+                      {!processDetails.comments.length ? (
+                        <p className="text-sm text-gray-400">Nenhum comentario registrado.</p>
+                      ) : null}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={processDetailDraftComment}
+                        onChange={(event) => setProcessDetailDraftComment(event.target.value)}
+                        placeholder="Escreva um comentario..."
+                        className="flex-1 rounded-lg border border-white/15 bg-[#111a2b] px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={submitProcessComment}
+                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100"
+                      >
+                        Enviar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <aside className="max-h-[86vh] overflow-y-auto p-5">
@@ -2605,8 +3762,8 @@ const Services = () => {
                   onChange={(e) => setProcessDraft((prev) => ({ ...prev, setorDestinoKey: e.target.value }))}
                   className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 >
-                  {Object.entries(sectorLabelMap).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
+                  {configuredSectorOptions.map((sector) => (
+                    <option key={sector.key} value={sector.key}>{sector.label}</option>
                   ))}
                 </select>
               </FormField>
@@ -2659,8 +3816,8 @@ const Services = () => {
                       onChange={(e) => updateProcessStep(index, 'setorResponsavelKey', e.target.value)}
                       className="w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                     >
-                      {Object.entries(sectorLabelMap).map(([key, label]) => (
-                        <option key={key} value={key}>{label}</option>
+                      {configuredSectorOptions.map((sector) => (
+                        <option key={sector.key} value={sector.key}>{sector.label}</option>
                       ))}
                     </select>
                     <div className="md:col-span-2">
@@ -2736,7 +3893,7 @@ const Services = () => {
               </div>
               {newService.modelo_id ? (
                 <p className="mt-2 text-xs text-emerald-200">
-                  Processo selecionado: {processModels.find((item) => item.id === newService.modelo_id)?.nome || newService.tipo_servico}
+                  Processo selecionado: {processModelsScoped.find((item) => item.id === newService.modelo_id)?.nome || newService.tipo_servico}
                 </p>
               ) : null}
             </div>
@@ -2771,7 +3928,7 @@ const Services = () => {
                   }
                   className="rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40"
                 >
-                  {sectorOptions.map((sector) => (
+                  {configuredSectorOptions.map((sector) => (
                     <option key={sector.key} value={sector.key}>
                       {sector.label}
                     </option>
@@ -2930,7 +4087,7 @@ const Services = () => {
                   checked={Boolean(newService.vincular_ordem_servico)}
                   onChange={(e) => setNewService((prev) => ({ ...prev, vincular_ordem_servico: e.target.checked }))}
                 />
-                Vincular a ordem de servico
+                Vincular \u00e0 ordem de servi\u00e7o
               </label>
               <label className="inline-flex items-center gap-2 text-sm text-gray-200">
                 <input
@@ -3011,6 +4168,32 @@ const Services = () => {
                 <Plus className="h-4 w-4" />
                 Salvar processo
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {teamReportTarget ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-zinc-900 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-semibold text-white">Relatório de desempenho</h3>
+                <p className="mt-1 text-sm text-gray-400">{teamReportTarget.nome}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTeamReportTarget(null)}
+                className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-sm text-gray-200"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <DetailItem label="Pendentes" value={teamReportTarget.pendente} />
+              <DetailItem label="Em progresso" value={teamReportTarget.progresso} />
+              <DetailItem label="Concluídas" value={teamReportTarget.concluidas} />
+              <DetailItem label="Desempenho" value={`${teamReportTarget.desempenho}%`} />
             </div>
           </div>
         </div>

@@ -61,6 +61,29 @@ export const listSupportThreadsForAccounting = () => {
   );
 };
 
+export const startSupportThread = ({ clientId, clientName }) => {
+  const normalizedClientId = String(clientId || '').trim();
+  if (!normalizedClientId) return null;
+
+  const store = readStore();
+  const existing = store.threads?.[normalizedClientId];
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const thread = {
+    ...createThread(normalizedClientId, clientName),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  store.threads = {
+    ...(store.threads || {}),
+    [normalizedClientId]: thread,
+  };
+  writeStore(store);
+  return thread;
+};
+
 export const sendSupportMessage = ({ clientId, clientName, from, senderName, text }) => {
   const trimmed = String(text || '').trim();
   if (!trimmed) return null;

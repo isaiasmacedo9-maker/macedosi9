@@ -136,7 +136,7 @@ const TrabalhistaCompleto = () => {
     tipo: 'admissao',
     titulo: '',
     descricao: '',
-    prazo: '',
+    prazo: getTodayInputDate(),
     responsavel: user?.name || '',
     prioridade: 'media',
     observacoes: ''
@@ -337,7 +337,7 @@ const TrabalhistaCompleto = () => {
 
   useEffect(() => {
     const obrigacoesTabs = new Set(['dashboard', 'clientes_empresas', 'obrigacoes', 'calendario', 'relatorios']);
-    const avulsosTabs = new Set(['dashboard', 'clientes_empresas', 'recalculos', 'admissoes', 'demissoes', 'solicitacoes']);
+    const avulsosTabs = new Set(['dashboard', 'clientes_empresas', 'recalculos', 'admissoes', 'demissoes', 'solicitacoes', 'relatorios']);
 
     if (moduleDivision === 'obrigacoes_mensais' && !obrigacoesTabs.has(activeTab)) {
       setActiveTab('obrigacoes');
@@ -960,7 +960,7 @@ const TrabalhistaCompleto = () => {
       tipo: 'admissao',
       titulo: '',
       descricao: '',
-      prazo: '',
+      prazo: getTodayInputDate(),
       responsavel: user?.name || '',
       prioridade: 'media',
       observacoes: ''
@@ -1316,7 +1316,14 @@ const TrabalhistaCompleto = () => {
           { key: 'obrigacoes', icon: '📄', label: 'Obrigações' },
           { key: 'calendario', icon: '📅', label: 'Calendário' },
           { key: 'relatorios', icon: '📊', label: 'Relatórios' }
-        ].map(tab => (
+        ]
+          .filter((tab) => {
+            if (moduleDivision === 'servicos_avulsos') {
+              return ['dashboard', 'clientes_empresas', 'recalculos', 'admissoes', 'demissoes', 'solicitacoes', 'relatorios'].includes(tab.key);
+            }
+            return ['dashboard', 'clientes_empresas', 'obrigacoes', 'calendario', 'relatorios'].includes(tab.key);
+          })
+          .map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -1324,7 +1331,28 @@ const TrabalhistaCompleto = () => {
               activeTab === tab.key ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'
             }`}
           >
-            {tab.icon} {tab.label}
+            {{
+              dashboard: '📊',
+              clientes_empresas: '🏢',
+              recalculos: '🧮',
+              admissoes: '➕',
+              demissoes: '➖',
+              solicitacoes: '📋',
+              obrigacoes: '📄',
+              calendario: '📅',
+              relatorios: '📊',
+            }[tab.key] || tab.icon}{' '}
+            {{
+              dashboard: 'Dashboard',
+              clientes_empresas: 'Empresas',
+              recalculos: 'Recalculos',
+              admissoes: 'Admissões',
+              demissoes: 'Demissões',
+              solicitacoes: 'Solicitações',
+              obrigacoes: 'Obrigações',
+              calendario: 'Calendário',
+              relatorios: 'Relatórios',
+            }[tab.key] || tab.label}
           </button>
         ))}
       </div>

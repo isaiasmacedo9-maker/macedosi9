@@ -274,6 +274,7 @@ const ContasReceber = () => {
   const [confirmingBatch, setConfirmingBatch] = useState(false);
   const [importedLinks, setImportedLinks] = useState([]);
   const [filterImportedOnly, setFilterImportedOnly] = useState(false);
+  const [generatingDriveReport, setGeneratingDriveReport] = useState(false);
 
   const [filters, setFilters] = useState({
     empresa: '',
@@ -618,6 +619,33 @@ const ContasReceber = () => {
     }
   };
 
+  const generateDriveReport = async ({ empresaId = '', empresaNome = '' } = {}) => {
+    try {
+      setGeneratingDriveReport(true);
+      const payload = {
+        cidade: filters.cidade || undefined,
+        situacao: filters.situacao?.length === 1 ? filters.situacao[0] : undefined,
+        data_inicio: filters.data_vencimento_inicio || undefined,
+        data_fim: filters.data_vencimento_fim || undefined,
+        empresa_id: empresaId || undefined,
+      };
+      const response = await api.post('/financial/contas-receber/reports/generate-drive-pdf', payload);
+      const link = response?.data?.drive_pdf?.webViewLink || response?.data?.drive_document?.webViewLink;
+      if (link) {
+        window.open(link, '_blank', 'noopener,noreferrer');
+      }
+      toast.success(
+        empresaId
+          ? `Relatório do cliente ${empresaNome || ''} gerado no Google Drive.`
+          : 'Relatório geral gerado no Google Drive.',
+      );
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Falha ao gerar relatório no Google Drive.');
+    } finally {
+      setGeneratingDriveReport(false);
+    }
+  };
+
   const importedContaIdSet = useMemo(
     () => new Set(importedLinks.map((item) => String(item.conta_id))),
     [importedLinks],
@@ -868,6 +896,16 @@ const ContasReceber = () => {
           >
             <Plus className="h-4 w-4" />
             <span>Nova Conta</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => generateDriveReport()}
+            disabled={generatingDriveReport}
+            className="btn-secondary flex items-center gap-2 rounded-xl px-4 py-2 disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            <span>{generatingDriveReport ? 'Gerando no Drive...' : 'Relatório Drive'}</span>
           </button>
         </div>
       </div>
@@ -1132,6 +1170,14 @@ const ContasReceber = () => {
                               title="Duplicar"
                             >
                               <Copy className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => generateDriveReport({ empresaId: conta.empresa_id, empresaNome: conta.empresa })}
+                              className="btn-secondary rounded-lg p-2 hover:bg-cyan-600/20"
+                              title="Gerar relatório do cliente no Drive"
+                            >
+                              <Download className="h-4 w-4" />
                             </button>
                           </div>
                         </td>

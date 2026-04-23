@@ -14,7 +14,8 @@ from auth import get_current_user
 from database_adapter import DatabaseAdapter
 from database_compat import (
     get_contas_receber_collection, get_financial_clients_collection,
-    get_importacoes_extrato_collection, get_financial_settings_collection
+    get_importacoes_extrato_collection, get_financial_settings_collection,
+    get_configuracoes_collection, get_documents_collection
 )
 from datetime import datetime, date, timedelta
 import json
@@ -24,8 +25,15 @@ import csv
 import io
 import unicodedata
 from typing import Dict, Any
+from services.google_drive_service import (
+    DEFAULT_GOOGLE_SCOPES,
+    GoogleDriveService,
+    GoogleIntegrationError,
+    decrypt_service_account_payload,
+)
 
 router = APIRouter(prefix="/financial", tags=["Financial"])
+GOOGLE_INTEGRATION_KEY = "google_drive_integration"
 
 
 class FinancialHonorariosSettingsPayload(BaseModel):
@@ -38,6 +46,16 @@ class FinancialAssinaturaServicesPayload(BaseModel):
 
 class FinancialAssinaturaPlansPayload(BaseModel):
     items: List[Dict[str, Any]]
+
+
+class GenerateReceberReportDriveRequest(BaseModel):
+    cidade: Optional[str] = None
+    situacao: Optional[str] = None
+    data_inicio: Optional[date] = None
+    data_fim: Optional[date] = None
+    empresa_id: Optional[str] = None
+    template_file_id: Optional[str] = None
+    placeholders: Optional[Dict[str, Any]] = None
 
 class ContaPagarCreatePayload(BaseModel):
     external_id: Optional[str] = None
@@ -248,6 +266,49 @@ async def _get_contas_pagar_settings_row():
         }
         await collection.insert_one(row)
     return collection, row
+
+
+def _safe_json_load(raw: str) -> Dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+async def _load_google_drive_integration() -> Dict[str, Any]:
+    config_collection = await get_configuracoes_collection()
+    row = await config_collection.find_one({"chave": GOOGLE_INTEGRATION_KEY})
+    if not row:
+        raise HTTPException(status_code=400, detail="Integracao Google Drive nao configurada.")
+    payload = _safe_json_load(str(row.get("valor") or ""))
+    if not payload.get("enabled"):
+        raise HTTPException(status_code=400, detail="Integracao Google Drive esta desabilitada.")
+    if not payload.get("credentials_encrypted"):
+        raise HTTPException(status_code=400, detail="Credencial Google Drive ausente.")
+    if not payload.get("root_folder_id"):
+        raise HTTPException(status_code=400, detail="Pasta raiz do Google Drive nao configurada.")
+    return payload
+
+
+def _format_currency_br(value: float) -> str:
+    return f"R$ {float(value or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _build_receber_lines(contas: List[ContaReceber], max_items: int = 20) -> str:
+    if not contas:
+        return "Sem titulos encontrados para os filtros informados."
+    lines = []
+    for idx, conta in enumerate(contas[:max_items], start=1):
+        venc = conta.data_vencimento.strftime("%d/%m/%Y") if hasattr(conta.data_vencimento, "strftime") else str(conta.data_vencimento)
+        lines.append(
+            f"{idx}. {conta.empresa} | Doc: {conta.documento or '-'} | Venc: {venc} | Situacao: {conta.situacao} | Valor: {_format_currency_br(conta.total_liquido)}"
+        )
+    if len(contas) > max_items:
+        lines.append(f"... e mais {len(contas) - max_items} titulos.")
+    return "\n".join(lines)
 
 # Contas a Receber
 @router.post("/contas-receber", response_model=ContaReceber)
@@ -1859,6 +1920,140 @@ async def export_contas_receber(
             "content": csv_content,
             "filename": f"contas_receber_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         }
+
+
+@router.post("/contas-receber/reports/generate-drive-pdf")
+async def generate_contas_receber_report_drive_pdf(
+    req: GenerateReceberReportDriveRequest,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Gera relatorio de contas a receber via template Google Docs e salva PDF no Drive."""
+    check_financial_access(current_user)
+    integration = await _load_google_drive_integration()
+    templates = integration.get("templates") if isinstance(integration.get("templates"), dict) else {}
+    financeiro_templates = templates.get("financeiro") if isinstance(templates, dict) else {}
+    is_cliente_report = bool(str(req.empresa_id or "").strip())
+    default_template_id = (
+        str((financeiro_templates or {}).get("contas_receber_relatorio_cliente_template_file_id") or "").strip()
+        if is_cliente_report
+        else str((financeiro_templates or {}).get("contas_receber_relatorio_geral_template_file_id") or "").strip()
+    )
+    template_id = str(req.template_file_id or "").strip() or default_template_id
+    if not template_id:
+        raise HTTPException(status_code=400, detail="Template de relatorio de contas a receber nao configurado.")
+
+    contas_collection = await get_contas_receber_collection()
+    query: Dict[str, Any] = {}
+    if current_user.role != "admin":
+        query["cidade_atendimento"] = {"$in": current_user.allowed_cities}
+    elif req.cidade:
+        query["cidade_atendimento"] = req.cidade
+    if req.situacao:
+        query["situacao"] = req.situacao
+    if req.empresa_id:
+        query["empresa_id"] = req.empresa_id
+    if req.data_inicio and req.data_fim:
+        query["data_vencimento"] = {
+            "$gte": datetime.combine(req.data_inicio, datetime.min.time()),
+            "$lte": datetime.combine(req.data_fim, datetime.max.time()),
+        }
+
+    contas_data = await contas_collection.find(query, limit=5000)
+    contas = [ContaReceber(**row) for row in contas_data]
+
+    total_titulos = len(contas)
+    total_valor = float(sum(float(conta.total_liquido or 0) for conta in contas))
+    empresa_nome = "Todos os clientes"
+    if req.empresa_id and contas:
+        empresa_nome = str(contas[0].empresa or "Cliente")
+
+    replacements = {
+        "RELATORIO_TITULO": ("Relatorio de Contas a Receber - Cliente" if is_cliente_report else "Relatorio Geral de Contas a Receber"),
+        "DATA_GERACAO": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+        "TOTAL_TITULOS": str(total_titulos),
+        "VALOR_TOTAL": _format_currency_br(total_valor),
+        "EMPRESA_NOME": empresa_nome,
+        "FILTRO_CIDADE": req.cidade or "Todas",
+        "FILTRO_SITUACAO": req.situacao or "Todas",
+        "LINHAS_RESUMO": _build_receber_lines(contas),
+    }
+    for key, value in (req.placeholders or {}).items():
+        clean_key = str(key or "").strip()
+        if clean_key:
+            replacements[clean_key] = str(value or "")
+
+    try:
+        service_account_info = decrypt_service_account_payload(str(integration.get("credentials_encrypted") or ""))
+        scopes = integration.get("scopes") or list(DEFAULT_GOOGLE_SCOPES)
+        drive_service = GoogleDriveService(service_account_info=service_account_info, scopes=scopes)
+        folder_parts = [
+            "Financeiro",
+            "Contas a Receber",
+            "Relatorios",
+        ]
+        if req.empresa_id:
+            folder_parts.append(empresa_nome)
+        folder_parts.append(datetime.utcnow().strftime("%Y-%m"))
+        target_folder = drive_service.ensure_folder_path(str(integration.get("root_folder_id")), folder_parts)
+
+        base_name = (
+            f"Relatorio-Cliente-{empresa_nome}-{datetime.utcnow().strftime('%Y%m%d_%H%M')}"
+            if is_cliente_report
+            else f"Relatorio-Geral-Contas-Receber-{datetime.utcnow().strftime('%Y%m%d_%H%M')}"
+        )
+        copied_doc = drive_service.copy_file_to_folder(
+            source_file_id=template_id,
+            parent_folder_id=str(target_folder.get("id")),
+            new_name=base_name,
+        )
+        drive_service.replace_google_doc_placeholders(
+            document_id=str(copied_doc.get("id")),
+            replacements=replacements,
+        )
+        pdf_bytes = drive_service.export_google_doc_as_pdf_bytes(document_id=str(copied_doc.get("id")))
+        uploaded_pdf = drive_service.upload_file(
+            parent_folder_id=str(target_folder.get("id")),
+            file_name=f"{base_name}.pdf",
+            file_bytes=pdf_bytes,
+            mime_type="application/pdf",
+        )
+    except GoogleIntegrationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    documents_collection = await get_documents_collection()
+    await documents_collection.insert_one(
+        {
+            "id": str(uuid.uuid4()),
+            "nome": uploaded_pdf.get("name"),
+            "setor": "Financeiro",
+            "origem": "contabilidade",
+            "empresa_id": str(req.empresa_id or "__geral__"),
+            "empresa_nome": empresa_nome,
+            "tipo_documento": ("Relatorio Cliente - Contas a Receber" if is_cliente_report else "Relatorio Geral - Contas a Receber"),
+            "data": datetime.utcnow().strftime("%Y-%m-%d"),
+            "arquivo_nome": uploaded_pdf.get("name"),
+            "storage_provider": "google_drive",
+            "drive_file_id": uploaded_pdf.get("id"),
+            "drive_folder_id": target_folder.get("id"),
+            "drive_web_view_link": uploaded_pdf.get("webViewLink"),
+            "drive_web_content_link": uploaded_pdf.get("webContentLink"),
+            "mime_type": uploaded_pdf.get("mimeType") or "application/pdf",
+            "size_bytes": int(uploaded_pdf.get("size") or len(pdf_bytes)),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "created_by_id": str(current_user.id),
+            "created_by_name": str(current_user.name),
+        }
+    )
+
+    return {
+        "message": "Relatorio gerado com sucesso no Google Drive.",
+        "drive_document": copied_doc,
+        "drive_pdf": uploaded_pdf,
+        "drive_folder": target_folder,
+        "total_titulos": total_titulos,
+        "valor_total": total_valor,
+    }
 
 # Dashboard com estatísticas avançadas - atualizado
 @router.get("/dashboard-stats")

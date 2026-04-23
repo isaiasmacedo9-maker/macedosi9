@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AtSign,
   Bell,
@@ -51,6 +52,33 @@ const DEFAULT_COMPOSER_TEXT_STYLE = {
   underline: false,
   strike: false,
 };
+
+const applyLinePrefixTransform = (value, start, end, prefix) => {
+  const safePrefix = String(prefix || '');
+  const safeValue = String(value || '');
+  const from = Math.max(0, Number(start || 0));
+  const to = Math.max(from, Number(end || from));
+  const selected = safeValue.slice(from, to);
+  const source = selected || safeValue.slice(from);
+  const transformed = String(source)
+    .split('\n')
+    .map((line) => `${safePrefix}${line}`)
+    .join('\n');
+
+  if (selected) {
+    return {
+      nextValue: `${safeValue.slice(0, from)}${transformed}${safeValue.slice(to)}`,
+      nextSelectionStart: from,
+      nextSelectionEnd: from + transformed.length,
+    };
+  }
+
+  return {
+    nextValue: `${safeValue.slice(0, from)}${transformed}`,
+    nextSelectionStart: from + Math.min(transformed.length, safePrefix.length),
+    nextSelectionEnd: from + Math.min(transformed.length, safePrefix.length),
+  };
+};
 // Minimal emoji picker (safe, frontend-only) prepared for future integration.
 const DEFAULT_EMOJIS = [
   '😀',
@@ -76,6 +104,13 @@ const DEFAULT_EMOJIS = [
   '🧠',
   '📅',
   '🕒',
+];
+
+const EMOJI_PICKER_OPTIONS = [
+  '😀', '😁', '😂', '🤣', '🙂', '😉', '😍', '😎', '🤔', '🙌', '👏', '👍', '👎', '🙏', '🔥', '🎉',
+  '✅', '❗', '📌', '📎', '🧠', '📝', '🕒', '😊', '😇', '🙃', '😬', '😴', '🥱', '🤯', '🥳', '😭',
+  '😡', '🤬', '😱', '🥶', '👀', '🤝', '💪', '👌', '💡', '⏰', '📞', '💬', '📢', '📣', '💼', '📚',
+  '💰', '🎯', '🚀', '🏁', '🌟', '❤️',
 ];
 
 const parseJson = (value, fallback) => {
@@ -151,33 +186,43 @@ const composerToolbarActions = [
     label: '"',
     title: 'Citacao',
     mode: 'insert',
-    apply: (value, start, end) => ({
-      nextValue: `${value.slice(0, start)}> ${value.slice(start, end)}${value.slice(end)}`,
-      nextSelectionStart: start + 2,
-      nextSelectionEnd: end + 2,
-    }),
+    apply: (value, start, end) => applyLinePrefixTransform(value, start, end, '> '),
   },
   {
     id: 'bullet-list',
     label: '- List',
     title: 'Lista com marcadores',
     mode: 'insert',
-    apply: (value, start, end) => ({
-      nextValue: `${value.slice(0, start)}- ${value.slice(start, end)}${value.slice(end)}`,
-      nextSelectionStart: start + 2,
-      nextSelectionEnd: end + 2,
-    }),
+    apply: (value, start, end) => applyLinePrefixTransform(value, start, end, '- '),
   },
   {
     id: 'ordered-list',
     label: '1.',
     title: 'Lista numerada',
     mode: 'insert',
-    apply: (value, start, end) => ({
-      nextValue: `${value.slice(0, start)}1. ${value.slice(start, end)}${value.slice(end)}`,
-      nextSelectionStart: start + 3,
-      nextSelectionEnd: end + 3,
-    }),
+    apply: (value, start, end) => {
+      const safeValue = String(value || '');
+      const from = Math.max(0, Number(start || 0));
+      const to = Math.max(from, Number(end || from));
+      const selected = safeValue.slice(from, to);
+      const source = selected || safeValue.slice(from);
+      const transformed = String(source)
+        .split('\n')
+        .map((line, index) => `${index + 1}. ${line}`)
+        .join('\n');
+      if (selected) {
+        return {
+          nextValue: `${safeValue.slice(0, from)}${transformed}${safeValue.slice(to)}`,
+          nextSelectionStart: from,
+          nextSelectionEnd: from + transformed.length,
+        };
+      }
+      return {
+        nextValue: `${safeValue.slice(0, from)}${transformed}`,
+        nextSelectionStart: from + 3,
+        nextSelectionEnd: from + 3,
+      };
+    },
   },
 ];
 
@@ -268,6 +313,7 @@ const pushInternalChatNotifications = ({ conversation, messages, currentUser }) 
 
 const ChatEnhanced = () => {
   const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+  const navigate = useNavigate();
   const currentUser = parseJson(localStorage.getItem('user') || '{}', {});
   const isAdmin = currentUser?.role === 'admin';
 
@@ -303,6 +349,7 @@ const ChatEnhanced = () => {
   const [addMemberIds, setAddMemberIds] = useState([]);
   const [showSpecialAccessModal, setShowSpecialAccessModal] = useState(false);
   const [specialAccessUser, setSpecialAccessUser] = useState(null);
+  const [linkedProcessesSource, setLinkedProcessesSource] = useState([]);
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState('activities');
   const [activitiesUnreadOnly, setActivitiesUnreadOnly] = useState(false);
@@ -328,10 +375,57 @@ const ChatEnhanced = () => {
     member_ids: [],
   });
 
+  const currentUserIdentity = useMemo(() => {
+    const ids = new Set();
+    if (currentUser?.id) ids.add(String(currentUser.id).trim());
+    if (currentUser?.email) ids.add(String(currentUser.email).trim().toLowerCase());
+    const name = normalizeForSearch(currentUser?.name || '');
+    return { ids, name };
+  }, [currentUser?.email, currentUser?.id, currentUser?.name]);
+
+  const isProcessAssignedToCurrentUser = (proc) => {
+    const direct = new Set([
+      proc?.responsavel_id,
+      proc?.responsavel_email,
+      ...(Array.isArray(proc?.assigned_to) ? proc.assigned_to : []),
+      ...(Array.isArray(proc?.assignedTo) ? proc.assignedTo : []),
+    ].filter(Boolean).map((value) => String(value).trim()));
+
+    if (proc?.responsavel_email) {
+      direct.add(String(proc.responsavel_email).trim().toLowerCase());
+    }
+
+    if (proc?.colaboradores_por_setor && typeof proc.colaboradores_por_setor === 'object') {
+      Object.values(proc.colaboradores_por_setor).forEach((list) => {
+        if (Array.isArray(list)) list.forEach((value) => direct.add(String(value).trim()));
+      });
+    }
+
+    const byIdOrEmail = Array.from(currentUserIdentity.ids).some((id) => direct.has(id));
+    if (byIdOrEmail) return true;
+
+    const responsibleName = normalizeForSearch(
+      proc?.responsavel_nome || proc?.responsavel_conta || proc?.colaborador_responsavel || proc?.colaborador_lancamento_nome || '',
+    );
+    if (responsibleName && currentUserIdentity.name && responsibleName === currentUserIdentity.name) return true;
+
+    const etapas = Array.isArray(proc?.etapas) ? proc.etapas : [];
+    return etapas.some((step) => {
+      const stepAssigned = Array.isArray(step?.assignedTo) ? step.assignedTo : [];
+      if (stepAssigned.some((value) => currentUserIdentity.ids.has(String(value).trim()))) return true;
+      const tarefas = Array.isArray(step?.tarefas) ? step.tarefas : [];
+      return tarefas.some((task) => {
+        const taskAssigned = Array.isArray(task?.assignedTo) ? task.assignedTo : [];
+        return taskAssigned.some((value) => currentUserIdentity.ids.has(String(value).trim()));
+      });
+    });
+  };
+
   useEffect(() => {
     loadUsers();
     loadConversations();
     loadPublicGroups();
+    loadLinkedProcesses();
     sendHeartbeat();
 
     const heartbeatInterval = setInterval(() => {
@@ -345,6 +439,7 @@ const ChatEnhanced = () => {
         loadConversations();
       }
       loadUsers();
+      loadLinkedProcesses();
     }, 15000);
 
     return () => {
@@ -352,6 +447,37 @@ const ChatEnhanced = () => {
       clearInterval(refreshInterval);
     };
   }, [specialAccessUser?.id]);
+
+  const loadLinkedProcesses = async () => {
+    const token = localStorage.getItem('token');
+    let backendProcesses = [];
+    try {
+      const response = await fetch(`${API_URL}/api/services/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        backendProcesses = Array.isArray(payload) ? payload : [];
+      }
+    } catch {}
+
+    const fromMockServices = parseJson(localStorage.getItem('mock_internal_services') || '[]', []);
+    const fromAcademy = parseJson(localStorage.getItem(ACADEMY_REAL_PROCESSES_KEY) || '[]', []);
+    const merged = []
+      .concat(Array.isArray(backendProcesses) ? backendProcesses : [])
+      .concat(Array.isArray(fromMockServices) ? fromMockServices : [])
+      .concat(Array.isArray(fromAcademy) ? fromAcademy : []);
+
+    const unique = [];
+    const seen = new Set();
+    merged.forEach((item, index) => {
+      const key = String(item?.id || `${item?.nome || item?.tipo_servico || 'proc'}-${index}`);
+      if (seen.has(key)) return;
+      seen.add(key);
+      unique.push(item);
+    });
+    setLinkedProcessesSource(unique);
+  };
 
   useEffect(() => {
     if (!selectedConversation) return;
@@ -468,34 +594,33 @@ const ChatEnhanced = () => {
   }, [mentionState.open, mentionState.activeIndex]);
 
   const userProcesses = useMemo(() => {
-    const raw = parseJson(localStorage.getItem(ACADEMY_REAL_PROCESSES_KEY) || '[]', []);
-    if (!Array.isArray(raw)) return [];
-
-    const currentUserIds = new Set([currentUser?.id, currentUser?.email].filter(Boolean));
-    const processList = raw.filter((proc) => {
-      const etapas = Array.isArray(proc?.etapas) ? proc.etapas : [];
-      return etapas.some((step) => {
-        const stepAssigned = Array.isArray(step?.assignedTo) ? step.assignedTo : [];
-        if (stepAssigned.some((id) => currentUserIds.has(id))) return true;
-        const tarefas = Array.isArray(step?.tarefas) ? step.tarefas : [];
-        return tarefas.some((task) => {
-          const taskAssigned = Array.isArray(task?.assignedTo) ? task.assignedTo : [];
-          return taskAssigned.some((id) => currentUserIds.has(id));
-        });
-      });
-    });
-
-    return processList.map((proc) => ({
-      id: proc.id,
-      nome: proc.nome,
-      clienteNome: proc.clienteNome || '-',
-    }));
-  }, [currentUser?.id, currentUser?.email]);
+    const source = Array.isArray(linkedProcessesSource) ? linkedProcessesSource : [];
+    return source
+      .filter((proc) => isProcessAssignedToCurrentUser(proc))
+      .map((proc) => ({
+        id: proc.id,
+        nome: proc.nome || proc.tipo_servico || proc.titulo || 'Processo',
+        clienteNome: proc.clienteNome || proc.empresa_nome || proc.cliente_nome || '-',
+      }));
+  }, [linkedProcessesSource, currentUserIdentity]);
 
   const selectedProcess = useMemo(
     () => userProcesses.find((item) => item.id === selectedProcessId) || null,
     [userProcesses, selectedProcessId],
   );
+
+  const openLinkedProcessDetails = (processRef) => {
+    const processId = String(processRef?.id || '').trim();
+    if (!processId) {
+      setActionFeedback('Processo vinculado sem identificador para abrir detalhes.');
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('servicoId', processId);
+    params.set('tab', 'processos');
+    params.set('scope', 'cliente');
+    navigate(`/servicos?${params.toString()}`);
+  };
 
   const canManageCurrentGroup = useMemo(
     () =>
@@ -794,6 +919,31 @@ const ChatEnhanced = () => {
     }
   };
 
+  const appendChatNotification = ({ messageId = '', title = 'Chat interno', message = '' }) => {
+    const currentNotifications = parseJson(localStorage.getItem(NOTIFICATIONS_KEY) || '[]', []);
+    const safeList = Array.isArray(currentNotifications) ? currentNotifications : [];
+    const messageKey = String(messageId || '');
+    const alreadyExists = safeList.some((item) => {
+      if (!item) return false;
+      if (messageKey && String(item.messageId || '') === messageKey) return true;
+      return normalizeForSearch(item.message || '') === normalizeForSearch(message || '');
+    });
+    if (alreadyExists) return;
+    const next = [
+      ...safeList,
+      {
+        id: `ntf-chat-manual-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        messageId: messageKey || undefined,
+        scope: 'chat_macedo',
+        title: String(title || 'Chat interno'),
+        message: String(message || ''),
+        createdAt: new Date().toISOString(),
+        read: false,
+      },
+    ];
+    localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(next));
+  };
+
   const handleMarkAsUnreadFromMessage = (msg) => {
     const messageId = String(msg?.id || '');
     if (!messageId) {
@@ -803,6 +953,14 @@ const ChatEnhanced = () => {
     const seenMap = parseJson(localStorage.getItem(CHAT_SEEN_MESSAGES_KEY) || '{}', {});
     seenMap[messageId] = false;
     localStorage.setItem(CHAT_SEEN_MESSAGES_KEY, JSON.stringify(seenMap));
+    appendChatNotification({
+      messageId,
+      title:
+        selectedConversation?.tipo === 'group'
+          ? `Grupo: ${selectedConversation?.nome || 'Sem nome'}`
+          : `Chat: ${selectedConversation?.direct_user?.name || selectedConversation?.nome || 'Conversa'}`,
+      message: msg?.message || 'Mensagem marcada como nao lida.',
+    });
     setMessageActionsOpenKey('');
     setActionFeedback('Mensagem marcada como não lida.');
   };
@@ -824,6 +982,11 @@ const ChatEnhanced = () => {
       contract,
     };
     localStorage.setItem(CHAT_REMINDERS_KEY, JSON.stringify([...(Array.isArray(reminders) ? reminders : []), payload]));
+    appendChatNotification({
+      messageId: msg?.id || messageKey,
+      title: 'Lembrete criado',
+      message: `Lembrete: ${String(msg?.message || '').slice(0, 120) || 'Mensagem do chat'}`,
+    });
     setMessageActionsOpenKey('');
     setActionFeedback('Lembrete registrado (pendente de backend).');
   };
@@ -910,6 +1073,7 @@ const ChatEnhanced = () => {
       name: file.name,
       size: file.size,
       type: file.type || 'application/octet-stream',
+      rawFile: file,
     }));
     setPendingAttachments((prev) => [...prev, ...mapped]);
     event.target.value = '';
@@ -992,7 +1156,16 @@ const ChatEnhanced = () => {
   };
 
   const handleInsertList = () => {
-    insertComposerText(newMessage ? '\n- ' : '- ');
+    applyComposerTransform((value, start, end) => {
+      if (start !== end) return applyLinePrefixTransform(value, start, end, '- ');
+      const safeValue = String(value || '');
+      const insertion = safeValue ? '\n- ' : '- ';
+      return {
+        nextValue: `${safeValue.slice(0, start)}${insertion}${safeValue.slice(end)}`,
+        nextSelectionStart: start + insertion.length,
+        nextSelectionEnd: start + insertion.length,
+      };
+    });
     setComposerMenuOpen(false);
     setProcessSelectorOpen(false);
   };
@@ -1182,8 +1355,64 @@ const ChatEnhanced = () => {
     if (!newMessage.trim() || !selectedConversation) return;
 
     const outboundText = newMessage.trim();
+
+    const uploadAttachmentsToDrive = async () => {
+      if (!pendingAttachments.length) return [];
+      const token = localStorage.getItem('token');
+      const uploaded = [];
+      for (const attachment of pendingAttachments) {
+        const file = attachment?.rawFile;
+        if (!file) {
+          uploaded.push({
+            id: attachment.id,
+            name: attachment.name,
+            size: attachment.size,
+            type: attachment.type,
+          });
+          continue;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_URL}/api/chat/${selectedConversation.id}/attachments/upload-drive`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || `Falha ao enviar anexo ${attachment.name}`);
+        }
+
+        uploaded.push({
+          id: payload?.id || attachment.id,
+          name: payload?.name || attachment.name,
+          size: payload?.size || attachment.size,
+          type: payload?.type || attachment.type,
+          storage_provider: payload?.storage_provider || 'google_drive',
+          drive_file_id: payload?.drive_file_id || '',
+          drive_folder_id: payload?.drive_folder_id || '',
+          web_view_link: payload?.web_view_link || '',
+          web_content_link: payload?.web_content_link || '',
+        });
+      }
+      return uploaded;
+    };
+
+    let uploadedAttachments = [];
+    try {
+      uploadedAttachments = await uploadAttachmentsToDrive();
+    } catch (error) {
+      console.error('Erro ao enviar anexos do chat para o Drive:', error);
+      setActionFeedback('Nao foi possivel enviar os anexos para o Google Drive.');
+      return;
+    }
+
     const outboundMeta = {
-      attachments: pendingAttachments,
+      attachments: uploadedAttachments,
       textStyle: { ...composerTextStyle },
       processRef: selectedProcess
         ? {
@@ -1697,9 +1926,14 @@ const ChatEnhanced = () => {
                         </p>
                       </button>
                       {meta?.processRef ? (
-                        <div className="mt-2 rounded-md border border-white/20 bg-black/20 px-2.5 py-2 text-xs text-white">
+                        <button
+                          type="button"
+                          onClick={() => openLinkedProcessDetails(meta.processRef)}
+                          className="mt-2 w-full rounded-md border border-red-400/35 bg-black/20 px-2.5 py-2 text-left text-xs text-white hover:bg-red-500/10"
+                          title="Abrir detalhes do processo vinculado"
+                        >
                           Processo vinculado: {meta.processRef.nome} ({meta.processRef.clienteNome})
-                        </div>
+                        </button>
                       ) : null}
                       {Array.isArray(meta?.attachments) && meta.attachments.length > 0 ? (
                         <div className="mt-2 space-y-1">
@@ -1898,7 +2132,7 @@ const ChatEnhanced = () => {
                   {emojiPickerOpen ? (
                     <div ref={emojiPickerRef} style={{ zIndex: Z_LAYERS.chatPopover }} className="absolute bottom-full right-0 mb-2 w-56 rounded-lg border border-gray-600 bg-gray-900 p-2 shadow-xl" role="dialog" aria-label="Selecionar emoji">
                       <div className="grid grid-cols-8 gap-1">
-                        {DEFAULT_EMOJIS.map((emoji) => (
+                        {EMOJI_PICKER_OPTIONS.map((emoji) => (
                           <button key={emoji} type="button" onClick={() => handleSelectEmoji(emoji)} className="inline-flex h-8 w-8 items-center justify-center rounded hover:bg-gray-700 focus:bg-gray-700 focus:outline-none" title={emoji}>
                             <span className="text-base leading-none">{emoji}</span>
                           </button>

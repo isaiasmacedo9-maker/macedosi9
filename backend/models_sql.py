@@ -687,6 +687,36 @@ class ConfiguracaoSQL(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class DocumentCenterSQL(Base):
+    __tablename__ = "documents_center"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    nome = Column(String(255), nullable=False, index=True)
+    setor = Column(String(120), nullable=False, index=True)
+    origem = Column(String(60), nullable=False, index=True)  # contabilidade | cliente
+    empresa_id = Column(String(36), nullable=False, index=True)
+    empresa_nome = Column(String(255), nullable=False, index=True)
+    tipo_documento = Column(String(255), nullable=False, index=True)
+    data = Column(String(20), index=True)
+
+    arquivo_nome = Column(String(255))
+    storage_provider = Column(String(80), default="local")
+    drive_file_id = Column(String(128), index=True)
+    drive_folder_id = Column(String(128), index=True)
+    drive_web_view_link = Column(Text)
+    drive_web_content_link = Column(Text)
+    mime_type = Column(String(120))
+    size_bytes = Column(Integer)
+
+    created_by_id = Column(String(36))
+    created_by_name = Column(String(255))
+    updated_by_id = Column(String(36))
+    updated_by_name = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ChatSQL(Base):
     __tablename__ = "chats"
     

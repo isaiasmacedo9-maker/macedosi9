@@ -251,7 +251,7 @@ const EmptyState = ({ text }) => (
   </div>
 );
 
-const MacedoAcademy = () => {
+const MacedoAcademy = ({ sectorFilter = '' }) => {
   const [models, setModels] = useState(() => hydrateProcessModels(accountingServiceProcessModels));
   const [allClientsCatalog, setAllClientsCatalog] = useState(MOCK_CLIENTS);
   const [realProcesses, setRealProcesses] = useState([]);
@@ -304,8 +304,14 @@ const MacedoAcademy = () => {
     const loadClients = async () => {
       try {
         const response = await api.get('/clients', { params: { limit: 5000 } });
-        const rows = Array.isArray(response.data?.clients) ? response.data.clients : Array.isArray(response.data) ? response.data : [];
-        const normalized = rows
+        const rows = Array.isArray(response.data?.clients)
+          ? response.data.clients
+          : Array.isArray(response.data?.items)
+            ? response.data.items
+            : Array.isArray(response.data)
+              ? response.data
+              : [];
+        const normalized = [...rows, ...MOCK_CLIENTS]
           .map((item, index) => ({
             id: item.id || item.client_id || `client-${index}`,
             nome: item.nome || item.name || item.razao_social || item.fantasy_name || '',
@@ -314,7 +320,15 @@ const MacedoAcademy = () => {
           }))
           .filter((item) => item.nome);
         if (mounted && normalized.length) {
-          setAllClientsCatalog(normalized);
+          const deduped = [];
+          const seen = new Set();
+          normalized.forEach((item) => {
+            const key = String(item.id || `${item.nome}-${item.cnpj}` || '').trim();
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            deduped.push({ ...item, id: key });
+          });
+          setAllClientsCatalog(deduped);
         }
       } catch {
         if (mounted) setAllClientsCatalog(MOCK_CLIENTS);
@@ -341,24 +355,42 @@ const MacedoAcademy = () => {
   }, [models]);
 
   const filteredModels = useMemo(() => {
+    const normalizedSectorFilter = normalizeSectorKey(sectorFilter || '');
     return models.filter((model) => {
       const searchMatches = !search || normalizeText(model.nome).includes(normalizeText(search));
       const regimes = model?.regimesConfig?.selecionados || [];
       const regimeMatches = regimeFilter === 'any' || regimes.includes(regimeFilter);
       const departments = Array.from(new Set(getModelSteps(model).map((step) => normalizeSectorKey(step.setorResponsavel))));
       const departmentMatches = departmentFilter === 'all' || departments.includes(departmentFilter);
+      if (normalizedSectorFilter) {
+        const direct = normalizeSectorKey(model?.setorDestino || model?.setorInicial || '');
+        const hasSector = direct === normalizedSectorFilter || departments.includes(normalizedSectorFilter);
+        if (!hasSector) return false;
+      }
       return searchMatches && regimeMatches && departmentMatches;
     });
-  }, [models, search, regimeFilter, departmentFilter]);
+  }, [models, search, regimeFilter, departmentFilter, sectorFilter]);
+
+  const sortedFilteredModels = useMemo(() => {
+    return [...filteredModels].sort((a, b) => {
+      const aDept = normalizeSectorKey(getModelSteps(a)[0]?.setorResponsavel || a?.setorDestino || 'fiscal');
+      const bDept = normalizeSectorKey(getModelSteps(b)[0]?.setorResponsavel || b?.setorDestino || 'fiscal');
+      const aDeptLabel = DEPARTMENT_META[aDept]?.label || aDept;
+      const bDeptLabel = DEPARTMENT_META[bDept]?.label || bDept;
+      const deptOrder = aDeptLabel.localeCompare(bDeptLabel, 'pt-BR');
+      if (deptOrder !== 0) return deptOrder;
+      return String(a?.nome || '').localeCompare(String(b?.nome || ''), 'pt-BR');
+    });
+  }, [filteredModels]);
 
   const normalizeExceptionEntry = (entry) => {
     if (!entry) return null;
     if (typeof entry === 'string') {
-      const found = allClientsCatalog.find((client) => client.id === entry);
+      const found = allClientsCatalog.find((client) => String(client.id) === String(entry));
       return found || { id: entry, nome: entry, cnpj: '' };
     }
     if (!entry.id) return null;
-    const found = allClientsCatalog.find((client) => client.id === entry.id);
+    const found = allClientsCatalog.find((client) => String(client.id) === String(entry.id));
     return found || {
       id: entry.id,
       nome: entry.nome || entry.name || entry.id,
@@ -539,15 +571,16 @@ const MacedoAcademy = () => {
     setDraft((current) => {
       if (!current) return current;
       const sourceList = Array.isArray(current.clientsExceptions[targetView]) ? current.clientsExceptions[targetView] : [];
-      const exists = sourceList.some((item) => getExceptionItemId(item) === client.id);
+      const clientId = String(client?.id || '');
+      const exists = sourceList.some((item) => String(getExceptionItemId(item)) === clientId);
       if (exists) return current;
       const oppositeView = targetView === 'adicionados' ? 'removidos' : 'adicionados';
       return recalculateDraftRegimeSummary({
         ...current,
         clientsExceptions: {
           ...current.clientsExceptions,
-          [targetView]: [...sourceList, client],
-          [oppositeView]: (current.clientsExceptions[oppositeView] || []).filter((item) => getExceptionItemId(item) !== client.id),
+          [targetView]: [...sourceList, { ...client, id: clientId }],
+          [oppositeView]: (current.clientsExceptions[oppositeView] || []).filter((item) => String(getExceptionItemId(item)) !== clientId),
         },
       });
     });
@@ -560,7 +593,7 @@ const MacedoAcademy = () => {
         ...current,
         clientsExceptions: {
           ...current.clientsExceptions,
-          [source]: (current.clientsExceptions[source] || []).filter((item) => getExceptionItemId(item) !== clientId),
+          [source]: (current.clientsExceptions[source] || []).filter((item) => String(getExceptionItemId(item)) !== String(clientId)),
         },
       });
     });
@@ -829,15 +862,16 @@ const MacedoAcademy = () => {
 
   const clientsForExceptionSearch = useMemo(() => {
     const term = normalizeText(safeClientsExceptions.search || '');
-    if (!term) return allClientsCatalog;
-    return allClientsCatalog.filter((item) => normalizeText(item.nome).includes(term) || normalizeText(item.cnpj).includes(term));
+    const base = [...allClientsCatalog].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    if (!term) return base;
+    return base.filter((item) => normalizeText(item.nome).includes(term) || normalizeText(item.cnpj).includes(term));
   }, [safeClientsExceptions.search, allClientsCatalog]);
 
   const activeExceptionIds = useMemo(() => {
     const activeView = safeClientsExceptions.activeView;
     const sourceList = activeView ? safeClientsExceptions[activeView] : [];
     const list = Array.isArray(sourceList) ? sourceList : [];
-    return new Set(list.map((item) => getExceptionItemId(item)).filter(Boolean));
+    return new Set(list.map((item) => String(getExceptionItemId(item))).filter(Boolean));
   }, [safeClientsExceptions]);
 
   const canGenerateModel =
@@ -950,13 +984,27 @@ const MacedoAcademy = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredModels.map((model) => {
+              {sortedFilteredModels.map((model, modelIndex) => {
                 const isSelected = selectedId === model.id;
                 const isExpanded = !!expandedModelRows[model.id];
                 const modelRegimes = model?.regimesConfig?.selecionados || [];
                 const departments = Array.from(new Set(getModelSteps(model).map((step) => normalizeSectorKey(step.setorResponsavel))));
+                const primaryDepartment = departments[0] || normalizeSectorKey(model?.setorDestino || 'fiscal');
+                const previousModel = modelIndex > 0 ? sortedFilteredModels[modelIndex - 1] : null;
+                const previousDepartments = previousModel
+                  ? Array.from(new Set(getModelSteps(previousModel).map((step) => normalizeSectorKey(step.setorResponsavel))))
+                  : [];
+                const previousPrimaryDepartment = previousDepartments[0] || normalizeSectorKey(previousModel?.setorDestino || 'fiscal');
+                const showDepartmentHeader = modelIndex === 0 || previousPrimaryDepartment !== primaryDepartment;
                 return (
                   <React.Fragment key={model.id}>
+                    {showDepartmentHeader ? (
+                      <tr className="bg-slate-100/80">
+                        <td colSpan={5} className="px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                          Setor: {DEPARTMENT_META[primaryDepartment]?.label || primaryDepartment}
+                        </td>
+                      </tr>
+                    ) : null}
                     <tr
                       className={`border-b border-slate-100 text-sm ${isSelected ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
                       style={isSelected ? { boxShadow: 'inset 0 0 0 1px rgba(16, 185, 129, 0.45)' } : undefined}
@@ -1038,7 +1086,7 @@ const MacedoAcademy = () => {
               })}
             </tbody>
           </table>
-          {!filteredModels.length ? <EmptyState text="Nenhum modelo encontrado para os filtros selecionados." /> : null}
+          {!sortedFilteredModels.length ? <EmptyState text="Nenhum modelo encontrado para os filtros selecionados." /> : null}
         </div>
       </div>
 

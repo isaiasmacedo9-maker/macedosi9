@@ -3,7 +3,7 @@ Rotas para módulo Comercial
 """
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy import select, func, and_, or_
 from database_sql import AsyncSessionLocal
@@ -12,10 +12,20 @@ from models_comercial import ServicoComercialSQL, OrdemServicoSQL, ContratoSQL, 
 from auth import get_current_user
 from crud_sql import convert_to_dict, json_dumps, json_loads
 from models.user import UserResponse
+from database_compat import get_configuracoes_collection, get_documents_collection
+from services.google_drive_service import (
+    DEFAULT_GOOGLE_SCOPES,
+    GoogleDriveService,
+    GoogleIntegrationError,
+    decrypt_service_account_payload,
+)
 import os
 import shutil
+import json
 
 router = APIRouter(prefix="/comercial", tags=["Comercial"])
+
+GOOGLE_INTEGRATION_KEY = "google_drive_integration"
 
 # ==================== MODELS ====================
 
@@ -60,6 +70,54 @@ class ContratoUpdate(BaseModel):
     responsavel_id: Optional[str] = None
     observacoes: Optional[str] = None
     clausulas_especiais: Optional[str] = None
+
+
+class GenerateDriveDocumentRequest(BaseModel):
+    template_file_id: Optional[str] = None
+    placeholders: Optional[Dict[str, Any]] = None
+
+
+def _safe_json_load(raw: str) -> Dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+async def _load_google_drive_integration() -> Dict[str, Any]:
+    collection = await get_configuracoes_collection()
+    row = await collection.find_one({"chave": GOOGLE_INTEGRATION_KEY})
+    if not row:
+        raise HTTPException(status_code=400, detail="Integracao Google Drive nao configurada.")
+    payload = _safe_json_load(str(row.get("valor") or ""))
+    if not payload.get("enabled"):
+        raise HTTPException(status_code=400, detail="Integracao Google Drive esta desabilitada.")
+    if not payload.get("credentials_encrypted"):
+        raise HTTPException(status_code=400, detail="Credencial Google Drive ausente.")
+    if not payload.get("root_folder_id"):
+        raise HTTPException(status_code=400, detail="Pasta raiz do Google Drive nao configurada.")
+    return payload
+
+
+def _coalesce_name(*values: Optional[str]) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return "Sem nome"
+
+
+def _clean_replace_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, float):
+        return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return str(value)
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -116,6 +174,105 @@ async def gerar_numero_contrato(session) -> str:
         sequencia = 1
     
     return f"CTR-{ano_atual}-{sequencia:04d}"
+
+
+def _contract_replacements(contrato: ContratoSQL, empresa: Optional[ClientSQL], extras: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    base = {
+        "CONTRATO_NUMERO": contrato.numero,
+        "CONTRATO_NOME": contrato.nome_contrato,
+        "TIPO_SERVICO": contrato.tipo_servico,
+        "DESCRICAO": contrato.descricao or "",
+        "EMPRESA_NOME": _coalesce_name(
+            getattr(empresa, "nome_empresa", None),
+            getattr(empresa, "nome_fantasia", None),
+            contrato.empresa_nome,
+        ),
+        "EMPRESA_CNPJ": getattr(empresa, "cnpj", "") if empresa else "",
+        "RESPONSAVEL_NOME": contrato.responsavel_nome or "",
+        "FORMA_PAGAMENTO": contrato.forma_pagamento or "",
+        "VALOR_MENSAL": _clean_replace_value(contrato.valor_mensal or 0.0),
+        "VALOR_TOTAL": _clean_replace_value(contrato.valor_total or 0.0),
+        "DATA_ASSINATURA": _clean_replace_value(contrato.data_assinatura),
+        "DATA_INICIO_VIGENCIA": _clean_replace_value(contrato.data_inicio_vigencia),
+        "DATA_VENCIMENTO": _clean_replace_value(contrato.data_vencimento),
+        "RENOVACAO_AUTOMATICA": "Sim" if str(contrato.renovacao_automatica or "").lower() == "sim" else "Nao",
+        "STATUS": contrato.status or "",
+        "OBSERVACOES": contrato.observacoes or "",
+        "CLAUSULAS_ESPECIAIS": contrato.clausulas_especiais or "",
+        "GERADO_EM": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+    }
+    for key, value in (extras or {}).items():
+        clean_key = str(key or "").strip()
+        if clean_key:
+            base[clean_key] = _clean_replace_value(value)
+    return base
+
+
+def _os_replacements(ordem: OrdemServicoSQL, empresa: Optional[ClientSQL], extras: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    base = {
+        "OS_NUMERO": ordem.numero,
+        "TIPO_SERVICO": ordem.tipo_servico or "",
+        "DESCRICAO_SERVICO": ordem.descricao_servico or "",
+        "EMPRESA_NOME": _coalesce_name(
+            getattr(empresa, "nome_empresa", None),
+            getattr(empresa, "nome_fantasia", None),
+            ordem.empresa_nome,
+        ),
+        "EMPRESA_CNPJ": getattr(empresa, "cnpj", "") if empresa else "",
+        "VALOR_TOTAL": _clean_replace_value(ordem.valor_total or 0.0),
+        "STATUS": ordem.status or "",
+        "DATA_EMISSAO": _clean_replace_value(ordem.data_emissao),
+        "DATA_VALIDADE": _clean_replace_value(ordem.data_validade),
+        "EXECUTOR_NOME": ordem.executor_nome or "",
+        "OBSERVACOES_EXECUCAO": ordem.observacoes_execucao or "",
+        "GERADO_EM": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+    }
+    for key, value in (extras or {}).items():
+        clean_key = str(key or "").strip()
+        if clean_key:
+            base[clean_key] = _clean_replace_value(value)
+    return base
+
+
+async def _generate_pdf_from_google_template(
+    *,
+    template_file_id: str,
+    output_file_name: str,
+    folder_parts: List[str],
+    replacements: Dict[str, str],
+    integration_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    try:
+        service_account_info = decrypt_service_account_payload(str(integration_payload.get("credentials_encrypted") or ""))
+        scopes = integration_payload.get("scopes") or list(DEFAULT_GOOGLE_SCOPES)
+        drive_service = GoogleDriveService(service_account_info=service_account_info, scopes=scopes)
+        target_folder = drive_service.ensure_folder_path(
+            str(integration_payload.get("root_folder_id")),
+            folder_parts,
+        )
+        copied_doc = drive_service.copy_file_to_folder(
+            source_file_id=template_file_id,
+            parent_folder_id=str(target_folder.get("id")),
+            new_name=output_file_name,
+        )
+        drive_service.replace_google_doc_placeholders(
+            document_id=str(copied_doc.get("id")),
+            replacements=replacements,
+        )
+        pdf_bytes = drive_service.export_google_doc_as_pdf_bytes(document_id=str(copied_doc.get("id")))
+        uploaded_pdf = drive_service.upload_file(
+            parent_folder_id=str(target_folder.get("id")),
+            file_name=f"{output_file_name}.pdf",
+            file_bytes=pdf_bytes,
+            mime_type="application/pdf",
+        )
+        return {
+            "folder": target_folder,
+            "document": copied_doc,
+            "pdf": uploaded_pdf,
+        }
+    except GoogleIntegrationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 # ==================== SERVIÇOS COMERCIAIS ====================
 
@@ -587,6 +744,164 @@ async def upload_contrato_pdf(
         await session.commit()
         
         return {"message": "Arquivo enviado com sucesso", "file_path": file_path}
+
+
+@router.post("/contratos/{contrato_id}/generate-drive-pdf")
+async def generate_contrato_drive_pdf(
+    contrato_id: str,
+    payload: GenerateDriveDocumentRequest,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Gera contrato via template do Google Docs e salva PDF no Google Drive."""
+    integration = await _load_google_drive_integration()
+    templates = integration.get("templates") or {}
+    comercial_templates = templates.get("comercial") if isinstance(templates, dict) else {}
+    template_id = (
+        str(payload.template_file_id or "").strip()
+        or str((comercial_templates or {}).get("contrato_template_file_id") or "").strip()
+        or str((templates or {}).get("contrato_template_file_id") or "").strip()
+    )
+    if not template_id:
+        raise HTTPException(status_code=400, detail="Template de contrato nao configurado.")
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ContratoSQL).where(ContratoSQL.id == contrato_id))
+        contrato = result.scalar_one_or_none()
+        if not contrato:
+            raise HTTPException(status_code=404, detail="Contrato nao encontrado")
+
+        result = await session.execute(select(ClientSQL).where(ClientSQL.id == contrato.empresa_id))
+        empresa = result.scalar_one_or_none()
+
+        base_name = f"Contrato-{contrato.numero}-{_coalesce_name(contrato.empresa_nome, getattr(empresa, 'nome_empresa', None))}"
+        generation = await _generate_pdf_from_google_template(
+            template_file_id=template_id,
+            output_file_name=base_name,
+            folder_parts=[
+                "Comercial",
+                "Contratos",
+                _coalesce_name(getattr(empresa, "nome_empresa", None), contrato.empresa_nome),
+                datetime.utcnow().strftime("%Y-%m"),
+            ],
+            replacements=_contract_replacements(contrato, empresa, payload.placeholders),
+            integration_payload=integration,
+        )
+
+        historico = HistoricoContratoSQL(
+            contrato_id=contrato.id,
+            usuario_id=current_user.id,
+            usuario_nome=current_user.name,
+            acao="Documento gerado no Google Drive",
+            descricao=f"PDF gerado no Drive: {generation['pdf'].get('name')}",
+        )
+        session.add(historico)
+        await session.commit()
+
+    documents_collection = await get_documents_collection()
+    document_row = {
+        "id": str(os.urandom(16).hex()),
+        "nome": generation["pdf"].get("name"),
+        "setor": "Comercial",
+        "origem": "contabilidade",
+        "empresa_id": str(contrato.empresa_id),
+        "empresa_nome": _coalesce_name(getattr(empresa, "nome_empresa", None), contrato.empresa_nome),
+        "tipo_documento": "Contrato",
+        "data": datetime.utcnow().strftime("%Y-%m-%d"),
+        "arquivo_nome": generation["pdf"].get("name"),
+        "storage_provider": "google_drive",
+        "drive_file_id": generation["pdf"].get("id"),
+        "drive_folder_id": generation["folder"].get("id"),
+        "drive_web_view_link": generation["pdf"].get("webViewLink"),
+        "drive_web_content_link": generation["pdf"].get("webContentLink"),
+        "mime_type": generation["pdf"].get("mimeType") or "application/pdf",
+        "size_bytes": int(generation["pdf"].get("size") or 0),
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+        "created_by_id": str(current_user.id),
+        "created_by_name": str(current_user.name),
+    }
+    await documents_collection.insert_one(document_row)
+
+    return {
+        "message": "Contrato gerado no Google Drive com sucesso.",
+        "drive_document": generation["document"],
+        "drive_pdf": generation["pdf"],
+        "drive_folder": generation["folder"],
+    }
+
+
+@router.post("/ordens-servico/{os_id}/generate-drive-pdf")
+async def generate_ordem_servico_drive_pdf(
+    os_id: str,
+    payload: GenerateDriveDocumentRequest,
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Gera O.S. via template do Google Docs e salva PDF no Google Drive."""
+    integration = await _load_google_drive_integration()
+    templates = integration.get("templates") or {}
+    comercial_templates = templates.get("comercial") if isinstance(templates, dict) else {}
+    template_id = (
+        str(payload.template_file_id or "").strip()
+        or str((comercial_templates or {}).get("ordem_servico_template_file_id") or "").strip()
+        or str((templates or {}).get("ordem_servico_template_file_id") or "").strip()
+    )
+    if not template_id:
+        raise HTTPException(status_code=400, detail="Template de ordem de servico nao configurado.")
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(OrdemServicoSQL).where(OrdemServicoSQL.id == os_id))
+        ordem = result.scalar_one_or_none()
+        if not ordem:
+            raise HTTPException(status_code=404, detail="Ordem de servico nao encontrada")
+
+        result = await session.execute(select(ClientSQL).where(ClientSQL.id == ordem.empresa_id))
+        empresa = result.scalar_one_or_none()
+
+        base_name = f"OS-{ordem.numero}-{_coalesce_name(ordem.empresa_nome, getattr(empresa, 'nome_empresa', None))}"
+        generation = await _generate_pdf_from_google_template(
+            template_file_id=template_id,
+            output_file_name=base_name,
+            folder_parts=[
+                "Comercial",
+                "Ordens de Servico",
+                _coalesce_name(getattr(empresa, "nome_empresa", None), ordem.empresa_nome),
+                datetime.utcnow().strftime("%Y-%m"),
+            ],
+            replacements=_os_replacements(ordem, empresa, payload.placeholders),
+            integration_payload=integration,
+        )
+
+    documents_collection = await get_documents_collection()
+    document_row = {
+        "id": str(os.urandom(16).hex()),
+        "nome": generation["pdf"].get("name"),
+        "setor": "Comercial",
+        "origem": "contabilidade",
+        "empresa_id": str(ordem.empresa_id),
+        "empresa_nome": _coalesce_name(getattr(empresa, "nome_empresa", None), ordem.empresa_nome),
+        "tipo_documento": "Ordem de Servico",
+        "data": datetime.utcnow().strftime("%Y-%m-%d"),
+        "arquivo_nome": generation["pdf"].get("name"),
+        "storage_provider": "google_drive",
+        "drive_file_id": generation["pdf"].get("id"),
+        "drive_folder_id": generation["folder"].get("id"),
+        "drive_web_view_link": generation["pdf"].get("webViewLink"),
+        "drive_web_content_link": generation["pdf"].get("webContentLink"),
+        "mime_type": generation["pdf"].get("mimeType") or "application/pdf",
+        "size_bytes": int(generation["pdf"].get("size") or 0),
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+        "created_by_id": str(current_user.id),
+        "created_by_name": str(current_user.name),
+    }
+    await documents_collection.insert_one(document_row)
+
+    return {
+        "message": "Ordem de servico gerada no Google Drive com sucesso.",
+        "drive_document": generation["document"],
+        "drive_pdf": generation["pdf"],
+        "drive_folder": generation["folder"],
+    }
 
 @router.get("/contratos/{contrato_id}/historico")
 async def get_historico_contrato(

@@ -28,6 +28,11 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const showSectorAlertsShortcut = useMemo(() => {
+    const path = location.pathname || '';
+    const sectorRoots = ['/atendimento', '/comercial', '/financeiro', '/fiscal', '/contadores', '/trabalhista'];
+    return sectorRoots.some((root) => path === root || path.startsWith(`${root}/`));
+  }, [location.pathname]);
 
   const menuItems = useMemo(
     () => [
@@ -158,6 +163,15 @@ const Layout = ({ children }) => {
           <div className="hidden lg:block" />
 
           <div className="flex items-center space-x-4">
+            {showSectorAlertsShortcut ? (
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard/alertas-setor')}
+                className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20"
+              >
+                Alertas do Setor
+              </button>
+            ) : null}
             <div className="flex items-center space-x-2">
               <div className="status-online h-3 w-3 rounded-full" />
               <span className="text-sm text-gray-300">Sistema Integrado Local</span>

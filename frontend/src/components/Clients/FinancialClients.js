@@ -103,7 +103,7 @@ const defaultForm = {
   formaPagamentoEspecial: false,
   tipoPagamentoEspecial: '',
   tipoPagamento: 'honorario',
-  dataPrimeiroVencimento: '',
+  dataPrimeiroVencimento: new Date().toISOString().split('T')[0],
   acordoAno: '2026',
   acordoMeses: [],
   valorTotalDebito: '',

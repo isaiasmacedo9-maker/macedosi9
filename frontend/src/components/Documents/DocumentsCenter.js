@@ -38,6 +38,7 @@ const DocumentsCenter = () => {
   const [clients, setClients] = useState([]);
   const [documentTypes, setDocumentTypes] = useState([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState('');
   const [expandedFolders, setExpandedFolders] = useState({});
   const [sectorSearchOpen, setSectorSearchOpen] = useState({});
   const [sectorSearchText, setSectorSearchText] = useState({});
@@ -48,6 +49,7 @@ const DocumentsCenter = () => {
     empresa_nome: '',
     nome: '',
     arquivo_nome: '',
+    file: null,
     tipo_documento: '',
     data: new Date().toISOString().slice(0, 10),
   });
@@ -66,6 +68,7 @@ const DocumentsCenter = () => {
         setClients(Array.isArray(apiClients) ? apiClients : []);
       } catch (error) {
         console.error('Erro ao carregar central de documentos:', error);
+        setActionFeedback('Não foi possível carregar a Central de Documentos.');
         setDocuments([]);
         setDocumentTypes([]);
         setClients([]);
@@ -131,6 +134,7 @@ const DocumentsCenter = () => {
       empresa_nome: '',
       nome: '',
       arquivo_nome: '',
+      file: null,
       tipo_documento: '',
       data: new Date().toISOString().slice(0, 10),
     }));
@@ -145,23 +149,42 @@ const DocumentsCenter = () => {
     if (!draft.setor || !draft.empresa_id || !draft.tipo_documento.trim()) return;
     const selectedCompany = companies.find((item) => item.id === draft.empresa_id);
     try {
-      const response = await api.post('/documents', {
-        nome: fileName || manualName,
-        setor: draft.setor,
-        origem: draft.origem,
-        empresa_id: draft.empresa_id,
-        empresa_nome: selectedCompany?.nome || draft.empresa_nome || 'Empresa',
-        tipo_documento: draft.tipo_documento.trim(),
-        data: draft.data || new Date().toISOString().slice(0, 10),
-      });
+      setActionFeedback('');
+      let response;
+      if (draft.file) {
+        const formData = new FormData();
+        formData.append('origem', draft.origem);
+        formData.append('setor', draft.setor);
+        formData.append('empresa_id', draft.empresa_id);
+        formData.append('empresa_nome', selectedCompany?.nome || draft.empresa_nome || 'Empresa');
+        formData.append('tipo_documento', draft.tipo_documento.trim());
+        formData.append('data', draft.data || new Date().toISOString().slice(0, 10));
+        formData.append('nome', fileName || manualName || draft.file.name);
+        formData.append('file', draft.file);
+        response = await api.post('/documents/upload-drive', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        response = await api.post('/documents', {
+          nome: fileName || manualName,
+          setor: draft.setor,
+          origem: draft.origem,
+          empresa_id: draft.empresa_id,
+          empresa_nome: selectedCompany?.nome || draft.empresa_nome || 'Empresa',
+          tipo_documento: draft.tipo_documento.trim(),
+          data: draft.data || new Date().toISOString().slice(0, 10),
+        });
+      }
       const created = response.data;
       setDocuments((prev) => [created, ...prev]);
       if (!documentTypes.includes(created.tipo_documento)) {
         setDocumentTypes((prev) => [...new Set([...prev, created.tipo_documento])].sort((a, b) => a.localeCompare(b, 'pt-BR')));
       }
       setShowUploadModal(false);
+      setActionFeedback('Documento salvo com sucesso.');
     } catch (error) {
       console.error('Erro ao salvar documento:', error);
+      setActionFeedback(error?.response?.data?.detail || 'Não foi possível salvar o documento.');
     }
   };
 
@@ -306,10 +329,21 @@ const DocumentsCenter = () => {
                                         </div>
                                         <div className="space-y-1">
                                           {dateDocs.map((item) => (
-                                            <div key={item.id} className="inline-flex items-center gap-2 text-xs text-gray-200">
+                                            <a
+                                              key={item.id}
+                                              href={item.drive_web_view_link || '#'}
+                                              target={item.drive_web_view_link ? '_blank' : undefined}
+                                              rel={item.drive_web_view_link ? 'noreferrer' : undefined}
+                                              className={`inline-flex items-center gap-2 text-xs ${
+                                                item.drive_web_view_link ? 'text-cyan-200 hover:text-cyan-100' : 'text-gray-200'
+                                              }`}
+                                              onClick={(e) => {
+                                                if (!item.drive_web_view_link) e.preventDefault();
+                                              }}
+                                            >
                                               <FileText className="h-3.5 w-3.5 text-blue-300" />
                                               {item.nome}
-                                            </div>
+                                            </a>
                                           ))}
                                         </div>
                                       </div>
@@ -343,6 +377,11 @@ const DocumentsCenter = () => {
           Enviar novo documento
         </button>
       </section>
+      {actionFeedback ? (
+        <section className="glass rounded-2xl border border-white/10 p-3 text-sm text-gray-200">
+          {actionFeedback}
+        </section>
+      ) : null}
 
       {showUploadModal ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
@@ -429,6 +468,7 @@ const DocumentsCenter = () => {
                     if (!file) return;
                     setDraft((prev) => ({
                       ...prev,
+                      file,
                       arquivo_nome: file.name,
                       nome: prev.nome || file.name,
                     }));

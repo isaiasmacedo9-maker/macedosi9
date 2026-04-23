@@ -1,7 +1,7 @@
 """
 Rotas para chat com grupos públicos/privados
 """
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -16,10 +16,18 @@ from models_chat_users import (
 from auth import get_current_user
 from crud_sql import convert_to_dict, json_dumps, json_loads
 from models.user import UserResponse
+from database_compat import get_configuracoes_collection
+from services.google_drive_service import (
+    DEFAULT_GOOGLE_SCOPES,
+    GoogleDriveService,
+    GoogleIntegrationError,
+    decrypt_service_account_payload,
+)
 import json
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 ONLINE_WINDOW_SECONDS = 90
+GOOGLE_INTEGRATION_KEY = "google_drive_integration"
 
 # ==================== MODELS ====================
 
@@ -262,6 +270,31 @@ async def get_or_create_direct_chat(session, user1_id: str, user2_id: str):
     
     await session.flush()
     return conversation
+
+
+def _safe_json_load(raw: str) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+async def _load_google_drive_integration() -> dict:
+    collection = await get_configuracoes_collection()
+    row = await collection.find_one({"chave": GOOGLE_INTEGRATION_KEY})
+    if not row:
+        raise HTTPException(status_code=400, detail="Integracao Google Drive nao configurada.")
+    payload = _safe_json_load(str(row.get("valor") or ""))
+    if not payload.get("enabled"):
+        raise HTTPException(status_code=400, detail="Integracao Google Drive esta desabilitada.")
+    if not payload.get("credentials_encrypted"):
+        raise HTTPException(status_code=400, detail="Credencial Google Drive ausente.")
+    if not payload.get("root_folder_id"):
+        raise HTTPException(status_code=400, detail="Pasta raiz do Google Drive nao configurada.")
+    return payload
 
 # ==================== ROUTES ====================
 
@@ -676,6 +709,74 @@ async def get_messages(
         await session.commit()
         
         return list(reversed(messages))
+
+
+@router.post("/{conversation_id}/attachments/upload-drive")
+async def upload_chat_attachment_to_drive(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Faz upload de anexo do chat para Google Drive e retorna metadados para o frontend."""
+    if not file or not str(file.filename or "").strip():
+        raise HTTPException(status_code=400, detail="Arquivo nao informado.")
+
+    async with AsyncSessionLocal() as session:
+        membership_result = await session.execute(
+            select(ConversationMemberSQL).where(
+                and_(
+                    ConversationMemberSQL.conversation_id == conversation_id,
+                    ConversationMemberSQL.user_id == current_user.id,
+                    ConversationMemberSQL.is_active == True,
+                )
+            )
+        )
+        if not membership_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Voce nao tem acesso a esta conversa")
+
+        conv_result = await session.execute(select(ConversationSQL).where(ConversationSQL.id == conversation_id))
+        conversation = conv_result.scalar_one_or_none()
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversa nao encontrada")
+
+    integration = await _load_google_drive_integration()
+    templates = integration.get("templates") if isinstance(integration.get("templates"), dict) else {}
+    chat_templates = templates.get("chat") if isinstance(templates, dict) else {}
+    chat_folder_name = str((chat_templates or {}).get("attachments_folder_name") or "Anexos do Chat").strip()
+
+    try:
+        service_account_info = decrypt_service_account_payload(str(integration.get("credentials_encrypted") or ""))
+        scopes = integration.get("scopes") or list(DEFAULT_GOOGLE_SCOPES)
+        drive_service = GoogleDriveService(service_account_info=service_account_info, scopes=scopes)
+        folder_info = drive_service.ensure_folder_path(
+            str(integration.get("root_folder_id")),
+            [
+                chat_folder_name,
+                f"Conversa-{conversation_id}",
+                datetime.utcnow().strftime("%Y-%m-%d"),
+            ],
+        )
+        file_bytes = await file.read()
+        uploaded = drive_service.upload_file(
+            parent_folder_id=str(folder_info.get("id")),
+            file_name=file.filename,
+            file_bytes=file_bytes,
+            mime_type=file.content_type or "application/octet-stream",
+        )
+    except GoogleIntegrationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "id": f"chat-file-{uploaded.get('id')}",
+        "name": uploaded.get("name") or file.filename,
+        "size": int(uploaded.get("size") or len(file_bytes)),
+        "type": uploaded.get("mimeType") or file.content_type or "application/octet-stream",
+        "storage_provider": "google_drive",
+        "drive_file_id": uploaded.get("id"),
+        "drive_folder_id": folder_info.get("id"),
+        "web_view_link": uploaded.get("webViewLink"),
+        "web_content_link": uploaded.get("webContentLink"),
+    }
 
 @router.post("/{conversation_id}/messages")
 async def send_message(

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, FileText, CheckCircle, Clock, Upload, Calendar, AlertCircle, Download } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import Services from '../Services/Services';
 
 const OS_MODELS_KEY = 'mock_comercial_os_models_v1';
 const COMMERCIAL_LOCAL_ORDERS_KEY = 'mock_comercial_ordens_servico_v1';
@@ -31,6 +32,7 @@ const Comercial = () => {
   const [formType, setFormType] = useState('servico');
   const [showOsModelModal, setShowOsModelModal] = useState(false);
   const [osModels, setOsModels] = useState([]);
+  const [generatingDriveDocIds, setGeneratingDriveDocIds] = useState([]);
   
   const [clientes, setClientes] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -538,6 +540,71 @@ const Comercial = () => {
     }
   };
 
+  const withGeneratingFlag = async (docId, fn) => {
+    setGeneratingDriveDocIds((prev) => [...prev, String(docId)]);
+    try {
+      await fn();
+    } finally {
+      setGeneratingDriveDocIds((prev) => prev.filter((item) => item !== String(docId)));
+    }
+  };
+
+  const handleGenerateContratoDrive = async (contratoId) => {
+    await withGeneratingFlag(contratoId, async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/comercial/contratos/${contratoId}/generate-drive-pdf`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || 'Erro ao gerar contrato no Drive');
+        }
+        const link = payload?.drive_pdf?.webViewLink || payload?.drive_document?.webViewLink || '';
+        if (link) {
+          window.open(link, '_blank', 'noopener,noreferrer');
+        }
+        alert('Contrato gerado com sucesso no Google Drive.');
+      } catch (error) {
+        console.error('Erro ao gerar contrato no Drive:', error);
+        alert(error?.message || 'Não foi possível gerar o contrato no Google Drive.');
+      }
+    });
+  };
+
+  const handleGenerateOsDrive = async (osId) => {
+    await withGeneratingFlag(osId, async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/api/comercial/ordens-servico/${osId}/generate-drive-pdf`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || 'Erro ao gerar O.S. no Drive');
+        }
+        const link = payload?.drive_pdf?.webViewLink || payload?.drive_document?.webViewLink || '';
+        if (link) {
+          window.open(link, '_blank', 'noopener,noreferrer');
+        }
+        alert('Ordem de serviço gerada com sucesso no Google Drive.');
+      } catch (error) {
+        console.error('Erro ao gerar O.S. no Drive:', error);
+        alert(error?.message || 'Não foi possível gerar a ordem de serviço no Google Drive.');
+      }
+    });
+  };
+
   const resetServicoForm = () => {
     setServicoForm({
       empresa_id: '',
@@ -641,6 +708,14 @@ const Comercial = () => {
         </button>
       </div>
 
+      {activeTab === 'servicos' ? (
+        <Services
+          contextSector="comercial"
+          allowedTopTabs={['processos', 'modelos']}
+          defaultTopTab="processos"
+        />
+      ) : null}
+
       {/* Contratos - Calendário de Vencimentos */}
       {activeTab === 'contratos' && vencimentos && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -671,6 +746,7 @@ const Comercial = () => {
       )}
 
       {/* Content Area */}
+      {activeTab !== 'servicos' ? (
       <div className="bg-gray-800 rounded-lg">
         <div className="p-4 border-b border-gray-700 flex justify-between items-center">
           <h2 className="text-white font-medium">
@@ -770,22 +846,32 @@ const Comercial = () => {
                       </td>
                       <td className="px-4 py-3 text-gray-300">{ordem.executor_nome || '-'}</td>
                       <td className="px-4 py-3 text-right">
-                        {ordem.status === 'aberta' && (
+                        <div className="flex items-center justify-end gap-3">
+                          {ordem.status === 'aberta' && (
+                            <button
+                              onClick={() => handleIniciarOS(ordem.id)}
+                              className="text-blue-400 hover:text-blue-300 text-sm"
+                            >
+                              Iniciar
+                            </button>
+                          )}
+                          {ordem.status === 'em_execucao' && (
+                            <button
+                              onClick={() => handleConcluirOS(ordem.id)}
+                              className="text-green-400 hover:text-green-300 text-sm"
+                            >
+                              Concluir
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleIniciarOS(ordem.id)}
-                            className="text-blue-400 hover:text-blue-300 text-sm"
+                            type="button"
+                            onClick={() => handleGenerateOsDrive(ordem.id)}
+                            disabled={generatingDriveDocIds.includes(String(ordem.id))}
+                            className="text-purple-300 hover:text-purple-200 text-sm disabled:opacity-60"
                           >
-                            Iniciar
+                            {generatingDriveDocIds.includes(String(ordem.id)) ? 'Gerando...' : 'Gerar PDF Drive'}
                           </button>
-                        )}
-                        {ordem.status === 'em_execucao' && (
-                          <button
-                            onClick={() => handleConcluirOS(ordem.id)}
-                            className="text-green-400 hover:text-green-300 text-sm"
-                          >
-                            Concluir
-                          </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -828,20 +914,30 @@ const Comercial = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <label className="cursor-pointer text-blue-400 hover:text-blue-300 text-sm">
-                          <Upload size={16} className="inline mr-1" />
-                          Upload
-                          <input
-                            type="file"
-                            accept=".pdf"
-                            className="hidden"
-                            onChange={(e) => {
-                              if (e.target.files[0]) {
-                                handleUploadContrato(contrato.id, e.target.files[0]);
-                              }
-                            }}
-                          />
-                        </label>
+                        <div className="flex items-center justify-end gap-3">
+                          <label className="cursor-pointer text-blue-400 hover:text-blue-300 text-sm">
+                            <Upload size={16} className="inline mr-1" />
+                            Upload
+                            <input
+                              type="file"
+                              accept=".pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files[0]) {
+                                  handleUploadContrato(contrato.id, e.target.files[0]);
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateContratoDrive(contrato.id)}
+                            disabled={generatingDriveDocIds.includes(String(contrato.id))}
+                            className="text-purple-300 hover:text-purple-200 text-sm disabled:opacity-60"
+                          >
+                            {generatingDriveDocIds.includes(String(contrato.id)) ? 'Gerando...' : 'Gerar PDF Drive'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -851,6 +947,7 @@ const Comercial = () => {
           </div>
         )}
       </div>
+      ) : null}
 
       {/* Form Modal */}
       {showForm && (

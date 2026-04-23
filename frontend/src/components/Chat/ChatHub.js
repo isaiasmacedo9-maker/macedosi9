@@ -5,6 +5,7 @@ import {
   listSupportThreadsForAccounting,
   markSupportThreadRead,
   sendSupportMessage,
+  startSupportThread,
 } from '../../dev/clientSupportChat';
 
 const formatDateTime = (value) => {
@@ -30,6 +31,8 @@ const ChatClientePanel = () => {
   const [threads, setThreads] = useState(() => listSupportThreadsForAccounting());
   const [selectedClientId, setSelectedClientId] = useState(() => listSupportThreadsForAccounting()?.[0]?.clientId || '');
   const [draft, setDraft] = useState('');
+  const [clientOptions, setClientOptions] = useState([]);
+  const [newClientId, setNewClientId] = useState('');
 
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.clientId === selectedClientId) || null,
@@ -40,6 +43,47 @@ const ChatClientePanel = () => {
     const list = listSupportThreadsForAccounting();
     setThreads(list);
     if (!selectedClientId && list.length) setSelectedClientId(list[0].clientId);
+  };
+
+  React.useEffect(() => {
+    let mounted = true;
+    const loadClients = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const baseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+        const response = await fetch(`${baseUrl}/api/clients?limit=2000`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const rows = Array.isArray(payload?.clients) ? payload.clients : Array.isArray(payload) ? payload : [];
+        const mapped = rows
+          .map((item) => ({
+            id: String(item?.id || '').trim(),
+            nome: String(item?.nome_empresa || item?.nome_fantasia || '').trim(),
+          }))
+          .filter((item) => item.id && item.nome)
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+        if (mounted) {
+          setClientOptions(mapped);
+          if (!newClientId && mapped.length) setNewClientId(mapped[0].id);
+        }
+      } catch {
+        // silencioso
+      }
+    };
+    loadClients();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleStartChat = () => {
+    const selected = clientOptions.find((item) => String(item.id) === String(newClientId));
+    if (!selected) return;
+    startSupportThread({ clientId: selected.id, clientName: selected.nome });
+    setSelectedClientId(selected.id);
+    reload();
   };
 
   const handleSend = () => {
@@ -60,6 +104,31 @@ const ChatClientePanel = () => {
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
         <div className="mb-3 text-sm font-semibold text-white">Chat cliente</div>
+        <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-2">
+          <div className="mb-2 text-xs text-gray-300">Iniciar chat com cliente</div>
+          <div className="flex gap-2">
+            <select
+              value={newClientId}
+              onChange={(event) => setNewClientId(event.target.value)}
+              className="input-futuristic w-full rounded-lg px-2 py-2 text-sm"
+            >
+              <option value="">Selecione o cliente</option>
+              {clientOptions.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.nome}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleStartChat}
+              disabled={!newClientId}
+              className="rounded-lg border border-red-500/30 bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-100 hover:bg-red-500/25 disabled:opacity-40"
+            >
+              Iniciar
+            </button>
+          </div>
+        </div>
         <div className="space-y-2">
           {threads.map((thread) => (
             <button

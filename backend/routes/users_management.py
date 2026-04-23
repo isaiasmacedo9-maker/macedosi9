@@ -70,11 +70,24 @@ def _canonicalizar_setor(setor: str) -> Optional[str]:
 
 
 def _is_visualizacao_valida(setor: str, visualizacao: str) -> bool:
-    if visualizacao in SETORES_DISPONIVEIS.get(setor, []):
+    vis_normalizada = _normalize_text(visualizacao)
+    if any(_normalize_text(item) == vis_normalizada for item in SETORES_DISPONIVEIS.get(setor, [])):
         return True
-    if setor == "Clientes" and visualizacao in CLIENTES_SENHAS_VIEWS:
+    if setor == "Clientes" and any(_normalize_text(item) == vis_normalizada for item in CLIENTES_SENHAS_VIEWS):
         return True
     return False
+
+
+def _canonicalizar_visualizacao(setor: str, visualizacao: str) -> str:
+    vis_normalizada = _normalize_text(visualizacao)
+    for item in SETORES_DISPONIVEIS.get(setor, []):
+        if _normalize_text(item) == vis_normalizada:
+            return item
+    if setor == "Clientes":
+        for item in CLIENTES_SENHAS_VIEWS:
+            if _normalize_text(item) == vis_normalizada:
+                return item
+    return visualizacao
 
 
 # ==================== MODELS ====================
@@ -253,16 +266,20 @@ async def create_user(user_data: UserCreate, current_user = Depends(get_admin_us
             setor_canonico = _canonicalizar_setor(perm.setor)
             if not setor_canonico:
                 raise HTTPException(status_code=400, detail=f"Setor inválido: {perm.setor}")
+            visualizacoes_canonicas = []
             for vis in perm.visualizacoes:
                 if not _is_visualizacao_valida(setor_canonico, vis):
                     raise HTTPException(
                         status_code=400,
                         detail=f"Visualização inválida '{vis}' para setor {setor_canonico}"
                     )
+                vis_canonica = _canonicalizar_visualizacao(setor_canonico, vis)
+                if vis_canonica not in visualizacoes_canonicas:
+                    visualizacoes_canonicas.append(vis_canonica)
             permissoes_normalizadas.append(
                 {
                     "setor": setor_canonico,
-                    "visualizacoes": perm.visualizacoes,
+                    "visualizacoes": visualizacoes_canonicas,
                 }
             )
 
@@ -355,16 +372,20 @@ async def update_user(user_id: str, user_data: UserUpdate, current_user = Depend
                 setor_canonico = _canonicalizar_setor(perm.setor)
                 if not setor_canonico:
                     raise HTTPException(status_code=400, detail=f"Setor inválido: {perm.setor}")
+                visualizacoes_canonicas = []
                 for vis in perm.visualizacoes:
                     if not _is_visualizacao_valida(setor_canonico, vis):
                         raise HTTPException(
                             status_code=400,
                             detail=f"Visualização inválida '{vis}' para setor {setor_canonico}"
                         )
+                    vis_canonica = _canonicalizar_visualizacao(setor_canonico, vis)
+                    if vis_canonica not in visualizacoes_canonicas:
+                        visualizacoes_canonicas.append(vis_canonica)
                 permissoes_normalizadas.append(
                     {
                         "setor": setor_canonico,
-                        "visualizacoes": perm.visualizacoes,
+                        "visualizacoes": visualizacoes_canonicas,
                     }
                 )
             

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -35,11 +35,29 @@ const daysBetween = (fromDate, toDate) => {
 };
 
 const normalizeIdentity = (value = '') => String(value).trim().toLowerCase();
+const CUSTOM_ALERTS_KEY = 'mock_sector_alerts_v1';
 
 const DashboardAlertsView = () => {
   const { user, hasModuleAccess } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
+  const [customAlerts, setCustomAlerts] = useState([]);
+  const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
+  const [newAlert, setNewAlert] = useState({
+    moduleKey: 'servicos',
+    titulo: '',
+    criticidade: 'media',
+    vencimento: new Date().toISOString().slice(0, 10),
+  });
+
+  useEffect(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(CUSTOM_ALERTS_KEY) || '[]');
+      setCustomAlerts(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setCustomAlerts([]);
+    }
+  }, []);
 
   const viewerIdentity = useMemo(
     () => [user?.id, user?.email, user?.name].filter(Boolean).map(normalizeIdentity),
@@ -95,9 +113,9 @@ const DashboardAlertsView = () => {
         };
       });
 
-    return [...taskAlerts, ...serviceAlerts]
+    return [...taskAlerts, ...serviceAlerts, ...customAlerts]
       .sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento));
-  }, [tasks, services]);
+  }, [tasks, services, customAlerts]);
 
   const groupedBySector = useMemo(() => {
     const group = {};
@@ -114,6 +132,33 @@ const DashboardAlertsView = () => {
     [groupedBySector],
   );
 
+  const createNewAlert = () => {
+    const title = String(newAlert.titulo || '').trim();
+    if (!title) return;
+    const payload = {
+      id: `custom-alert-${Date.now()}`,
+      titulo: title,
+      moduleKey: newAlert.moduleKey || 'servicos',
+      criticidade: newAlert.criticidade || 'media',
+      vencimento: newAlert.vencimento || new Date().toISOString().slice(0, 10),
+      tipo: 'manual',
+      createdBy: user?.name || user?.email || 'Usuário',
+      createdAt: new Date().toISOString(),
+    };
+    setCustomAlerts((prev) => {
+      const next = [payload, ...(Array.isArray(prev) ? prev : [])];
+      localStorage.setItem(CUSTOM_ALERTS_KEY, JSON.stringify(next));
+      return next;
+    });
+    setIsNewAlertOpen(false);
+    setNewAlert({
+      moduleKey: 'servicos',
+      titulo: '',
+      criticidade: 'media',
+      vencimento: new Date().toISOString().slice(0, 10),
+    });
+  };
+
   return (
     <div className="space-y-5">
       <section className="glass-intense rounded-2xl border border-white/10 p-5">
@@ -129,8 +174,59 @@ const DashboardAlertsView = () => {
             <ArrowLeft className="h-4 w-4" />
             Voltar ao dashboard
           </button>
+          <button
+            onClick={() => setIsNewAlertOpen((prev) => !prev)}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/25"
+          >
+            Novo alerta
+          </button>
         </div>
       </section>
+
+      {isNewAlertOpen ? (
+        <section className="glass rounded-2xl border border-white/10 p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+            <input
+              value={newAlert.titulo}
+              onChange={(event) => setNewAlert((prev) => ({ ...prev, titulo: event.target.value }))}
+              placeholder="Título do alerta"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/40 md:col-span-2"
+            />
+            <select
+              value={newAlert.moduleKey}
+              onChange={(event) => setNewAlert((prev) => ({ ...prev, moduleKey: event.target.value }))}
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none"
+            >
+              {Object.keys(moduleLabelByKey).map((key) => (
+                <option key={key} value={key}>{moduleLabelByKey[key]}</option>
+              ))}
+            </select>
+            <select
+              value={newAlert.criticidade}
+              onChange={(event) => setNewAlert((prev) => ({ ...prev, criticidade: event.target.value }))}
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none"
+            >
+              <option value="alta">Alta</option>
+              <option value="media">Média</option>
+              <option value="baixa">Baixa</option>
+            </select>
+            <input
+              type="date"
+              value={newAlert.vencimento}
+              onChange={(event) => setNewAlert((prev) => ({ ...prev, vencimento: event.target.value }))}
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none"
+            />
+            <div className="md:col-span-3" />
+            <button
+              type="button"
+              onClick={createNewAlert}
+              className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100"
+            >
+              Salvar alerta
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {orderedSectors.length > 0 ? orderedSectors.map((sector) => (
         <section key={sector} className="glass rounded-2xl border border-white/10 p-4">

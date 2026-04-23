@@ -1,5 +1,6 @@
 const ACADEMY_REAL_KEY = 'mock_macedo_academy_generated_processes_v2';
 const TASK_VIEW_TRACK_KEY = 'mock_dashboard_new_tasks_viewed_v1';
+const SERVICES_KEY = 'mock_internal_services';
 
 export const DASHBOARD_MOCK_TASKS = [
   { id: 'tsk-1', titulo: 'Conferir DAS abril', moduleKey: 'fiscal', status: 'pendente', prioridade: 'alta', vencimento: '2026-04-20', atribuidoEm: '2026-04-14', assignedTo: ['dev-user', 'dev@macedosi.local'], relatedServiceId: 'srv-1' },
@@ -21,6 +22,14 @@ const mapSectorToModule = (sector = '') => {
   if (raw.includes('atendimento')) return 'atendimento';
   if (raw.includes('societ')) return 'contadores';
   return 'servicos';
+};
+
+const mapServiceStatusToTaskStatus = (status = '', fallback = '') => {
+  const raw = String(status || fallback || '').toLowerCase();
+  if (raw === 'concluido' || raw === 'concluida') return 'concluido';
+  if (raw === 'em_andamento' || raw === 'aguardando_cliente') return 'em_andamento';
+  if (raw === 'cancelado' || raw === 'dispensada') return 'transferido';
+  return 'pendente';
 };
 
 const getAcademyTasks = () => {
@@ -46,6 +55,37 @@ const getAcademyTasks = () => {
   }
 };
 
+const getServiceTasks = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SERVICES_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item, index) => {
+      const assignedTo = [
+        item?.responsavel_id,
+        item?.responsavel_email,
+        item?.responsavel_nome,
+        ...(Array.isArray(item?.assigned_to) ? item.assigned_to : []),
+        ...(Array.isArray(item?.assignedTo) ? item.assignedTo : []),
+      ].filter(Boolean);
+      const due = String(item?.data_prazo || item?.prazo || item?.created_at || new Date().toISOString()).slice(0, 10);
+      const start = String(item?.data_inicio || item?.created_at || due).slice(0, 10);
+      return {
+        id: `service-${item?.id || index}`,
+        titulo: item?.tipo_servico || item?.titulo || 'Tarefa de serviço',
+        moduleKey: 'servicos',
+        status: mapServiceStatusToTaskStatus(item?.status_ui, item?.status),
+        prioridade: item?.urgencia || item?.prioridade || 'media',
+        vencimento: due,
+        atribuidoEm: start,
+        assignedTo,
+        relatedServiceId: item?.id || null,
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
 export const getViewerIdentityList = (user) =>
   [user?.id, user?.email, user?.name].filter(Boolean).map(normalizeIdentity);
 
@@ -58,7 +98,7 @@ export const isTaskAssignedToViewer = (task, user, isAdmin = false) => {
 };
 
 export const getDashboardTasks = ({ user, isAdmin, hasModuleAccess }) =>
-  [...DASHBOARD_MOCK_TASKS, ...getAcademyTasks()].filter(
+  [...DASHBOARD_MOCK_TASKS, ...getAcademyTasks(), ...getServiceTasks()].filter(
     (task) => isTaskAssignedToViewer(task, user, isAdmin) && hasModuleAccess(task.moduleKey),
   );
 

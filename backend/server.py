@@ -32,6 +32,7 @@ from routes.agendamentos import router as agendamentos_router
 from routes.guias_fiscais import router as guias_fiscais_router
 from routes.academy_processes import router as academy_processes_router
 from routes.documents import router as documents_router
+from routes.integrations_google import router as integrations_google_router
 
 # Lifespan events
 @asynccontextmanager
@@ -136,6 +137,7 @@ api_router.include_router(agendamentos_router)
 api_router.include_router(guias_fiscais_router)
 api_router.include_router(academy_processes_router)
 api_router.include_router(documents_router)
+api_router.include_router(integrations_google_router)
 
 # Include the API router in the main app
 app.include_router(api_router)
